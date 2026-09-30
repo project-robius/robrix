@@ -1,12 +1,11 @@
 //! Image viewer widget for displaying Image with zooming and panning.
 //!
 //! There are 2 types of ImageViewerAction handled by this widget. They are "Show" and "Hide".
-//! ImageViewerRef has 4 public methods, `configure_zoom`, `show_loading`, `show_loaded` and `reset`.
 use std::sync::{mpsc::Receiver, Arc};
 
 use chrono::{DateTime, Local};
 use makepad_widgets::{
-    event::{TouchState, TouchUpdateEvent},
+    event::TouchState,
     image_cache::{decode_image_from_data, looks_like_svg, ImageBuffer, ImageError},
     *,
 };
@@ -17,7 +16,7 @@ use crate::home::room_image_viewer::ImageViewerFetchAction;
 use crate::utils::format_decimal_file_size;
 use thiserror::Error;
 use crate::{
-    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
+    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, pinch_zoom::{PinchZoom, ReleasedPress}, timestamp::TimestampWidgetRefExt},
     sliding_sync::TimelineKind,
 };
 
@@ -27,26 +26,8 @@ const SHOW_UI_DURATION: f64 = 3.0;
 /// Duration of one 90° rotation spin, in seconds (matches the DSL const).
 const ROTATION_ANIMATION_DURATION_SECS: f64 = 0.2;
 
-/// Configuration for zoom and pan settings in the image viewer.
-#[derive(Clone, Debug)]
-pub struct ImageViewerZoomConfig {
-    /// Minimum zoom level (default: 0.1)
-    pub min_zoom: f64,
-    /// Zoom scale factor for zoom in/out operations (default: 1.2)
-    pub zoom_scale_factor: f64,
-    /// Pan sensitivity multiplier for drag operations (default: 2.0)
-    pub pan_sensitivity: f64,
-}
-
-impl Default for ImageViewerZoomConfig {
-    fn default() -> Self {
-        Self {
-            min_zoom: 0.1,
-            zoom_scale_factor: 1.2,
-            pan_sensitivity: 2.0,
-        }
-    }
-}
+/// How much each press of a zoom button or a zoom key zooms in or out by.
+const ZOOM_STEP: f64 = 1.2;
 
 /// Error types for image loading operations
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -67,28 +48,6 @@ pub enum ImageViewerError {
     Unknown,
     #[error("Please reconnect your internet to load the image")]
     Offline,
-}
-
-/// The Drag state of the image viewer modal
-struct DragState {
-    /// The starting position of the drag.
-    drag_start: DVec2,
-    /// The zoom level of the image.
-    /// The larger the value, the more zoomed in the image is.
-    zoom_level: f64,
-    /// The pan offset of the image.
-    pan_offset: Option<DVec2>,
-}
-
-impl Default for DragState {
-    /// Resets all the drag state to its default values. This is called when the image changes.
-    fn default() -> Self {
-        Self {
-            drag_start: DVec2::default(),
-            zoom_level: 1.0,
-            pan_offset: None,
-        }
-    }
 }
 
 script_mod! {
@@ -133,7 +92,6 @@ script_mod! {
             rotated_image_container := View {
                 width: Fill, height: Fill,
                 flow: Down
-                align: Align{x: 0.5, y: 0.5}
                 rotated_image := Image {
                     width: Fill, height: Fill,
                     // The viewer computes the exact frame size itself (and the
@@ -376,23 +334,23 @@ pub enum ImageViewerAction {
     Hide,
 }
 
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 struct ImageViewer {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[rust] drag_state: DragState,
+    /// Tracks how far the image is zoomed in and where it has been panned to.
+    #[rust] pinch_zoom: PinchZoom,
+    /// Drives the animations of `pinch_zoom`.
+    #[rust] zoom_next_frame: NextFrame,
+    /// Toggles the UI overlay once a tap can no longer become a double tap.
+    #[rust] single_tap_timer: Timer,
     /// The current rotation angle of the image. Max of 4, each step represents 90 degrees
     #[rust] rotation_step: i8,
     /// A lock to prevent multiple rotation animations from running at the same time
     #[rust] is_animating_rotation: bool,
     #[apply_default] animator: Animator,
-    /// Zoom constraints for the image viewer
-    #[rust] config: ImageViewerZoomConfig,
     /// Indicates if the mouse cursor is currently hovering over the image.
-    /// If true, allows wheel scroll to zoom the image.
     #[rust] mouse_cursor_hover_over_image: bool,
-    /// Distance between two touch points for pinch-to-zoom functionality
-    #[rust] previous_pinch_distance: Option<f64>,
     /// The ID of the background task that is currently running
     #[rust] background_task_id: u32,
     /// The mpsc::Receiver used to receive the result of the background task
@@ -426,7 +384,6 @@ struct ImageViewer {
     /// Last known mouse position, used to distinguish actual mouse movement
     /// from the continuous `FingerHoverOver` events that fire every frame.
     #[rust] last_mouse_pos: DVec2,
-    #[rust] capped_dimension: DVec2,
     /// The image's intrinsic (unrotated) pixel size, kept so we can re-fit the
     /// rotated bounding box at every angle of the spin.
     #[rust] natural_dimension: DVec2,
@@ -446,8 +403,19 @@ struct ImageViewer {
     #[rust] loaded_bytes: Option<Arc<[u8]>>,
 }
 
+impl ScriptHook for ImageViewer {
+    fn on_after_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // A reapply (like rotating the device) resets the image's walk and shader values.
+        if apply.is_reload() {
+            self.apply_image_transform(vm.cx_mut());
+        }
+    }
+}
+
 impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let content_rect = self.pinch_zoom.get_content_rect();
+        let had_pointers_down = self.pinch_zoom.has_pointers_down();
         // Block all scrolling, as the image viewer modal is full-screen.
         cx.block_scrolling_except_within(Area::Empty);
         self.view.handle_event(cx, event, scope);
@@ -456,14 +424,12 @@ impl Widget for ImageViewer {
         // Handle hover events for UI overlay elements.
         // Only hit-test these when the overlay is visible; when hidden, their areas
         // persist from the last draw and would consume events before rotated_image.
-        let rotated_image = self.view.image(cx, ids!(rotated_image));
-        let button_group_rounded_view = self.view.view(cx, ids!(button_group_rounded_view));
         // All hit events (hover + finger) must use self.view.area() because the inner
         // View's handle_event captures events on its own area first (due to its animator),
         // preventing rotated_image.area() from receiving them.
         // Position checks distinguish image vs. background interactions.
         match event.hits(cx, self.view.area()) {
-            Hit::FingerHoverIn(he) if rotated_image.area().rect(cx).contains(he.abs) => {
+            Hit::FingerHoverIn(he) if content_rect.contains(he.abs) => {
                 self.mouse_cursor_hover_over_image = true;
                 cx.set_cursor(MouseCursor::Hand);
             }
@@ -473,14 +439,13 @@ impl Widget for ImageViewer {
             }
             Hit::FingerHoverOver(he) => {
                 // Update cursor based on position over image.
-                let on_image = rotated_image.area().rect(cx).contains(he.abs);
+                let on_image = content_rect.contains(he.abs);
                 if on_image != self.mouse_cursor_hover_over_image {
                     self.mouse_cursor_hover_over_image = on_image;
                     cx.set_cursor(if on_image { MouseCursor::Hand } else { MouseCursor::Default });
                 }
                 // Track whether cursor is over the overlay UI elements.
-                let on_overlay = button_group_rounded_view.area().rect(cx).contains(he.abs)
-                    || self.view.view(cx, ids!(metadata_rounded_view)).area().rect(cx).contains(he.abs);
+                let on_overlay = self.is_over_overlay_ui(cx, he.abs);
                 if on_overlay != self.mouse_over_overlay_ui {
                     self.mouse_over_overlay_ui = on_overlay;
                     if on_overlay {
@@ -498,90 +463,91 @@ impl Widget for ImageViewer {
                     self.show_overlay_ui(cx, true);
                 }
             }
-            Hit::FingerDown(fe) if fe.is_primary_hit() => {
-                let click_pos = fe.abs;
-                let on_image = rotated_image.area().rect(cx).contains(click_pos);
-                let on_buttons = button_group_rounded_view.area().rect(cx).contains(click_pos);
-                let on_metadata = self.view.view(cx, ids!(metadata_rounded_view))
-                    .area().rect(cx).contains(click_pos);
-                if on_image {
-                    self.drag_state.drag_start = fe.abs;
-                    if self.drag_state.pan_offset.is_none() {
-                        self.drag_state.pan_offset = Some(DVec2::default());
-                    }
-                } else if !on_buttons && !on_metadata {
-                    self.reset(cx);
-                    cx.action(ImageViewerAction::Hide);
-                }
+            // Touches are handled below, since this only tells us about one of them at a time.
+            Hit::FingerDown(fe) if fe.is_mouse() && fe.is_primary_hit() => {
+                self.stop_single_tap_timer(cx);
+                let can_accept = !self.is_over_overlay_ui(cx, fe.abs);
+                self.pinch_zoom.handle_mouse(TouchState::Start, fe.abs, fe.time, can_accept);
             }
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
-                let on_image = rotated_image.area().rect(cx).contains(fe.abs);
-                if on_image {
-                    // Only reset pan_offset on double-tap, not single tap
-                    if fe.tap_count == 2 {
-                        self.drag_state.pan_offset = Some(DVec2::default());
-                        let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
-                        script_apply_eval!(cx, rotated_image_container, {
-                            margin +: { top: 0.0, left: 0.0 },
-                        });
-                        rotated_image_container.redraw(cx);
-                    }
-                    // Tap toggles the overlay UI visibility.
-                    if self.ui_overlay_visible {
-                        self.hide_overlay_ui(cx);
-                    } else {
-                        self.show_overlay_ui(cx, true);
-                    }
-                }
+            Hit::FingerMove(fe) if fe.is_mouse() && fe.is_primary_hit() => {
+                self.pinch_zoom.handle_mouse(TouchState::Move, fe.abs, fe.time, true);
             }
-            Hit::FingerMove(fe) => {
-                if let Some(current_offset) = self.drag_state.pan_offset {
-                    let drag_delta = fe.abs - self.drag_state.drag_start;
-                    let new_offset = current_offset + drag_delta * self.config.pan_sensitivity;
-                    let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
-                    let size = rotated_image_container.area().rect(cx).size;
-                    script_apply_eval!(cx, rotated_image_container, {
-                        margin +: { top: #(new_offset.y), left: #(new_offset.x) },
-                        width: #(size.x),
-                        height: #(size.y)
-                    });
-                    self.drag_state.pan_offset = Some(new_offset);
-                }
-                self.drag_state.drag_start = fe.abs;
+            Hit::FingerUp(fe) if fe.is_mouse() && fe.is_primary_hit() => {
+                let released_press = self.pinch_zoom.handle_mouse(TouchState::Stop, fe.abs, fe.time, true);
+                self.handle_released_press(cx, released_press);
             }
             _ => {}
         }
+        if let Event::TouchUpdate(e) = event {
+            if e.touches.iter().any(|touch| touch.state == TouchState::Start) {
+                self.stop_single_tap_timer(cx);
+            }
+            let view_area = self.view.area();
+            let view_rect = view_area.rect(cx);
+            let overlay_rects = self.get_overlay_ui_rects(cx);
+            let released_press = self.pinch_zoom.handle_touch_update(e.time, &e.touches, |touch| {
+                // A touch is ours if it's on us and not on a button or a panel of the UI overlay.
+                let claimed_by = touch.handled.get();
+                let is_ours = (claimed_by.is_empty() || claimed_by == view_area)
+                    && view_rect.contains(touch.abs)
+                    && !overlay_rects.iter().flatten().any(|rect| rect.contains(touch.abs));
+                if is_ours && touch.state == TouchState::Start {
+                    touch.handled.set(view_area);
+                }
+                is_ours
+            });
+            self.handle_released_press(cx, released_press);
+        }
+        // The overlay doesn't auto-hide while pointers are down on the image.
+        let has_pointers_down = self.pinch_zoom.has_pointers_down();
+        if has_pointers_down != had_pointers_down {
+            cx.stop_timer(self.hide_ui_timer);
+            self.hide_ui_timer = Timer::empty();
+            if !has_pointers_down && self.ui_overlay_visible && !self.mouse_over_overlay_ui {
+                self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+            }
+        }
         if let Event::Scroll(scroll_event) = event {
-            if self.mouse_cursor_hover_over_image {
+            if content_rect.contains(scroll_event.abs) {
                 let scroll_delta = scroll_event.scroll.y;
                 // Scale the zoom factor proportionally to the scroll magnitude,
                 // clamped so each scroll tick produces a gentle zoom step.
                 let normalized = (scroll_delta.abs() / 200.0).clamp(0.005, 0.06);
                 if scroll_delta > 0.0 {
-                    self.adjust_zoom(cx, 1.0 + normalized);
+                    self.pinch_zoom.zoom_by(1.0 + normalized, scroll_event.abs);
                 } else if scroll_delta < 0.0 {
-                    self.adjust_zoom(cx, 1.0 / (1.0 + normalized));
+                    self.pinch_zoom.zoom_by(1.0 / (1.0 + normalized), scroll_event.abs);
                 }
             }
+        }
+        if let Event::Pinch(pinch) = event {
+            self.pinch_zoom.handle_trackpad_pinch(pinch.phase, pinch.abs, pinch.scale);
         }
         if let Event::KeyDown(e) = event {
             match &e.key_code {
                 KeyCode::Minus | KeyCode::NumpadSubtract => {
                     // Zoom out (make image smaller)
-                    self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
+                    self.pinch_zoom.animate_zoom_by(1.0 / ZOOM_STEP);
                 }
                 KeyCode::Equals | KeyCode::NumpadAdd => {
                     // Zoom in (make image larger)
-                    self.adjust_zoom(cx, self.config.zoom_scale_factor);
+                    self.pinch_zoom.animate_zoom_by(ZOOM_STEP);
                 }
                 KeyCode::Key0 | KeyCode::Numpad0 => {
-                    self.reset_drag_state(cx);
+                    self.pinch_zoom.animate_zoom_to_fit();
                 }
                 _ => {}
             }
         }
-        if let Event::TouchUpdate(touch_event) = event {
-            self.handle_pinch_to_zoom(cx, touch_event);
+        if let Some(ne) = self.zoom_next_frame.is_event(event) {
+            self.zoom_next_frame = NextFrame::default();
+            self.pinch_zoom.advance_animation(ne.time);
+        }
+        if self.pinch_zoom.get_content_rect() != content_rect {
+            self.apply_image_transform(cx);
+        }
+        if self.pinch_zoom.is_animating() && self.zoom_next_frame == NextFrame::default() {
+            self.zoom_next_frame = cx.new_next_frame();
         }
 
         if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
@@ -636,7 +602,7 @@ impl Widget for ImageViewer {
             self.display_current_image(cx);
         }
         if self.refit_next_frame.is_event(event).is_some() {
-            self.apply_rotation_frame(cx);
+            self.apply_image_transform(cx);
         }
         if let Some(ne) = self.rotation_next_frame.is_event(event) {
             self.advance_rotation(cx, ne.time);
@@ -645,6 +611,15 @@ impl Widget for ImageViewer {
         if self.hide_ui_timer.is_event(event).is_some() {
             self.hide_overlay_ui(cx);
         }
+        if self.single_tap_timer.is_event(event).is_some() {
+            self.single_tap_timer = Timer::empty();
+            self.pinch_zoom.clear_last_tap();
+            if self.ui_overlay_visible {
+                self.hide_overlay_ui(cx);
+            } else {
+                self.show_overlay_ui(cx, true);
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -652,9 +627,10 @@ impl Widget for ImageViewer {
         let is_first = self.image_container_size.length() == 0.0;
         if is_first || self.needs_refit {
             self.needs_refit = false;
-            let container = cx.peek_walk_turtle(walk).size;
-            if container.x > 0.0 && container.y > 0.0 {
-                self.image_container_size = container;
+            let container = cx.peek_walk_turtle(walk);
+            if container.size.x > 0.0 && container.size.y > 0.0 {
+                self.image_container_size = container.size;
+                self.pinch_zoom.set_viewport(container);
                 if is_first {
                     self.next_frame = cx.new_next_frame();
                 } else {
@@ -675,19 +651,18 @@ impl Widget for ImageViewer {
         let meta_bottom_visible = 20.0_f64.max(insets.bottom);
         let button_top = button_top_visible - (slide * 220.0); // visible → -200
         let meta_bottom = meta_bottom_visible - (slide * 320.0); // visible → -300
-        let mut bg = self.view(cx, ids!(button_group_view));
-        script_apply_eval!(cx, bg, {
-            margin +: { top: #(button_top), right: #(button_right) }
-        });
-        let mut mv = self.view(cx, ids!(metadata_view));
-        script_apply_eval!(cx, mv, {
-            margin +: {
-                top: #(meta_top),
-                left: #(meta_left),
-                right: #(meta_right),
-                bottom: #(meta_bottom),
-            }
-        });
+        if let Some(mut button_group_view) = self.view(cx, ids!(button_group_view)).borrow_mut() {
+            button_group_view.walk.margin.top = button_top;
+            button_group_view.walk.margin.right = button_right;
+        }
+        if let Some(mut metadata_view) = self.view(cx, ids!(metadata_view)).borrow_mut() {
+            metadata_view.walk.margin = Inset {
+                top: meta_top,
+                left: meta_left,
+                right: meta_right,
+                bottom: meta_bottom,
+            };
+        }
 
         self.view.draw_walk(cx, scope, walk)
     }
@@ -718,16 +693,16 @@ impl MatchEvent for ImageViewer {
         let mut was_overlay_button_clicked = false;
         if self.view.button(cx, ids!(zoom_to_fit_button)).clicked(actions) {
             was_overlay_button_clicked = true;
-            self.reset(cx);
+            self.pinch_zoom.animate_zoom_to_fit();
         }
         if self.view.button(cx, ids!(zoom_out_button)).clicked(actions) {
             was_overlay_button_clicked = true;
-            self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
+            self.pinch_zoom.animate_zoom_by(1.0 / ZOOM_STEP);
         }
 
         if self.view.button(cx, ids!(zoom_in_button)).clicked(actions) {
             was_overlay_button_clicked = true;
-            self.adjust_zoom(cx, self.config.zoom_scale_factor);
+            self.pinch_zoom.animate_zoom_by(ZOOM_STEP);
         }
 
         if self.view.button(cx, ids!(rotate_cw_button)).clicked(actions) {
@@ -798,6 +773,40 @@ impl MatchEvent for ImageViewer {
 }
 
 impl ImageViewer {
+    /// Returns the rects of the UI overlay's button bar and metadata panel while it's showing.
+    fn get_overlay_ui_rects(&self, cx: &mut Cx) -> Option<[Rect; 2]> {
+        (self.ui_overlay_visible || self.is_hiding_overlay).then(|| [
+            self.view.view(cx, ids!(button_group_rounded_view)).area().rect(cx),
+            self.view.view(cx, ids!(metadata_rounded_view)).area().rect(cx),
+        ])
+    }
+
+    fn is_over_overlay_ui(&self, cx: &mut Cx, abs: DVec2) -> bool {
+        self.get_overlay_ui_rects(cx).iter().flatten().any(|rect| rect.contains(abs))
+    }
+
+    /// Handles a tap on the image or on the background around it.
+    ///
+    /// Only a tap toggles the UI overlay. A drag, a pinch, or a double tap never does.
+    fn handle_released_press(&mut self, cx: &mut Cx, released_press: ReleasedPress) {
+        let ReleasedPress::Tap { abs, double_tap_wait } = released_press else { return };
+        if self.is_over_overlay_ui(cx, abs) {
+            return;
+        }
+        if self.pinch_zoom.get_content_rect().contains(abs) {
+            // This might be the first tap of a double tap, so wait to see if it happens.
+            self.single_tap_timer = cx.start_timeout(double_tap_wait);
+        } else {
+            self.reset(cx);
+            cx.action(ImageViewerAction::Hide);
+        }
+    }
+
+    fn stop_single_tap_timer(&mut self, cx: &mut Cx) {
+        cx.stop_timer(self.single_tap_timer);
+        self.single_tap_timer = Timer::empty();
+    }
+
     /// Shows the UI overlay (buttons + metadata) and optionally starts the auto-hide timer.
     fn show_overlay_ui(&mut self, cx: &mut Cx, start_auto_hide_timer: bool) {
         if !self.ui_overlay_visible {
@@ -832,7 +841,9 @@ impl ImageViewer {
         self.rotation_target_angle = 0.0;
         self.rotation_anim_start_time = None;
         self.is_animating_rotation = false; // Reset animation state
-        self.previous_pinch_distance = None; // Reset pinch tracking
+        self.pinch_zoom.reset();
+        self.zoom_next_frame = NextFrame::default();
+        self.stop_single_tap_timer(cx);
         self.mouse_cursor_hover_over_image = false; // Reset hover state
         self.last_mouse_pos = DVec2::default();
         self.receiver = None;
@@ -848,29 +859,10 @@ impl ImageViewer {
         self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
         // Snap to fully visible (no animation on reset).
         self.animator_cut(cx, ids!(ui_animator.show));
-        self.reset_drag_state(cx);
         let rotated_image_ref = self
             .view
             .image(cx, ids!(rotated_image_container.rotated_image));
         rotated_image_ref.set_texture(cx, None);
-    }
-
-    /// Updates the shader uniforms of the rotated image widget with the current rotation,
-    /// and requests a redraw.
-    /// Resets the drag state of the modal to its initial state.
-    ///
-    /// This function can be used to reset drag state when the magnifying glass is toggled off.
-    fn reset_drag_state(&mut self, cx: &mut Cx) {
-        self.drag_state = DragState::default();
-
-        // Reset image position and scale
-        let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
-        script_apply_eval!(cx, rotated_image_container, {
-            margin +: { top: 0.0, left: 0.0 }
-        });
-        rotated_image_container.redraw(cx);
-
-        self.apply_rotation_frame(cx);
     }
 
     /// Displays an image in the image viewer widget.
@@ -894,7 +886,6 @@ impl ImageViewer {
                 Err(_) => LoadState::Error(ImageViewerError::BadData),
             };
             cx.action(ImageViewerAction::Show(load_state));
-            self.show_overlay_ui(cx, true);
             return;
         }
         if let Some(new_value) = self.background_task_id.checked_add(1) {
@@ -910,7 +901,6 @@ impl ImageViewer {
         if let Err(e) = spawned {
             error!("Failed to spawn the image decoding thread: {e:?}");
         }
-        self.show_overlay_ui(cx, true);
     }
 
     /// Displays an image in the image viewer widget using the provided texture.
@@ -944,40 +934,30 @@ impl ImageViewer {
         if !self.is_animating_rotation {
             self.current_angle = f64::from(self.rotation_step) * 90.0;
         }
-        self.apply_rotation_frame(cx);
+        self.apply_image_transform(cx);
     }
 
-    fn apply_rotation_frame(&mut self, cx: &mut Cx) {
+    /// Puts the image where it currently belongs, at its current size and rotation.
+    fn apply_image_transform(&mut self, cx: &mut Cx) {
         let (w, h) = (self.natural_dimension.x, self.natural_dimension.y);
         if w <= 0.0 || h <= 0.0 || self.image_container_size.length() == 0.0 {
             return;
         }
+        // What gets zoomed and panned is the box around the rotated image.
         let rad = self.current_angle.to_radians();
         let (ca, sa) = (rad.cos().abs(), rad.sin().abs());
-        let bbox_w = w * ca + h * sa;
-        let bbox_h = w * sa + h * ca;
-        let fit = (self.image_container_size.x / bbox_w)
-            .min(self.image_container_size.y / bbox_h);
-        self.capped_dimension = DVec2 { x: bbox_w * fit, y: bbox_h * fit };
-        let zoom = self.drag_state.zoom_level;
-        let frame_w = self.capped_dimension.x * zoom;
-        let frame_h = self.capped_dimension.y * zoom;
-        let image_w = w * fit * zoom;
-        let image_h = h * fit * zoom;
-        let angle = self.current_angle;
-        let mut rotated_image = self.view.image(cx, ids!(rotated_image));
-        script_apply_eval!(cx, rotated_image, {
-            draw_bg +: {
-                rotation: #(angle),
-                image_dim_w: #(image_w),
-                image_dim_h: #(image_h),
-            }
-        });
-        if let Some(mut img) = rotated_image.borrow_mut() {
-            img.walk.width = Size::Fixed(frame_w);
-            img.walk.height = Size::Fixed(frame_h);
+        self.pinch_zoom.set_content_size(dvec2(w * ca + h * sa, w * sa + h * ca));
+        let rect = self.pinch_zoom.get_content_rect();
+        let scale = self.pinch_zoom.get_content_scale();
+        if let Some(mut image) = self.view.image(cx, ids!(rotated_image)).borrow_mut() {
+            image.walk.abs_pos = Some(rect.pos);
+            image.walk.width = Size::Fixed(rect.size.x);
+            image.walk.height = Size::Fixed(rect.size.y);
+            image.draw_bg.rotation = self.current_angle as f32;
+            image.draw_bg.image_dim_w = (w * scale) as f32;
+            image.draw_bg.image_dim_h = (h * scale) as f32;
         }
-        rotated_image.redraw(cx);
+        self.view.area().redraw(cx);
     }
 
     /// Starts a rotation animation, with a target of `deg` additional degrees beyond the current rotation.
@@ -1008,49 +988,7 @@ impl ImageViewer {
         } else {
             self.rotation_next_frame = cx.new_next_frame();
         }
-        self.apply_rotation_frame(cx);
-    }
-
-    /// Adjust the zoom level of the image viewer based on the given zoom factor.
-    fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f64) {
-        let target_zoom = (self.drag_state.zoom_level * zoom_factor).max(self.config.min_zoom);
-        self.drag_state.zoom_level = (target_zoom * 1000.0).round() / 1000.0;
-        self.apply_rotation_frame(cx);
-    }
-
-    /// Handle touch update events, specifically the pinch gesture to zoom in/out.
-    ///
-    /// This method implements pinch-to-zoom functionality by:
-    /// 1. Detecting when exactly two touch points are present
-    /// 2. Calculating the current distance between the two touch points
-    /// 3. Comparing it to the previous distance to determine the scale factor
-    /// 4. Applying the scale factor to adjust the zoom level
-    /// 5. Resetting the pinch tracking when fewer than two touches are detected
-    ///
-    /// When the event contains two touches, the distance between the two touches is used
-    /// to calculate a scale factor. The scale factor is then passed to `adjust_zoom` to
-    /// adjust the zoom level of the image viewer. When the event contains less than two
-    /// touches, the previous pinch distance is reset to `None`.
-    fn handle_pinch_to_zoom(&mut self, cx: &mut Cx, event: &TouchUpdateEvent) {
-        if event.touches.iter().any(|touch| touch.state == TouchState::Cancel) {
-            self.previous_pinch_distance = None;
-            return;
-        }
-        if event.touches.len() == 2 {
-            let touch1 = &event.touches[0];
-            let touch2 = &event.touches[1];
-
-            let current_distance = (touch1.abs - touch2.abs).length();
-
-            if let Some(previous_distance) = self.previous_pinch_distance {
-                let scale = current_distance / previous_distance;
-                self.adjust_zoom(cx, scale);
-            }
-
-            self.previous_pinch_distance = Some(current_distance);
-        } else {
-            self.previous_pinch_distance = None;
-        }
+        self.apply_image_transform(cx);
     }
 
     /// Shows a loading message in the footer.
@@ -1135,54 +1073,6 @@ impl ImageViewer {
                 .label(cx, ids!(username_label_view.username))
                 .set_text(cx, &sender);
         }
-    }
-}
-
-impl ImageViewerRef {
-    /// Configure zoom and pan settings for the image viewer
-    pub fn configure_zoom(&mut self, config: ImageViewerZoomConfig) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.config = config;
-    }
-
-    /// See [`ImageViewer::show_loaded()`].
-    pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &Arc<[u8]>) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show_loaded(cx, image_bytes)
-    }
-
-    /// Display the image viewer widget with the provided texture, metadata and loading spinner.
-    pub fn show_loading(
-        &mut self,
-        cx: &mut Cx,
-        texture: Option<Texture>,
-        metadata: &Option<ImageViewerMetaData>,
-    ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.texture = texture.clone();
-        inner.next_frame = cx.new_next_frame();
-        if let Some(metadata) = metadata {
-            inner.set_metadata(cx, metadata);
-        }
-        inner.show_loading(cx);
-    }
-
-    /// See [`ImageViewer::show_error()`].
-    pub fn show_error(&mut self, cx: &mut Cx, error: &ImageViewerError) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show_error(cx, error);
-    }
-
-    /// See [`ImageViewer::hide_footer()`].
-    pub fn hide_footer(&mut self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.hide_footer(cx);
-    }
-
-    /// See [`ImageViewer::reset()`].
-    pub fn reset(&mut self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.reset(cx);
     }
 }
 

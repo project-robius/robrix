@@ -17,6 +17,7 @@ pub mod mention_popup;
 pub mod mentionable_text_input;
 pub mod navigation_bar_button;
 pub mod password_input;
+pub mod pinch_zoom;
 pub mod popup_list;
 pub mod progress_bar;
 pub mod room_filter_input_bar;
