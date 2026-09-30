@@ -131,7 +131,10 @@ impl Widget for MentionableTextInput {
 
             // The popup handles Escape/Back itself; the input also detects outside clicks.
             let should_dismiss = match event {
-                Event::MouseDown(e) => is_outside(cx, &popup_ref, &text_input_area, e.abs),
+                // Let the popup itself handle the back button, otherwise if we both handle it
+                // then a single back-press would hide the popup and go back to the previous room.
+                Event::MouseDown(e) => !e.button.is_back()
+                    && is_outside(cx, &popup_ref, &text_input_area, e.abs),
                 Event::TouchUpdate(e) => e.touches.iter().any(
                     |t| t.state == TouchState::Start && is_outside(cx, &popup_ref, &text_input_area, t.abs)
                 ),
