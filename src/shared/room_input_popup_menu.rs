@@ -203,7 +203,8 @@ impl RoomInputPopupMenu {
     fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
         let main_rect = self.view(cx, ids!(main_content)).area().rect(cx);
         match event {
-            Event::MouseDown(e) => !main_rect.contains(e.abs),
+            // handle the back button so it doesn't also go back to the previous room.
+            Event::MouseDown(e) => !e.button.is_back() && !main_rect.contains(e.abs),
             Event::LongPress(e) => !main_rect.contains(e.abs),
             Event::TouchUpdate(e) => e.touches.iter().any(|touch| {
                 touch.state == TouchState::Start && !main_rect.contains(touch.abs)
