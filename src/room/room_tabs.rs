@@ -281,7 +281,7 @@ impl TabButtonInteraction {
                 let button_area = pressed.button.as_ref().map_or(pressed.original_area, |b| b.area());
                 let button_rect = pressed.button.as_ref().map_or(pressed.original_rect, |b| b.area().clipped_rect(cx));
                 // This is similar to `was_tap()` but doesn't check TAP_COUNT_TIME, so we don't use it.
-                if !e.has_long_press_occurred
+                if !e.is_sweep && !e.has_long_press_occurred
                     && (e.abs - e.abs_start).length() < TAP_COUNT_DISTANCE
                     && button_rect.contains(e.abs)
                     && cx.switch_finger_capture(tab_area, button_area, Area::Empty)

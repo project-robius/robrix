@@ -6,7 +6,7 @@ use std::sync::{mpsc::Receiver, Arc};
 
 use chrono::{DateTime, Local};
 use makepad_widgets::{
-    event::TouchUpdateEvent,
+    event::{TouchState, TouchUpdateEvent},
     image_cache::{decode_image_from_data, looks_like_svg, ImageBuffer, ImageError},
     *,
 };
@@ -1032,6 +1032,10 @@ impl ImageViewer {
     /// adjust the zoom level of the image viewer. When the event contains less than two
     /// touches, the previous pinch distance is reset to `None`.
     fn handle_pinch_to_zoom(&mut self, cx: &mut Cx, event: &TouchUpdateEvent) {
+        if event.touches.iter().any(|touch| touch.state == TouchState::Cancel) {
+            self.previous_pinch_distance = None;
+            return;
+        }
         if event.touches.len() == 2 {
             let touch1 = &event.touches[0];
             let touch2 = &event.touches[1];
