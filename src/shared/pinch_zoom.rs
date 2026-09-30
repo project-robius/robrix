@@ -50,6 +50,8 @@ const MAX_UNDERZOOM_PERCENT: f64 = 40.0;
 /// How close an edge of the content can be moved to the opposite edge of the viewport,
 /// as a fraction of the viewport's width or height.
 const PAN_PADDING_FRACTION: f64 = 0.25;
+/// How far a held double tap has to be dragged down (or up) to double (or halve) the zoom, in points.
+const ONE_FINGER_ZOOM_DOUBLING_DISTANCE: f64 = 200.0;
 
 /// A drag only flings the content if it let go while moving at least this fast
 /// along either axis, in points per second.
@@ -496,13 +498,9 @@ impl PinchZoom {
                 self.zoom_about(prev_focus, focus, factor);
             }
             Gesture::OneFingerZoom { anchor_abs } => {
-                // Dragging down zooms in and dragging up zooms out, by the square root
-                // of how many times farther from the double tap the finger has gotten.
-                let get_zoom_at = |y: f64| {
-                    let zoom = ((y - anchor_abs.y).abs() / TOUCH_SLOP).max(1.0).sqrt();
-                    if y < anchor_abs.y { 1.0 / zoom } else { zoom }
-                };
-                self.zoom_about(anchor_abs, anchor_abs, get_zoom_at(abs.y) / get_zoom_at(prev_abs.y));
+                // Dragging down zooms in and dragging up zooms out, at the same rate all the way.
+                let factor = ((abs.y - prev_abs.y) / ONE_FINGER_ZOOM_DOUBLING_DISTANCE).exp2();
+                self.zoom_about(anchor_abs, anchor_abs, factor);
             }
             Gesture::PossibleTap { .. } | Gesture::None => {}
         }
