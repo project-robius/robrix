@@ -6486,7 +6486,7 @@ impl Widget for Message {
                             && !touch.handled.get().is_empty())
                             .then_some(touch.uid);
                     }
-                    TouchState::Stop if self.pressed_touch_uid == Some(touch.uid) => {
+                    TouchState::Stop | TouchState::Cancel if self.pressed_touch_uid == Some(touch.uid) => {
                         self.pressed_touch_uid = None;
                     }
                     _ => { }

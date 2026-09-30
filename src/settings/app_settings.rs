@@ -82,56 +82,55 @@ script_mod! {
         text_style_normal: MESSAGE_TEXT_STYLE { font_size: 11 },
     }
 
-    // A single item within a Robrix-styled settings DropDown popup menu.
-    mod.widgets.RobrixSettingsPopupMenuItem = PopupMenuItem {
-        width: Fill, height: Fit
-        align: Align{y: 0.5}
-        padding: Inset{top: 8, bottom: 8, left: 28, right: 14}
+    // A DropDown2 styled to match other Robrix settings controls.
+    mod.widgets.RobrixSettingsDropDown = DropDown2Flat {
+        width: 218, height: (mod.widgets.SETTINGS_BUTTON_HEIGHT),
+        padding: Inset{top: 8, bottom: 8, left: 12, right: 30}
+        margin: Inset{left: 5, top: 5, bottom: 5}
+        align: Align{x: 0.0, y: 0.5}
 
-        draw_text +: {
+        item_height: (mod.widgets.SETTINGS_BUTTON_HEIGHT),
+        item_padding: Inset{left: 28, right: 14}
+        popup_padding: 4,
+        popup_min_width: 260,
+
+        draw_popup_bg +: {
+            color: (COLOR_PRIMARY),
+            border_color: (COLOR_SECONDARY_DARKER),
+            border_size: 1.0,
+            border_radius: 4.0,
+        }
+
+        draw_item +: {
+            color: (COLOR_PRIMARY),
+            color_hover: (COLOR_BG_PREVIEW),
+            color_active: (COLOR_BG_PREVIEW),
+            mark_color: uniform(COLOR_ACTIVE_PRIMARY_DARKER),
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
+                sdf.fill(self.color.mix(self.color_active, self.active).mix(self.color_hover, self.hover))
+
+                // Keep the selected option marked while another row is hovered.
+                let c = vec2(12.0, self.rect_size.y * 0.5)
+                sdf.move_to(c.x - 3.0, c.y - 1.0)
+                sdf.line_to(c.x, c.y + 3.0)
+                sdf.line_to(c.x + 4.0, c.y - 3.0)
+                sdf.stroke(self.mark_color * self.active, 1.5)
+                return sdf.result
+            }
+        }
+
+        draw_item_text +: {
             color: (MESSAGE_TEXT_COLOR),
             color_hover: (MESSAGE_TEXT_COLOR),
             color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
             text_style: SETTINGS_REGULAR_TEXT_STYLE {},
         }
 
-        draw_bg +: {
-            color: (COLOR_PRIMARY),
-            color_hover: (COLOR_BG_PREVIEW),
-            color_active: (COLOR_BG_PREVIEW),
-            border_color: vec4(0.0, 0.0, 0.0, 0.0),
-            border_color_hover: vec4(0.0, 0.0, 0.0, 0.0),
-            border_color_active: vec4(0.0, 0.0, 0.0, 0.0),
-            border_size: 0.0,
-            border_radius: 3.0,
-            mark_color: vec4(0.0, 0.0, 0.0, 0.0),
-            mark_color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
+        draw_scroll_arrow +: {
+            color: (MESSAGE_TEXT_COLOR),
         }
-    }
-
-    // The popup list shown when a RobrixSettingsDropDown is opened.
-    mod.widgets.RobrixSettingsPopupMenu = PopupMenu {
-        width: 260, height: Fit
-        padding: 4,
-
-        menu_item: mod.widgets.RobrixSettingsPopupMenuItem{}
-
-        draw_bg +: {
-            color: (COLOR_PRIMARY),
-            border_color: (COLOR_SECONDARY_DARKER),
-            border_size: 1.0,
-            border_radius: 4.0,
-        }
-    }
-
-    // A DropDown styled to match other Robrix settings controls.
-    mod.widgets.RobrixSettingsDropDown = DropDownFlat {
-        width: 218, height: (mod.widgets.SETTINGS_BUTTON_HEIGHT),
-        padding: Inset{top: 8, bottom: 8, left: 12, right: 30}
-        margin: Inset{left: 5, top: 5, bottom: 5}
-        align: Align{x: 0.0, y: 0.5}
-
-        popup_menu: mod.widgets.RobrixSettingsPopupMenu {}
 
         draw_text +: {
             color: (MESSAGE_TEXT_COLOR),
@@ -150,16 +149,16 @@ script_mod! {
             border_color_hover: (COLOR_ACTIVE_PRIMARY),
             border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER),
             border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER),
+            border_color_disabled: uniform(COLOR_SECONDARY_DARKER),
             border_size: 1.0,
             border_radius: 4.0,
             arrow_color: (MESSAGE_TEXT_COLOR),
             arrow_color_hover: (COLOR_ACTIVE_PRIMARY_DARKER),
-            arrow_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER),
-            arrow_color_down: (COLOR_ACTIVE_PRIMARY_DARKER),
+            arrow_color_focus: uniform(COLOR_ACTIVE_PRIMARY_DARKER),
+            arrow_color_down: uniform(COLOR_ACTIVE_PRIMARY_DARKER),
+            arrow_color_disabled: uniform(COLOR_SECONDARY_DARKER),
 
-            // The base DropDownFlat shader draws the arrow BEFORE the box,
-            // so the box fill paints over it. Override to draw the rounded
-            // rect first and then the arrow on top.
+            // Match the arrow size and state colors of the other settings controls.
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
 
@@ -547,7 +546,7 @@ impl AppSettings {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
 
-        let view_mode_dropdown = self.view.drop_down(cx, ids!(view_mode_dropdown));
+        let view_mode_dropdown = self.view.drop_down2(cx, ids!(view_mode_dropdown));
         if let Some(index) = view_mode_dropdown.changed(actions) {
             let new_mode = ViewModeOverride::from_index(index);
             if new_mode != app_state.app_prefs.view_mode {
@@ -668,7 +667,7 @@ impl AppSettings {
             }
         }
 
-        let receipts_privacy_dropdown = self.view.drop_down(cx, ids!(read_receipts_privacy_dropdown));
+        let receipts_privacy_dropdown = self.view.drop_down2(cx, ids!(read_receipts_privacy_dropdown));
         if let Some(index) = receipts_privacy_dropdown.changed(actions) {
             let new_privacy = ReadReceiptsPrivacy::from_index(index);
             if new_privacy != app_state.app_prefs.read_receipts_privacy {
@@ -683,7 +682,7 @@ impl AppSettings {
             }
         }
 
-        let mark_as_read_dropdown = self.view.drop_down(cx, ids!(mark_as_read_dropdown));
+        let mark_as_read_dropdown = self.view.drop_down2(cx, ids!(mark_as_read_dropdown));
         if let Some(index) = mark_as_read_dropdown.changed(actions) {
             let new_behavior = MarkAsReadBehavior::from_index(index);
             if new_behavior != app_state.app_prefs.mark_as_read_behavior {
@@ -821,13 +820,13 @@ impl AppSettings {
     ///
     /// This is safe to call from `on_after_apply` since it doesn't use `cx.with_vm`.
     fn populate_safe(cx: &mut Cx, view: &View, prefs: &AppPreferences) {
-        view.drop_down(cx, ids!(view_mode_dropdown))
+        view.drop_down2(cx, ids!(view_mode_dropdown))
             .set_selected_item(cx, prefs.view_mode.to_index());
 
-        view.drop_down(cx, ids!(read_receipts_privacy_dropdown))
+        view.drop_down2(cx, ids!(read_receipts_privacy_dropdown))
             .set_selected_item(cx, prefs.read_receipts_privacy.to_index());
         Self::update_read_receipts_privacy_description(cx, view, prefs.read_receipts_privacy);
-        view.drop_down(cx, ids!(mark_as_read_dropdown))
+        view.drop_down2(cx, ids!(mark_as_read_dropdown))
             .set_selected_item(cx, prefs.mark_as_read_behavior.to_index());
         Self::update_mark_as_read_description(cx, view, prefs.mark_as_read_behavior);
         Self::update_toggle_description(cx, view, ids!(show_read_receipts_description), prefs.show_read_receipts, SHOW_READ_RECEIPTS_DESC);
