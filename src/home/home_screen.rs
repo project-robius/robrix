@@ -523,6 +523,11 @@ impl Widget for HomeScreen {
                         self.view.spaces_bar_wrapper(cx, ids!(spaces_bar_wrapper))
                             .show_or_hide(cx, self.is_spaces_bar_shown);
                     }
+                    Some(NavigationBarAction::PrepareSettings) => {
+                        // Calling `page()` instantiates the settings page (if needed) but doesn't show it.
+                        self.view.page_flip(cx, ids!(home_screen_page_flip))
+                            .page(cx, page_for_tab(&SelectedTab::Settings));
+                    }
                     // We're the ones who emitted this action, so we don't need to handle it again.
                     Some(NavigationBarAction::TabSelected(_))
                     | None => { }
