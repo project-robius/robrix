@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, encryption_settings::EncryptionSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, is_settings_screen_shown, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, encryption_settings::EncryptionSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}, utils};
 
 /// The space between the settings content and the screen's left and right edges.
 const SIDE_PADDING: f64 = 15.0;
@@ -113,6 +113,12 @@ pub struct SettingsScreen {
 
 impl Widget for SettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // The top-level PageFlip widget still sends events while settings is hidden,
+        // so we have to ignore those non-interactive events.
+        let is_shown = is_settings_screen_shown(scope);
+        if !is_shown && (utils::is_interactive_hit_event(event) || matches!(event, Event::Signal)) {
+            return;
+        }
         self.view.handle_event(cx, event, scope);
 
         // ScriptReapply preserves text fields (String / ArcStringMut bail out),
@@ -133,7 +139,7 @@ impl Widget for SettingsScreen {
         let area = self.view.area();
         // Ownership decides for every gesture, not key focus. Checked before
         // `back_pressed()` because that call consumes: only the owner may make it.
-        let close_pane = {
+        let close_pane = is_shown && {
             matches!(
                 event,
                 Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
@@ -155,6 +161,8 @@ impl Widget for SettingsScreen {
             }
         };
         if close_pane {
+            // Make sure nothing in the settings screen still has key focus when it's hidden.
+            cx.set_key_focus(Area::Empty);
             cx.action(NavigationBarAction::CloseSettings);
         }
 
@@ -234,7 +242,7 @@ impl SettingsScreen {
         match mode {
             PopulateMode::Initial => {
                 self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
-                self.view.encryption_settings(cx, ids!(encryption_settings)).populate(cx);
+                self.view.encryption_settings(cx, ids!(encryption_settings)).populate(cx, app_state.recovery_state);
                 self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
                 self.view.privacy_settings(cx, ids!(privacy_settings)).populate(cx);
             }

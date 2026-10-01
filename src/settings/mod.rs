@@ -1,4 +1,6 @@
-use makepad_widgets::ScriptVm;
+use makepad_widgets::{Scope, ScriptVm};
+
+use crate::{app::AppState, home::navigation_tab_bar::SelectedTab};
 
 pub mod settings_screen;
 pub mod account_settings;
@@ -32,4 +34,11 @@ pub(crate) enum PopulateMode {
     /// user-mutable inputs alone (preserves in-progress edits) and
     /// re-derives "edited" button states from the current input.
     AfterReapply,
+}
+
+/// Returns whether the `SettingsScreen` is the currently-shown top-level view.
+pub(crate) fn is_settings_screen_shown(scope: &mut Scope) -> bool {
+    scope.data
+        .get::<AppState>()
+        .is_some_and(|a| matches!(a.selected_tab, SelectedTab::Settings))
 }
