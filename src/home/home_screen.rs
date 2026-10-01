@@ -395,6 +395,12 @@ impl Widget for SpacesBarWrapper {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // don't draw anything if we're hidden (and also not animating in)
+        if self.animator_in_state(cx, ids!(spaces_bar_animator.hide))
+            && !self.animator.is_track_animating(live_id!(spaces_bar_animator))
+        {
+            return DrawStep::done();
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -408,7 +414,14 @@ impl SpacesBarWrapperRef {
         } else {
             inner.animator_play(cx, ids!(spaces_bar_animator.hide));
         }
-        inner.redraw(cx);
+        if show && inner.area().is_empty() {
+            // We don't draw anything while the spaces bar is hidden.
+            // Thus, before we show anything for the first time, we have to redraw
+            // the whole spaces bar and everything within it.
+            cx.redraw_all();
+        } else {
+            inner.redraw(cx);
+        }
     }
 }
 

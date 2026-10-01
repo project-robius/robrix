@@ -393,6 +393,8 @@ script_mod! {
                     autocapitalize: None,
                     autocorrect: Disabled,
                     is_read_only: true
+                    // Starts out disabled because it's read-only by default.
+                    animator +: { disabled: { default: @on } }
                 }
 
                 Label {
