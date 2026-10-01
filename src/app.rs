@@ -172,8 +172,6 @@ pub struct App {
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
-    /// The latest known recovery state, used to warn on logout if recovery isn't set up.
-    #[rust(RecoveryState::Unknown)] recovery_state: RecoveryState,
     /// Latest known window geometry (size, fullscreen/maximized, etc).
     #[rust] window_geom: WindowGeomTracker,
 }
@@ -277,7 +275,7 @@ impl MatchEvent for App {
                 Some(LogoutConfirmModalAction::Open) => {
                     let logout_confirm_modal = self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal.content));
                     logout_confirm_modal.reset_state(cx);
-                    if self.recovery_state == RecoveryState::Disabled {
+                    if self.app_state.recovery_state == RecoveryState::Disabled {
                         logout_confirm_modal.set_message(cx, "Are you sure you want to logout?\n\n\
                             Your encryption keys aren't backed up. If this is your only device, you'll \
                             lose access to your encrypted messages for good.\n\n\
@@ -309,7 +307,6 @@ impl MatchEvent for App {
                     clear_all_app_state(cx);
                     self.ui.modal(cx, ids!(verification_modal)).close(cx);
                     self.app_state = Default::default();
-                    self.recovery_state = RecoveryState::Unknown;
                     // We also need to broadcast those default values out,
                     // such that all other widgets can be reset to their default state.
                     self.app_state.app_prefs.broadcast_all(cx);
@@ -335,6 +332,7 @@ impl MatchEvent for App {
                     log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
                     cancel_all_dictation();
                     self.app_state.logged_in = false;
+                    self.app_state.recovery_state = RecoveryState::Unknown;
                     self.update_login_visibility(cx);
                     self.ui.redraw(cx);
                 }
@@ -454,8 +452,11 @@ impl MatchEvent for App {
                 Some(AppStateAction::RestoreAppStateFromPersistentState(app_state)) => {
                     // Ignore the `logged_in` state that was stored persistently.
                     let logged_in_actual = self.app_state.logged_in;
+                    // The recovery state isn't persisted, so keep what we already know.
+                    let recovery_state = self.app_state.recovery_state;
                     self.app_state = app_state.clone();
                     self.app_state.logged_in = logged_in_actual;
+                    self.app_state.recovery_state = recovery_state;
                     room_pane::restore_saved_layout(self.app_state.room_pane_layout);
                     // Broadcast the restored preferences first so listeners
                     // (e.g. the Dock's captured `room_screen` template) are
@@ -544,7 +545,7 @@ impl MatchEvent for App {
                 _ => {}
             }
             if let Some(RecoveryAction::StateChanged(state)) = action.downcast_ref() {
-                self.recovery_state = *state;
+                self.app_state.recovery_state = *state;
                 continue;
             }
             match action.downcast_ref() {
@@ -1111,6 +1112,11 @@ pub struct AppState {
     /// so the `Home` screen and tab are always selected upon app startup.
     #[serde(skip)]
     pub selected_tab: SelectedTab,
+    /// The latest known recovery state.
+    ///
+    /// This isn't persisted, and is only updated by the top-level app.
+    #[serde(skip)]
+    pub recovery_state: RecoveryState,
     /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub saved_dock_state_home: SavedDockState,

@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{settings::is_settings_screen_shown, shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 script_mod! {
     link tsp_enabled
@@ -215,7 +215,7 @@ pub struct TspSettingsScreen {
 
 impl Widget for TspSettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.match_event(cx, event);
+        self.widget_match_event(cx, event, scope);
         self.view.handle_event(cx, event, scope);
     }
 
@@ -269,10 +269,8 @@ impl Widget for TspSettingsScreen {
     }
 }
 
-impl MatchEvent for TspSettingsScreen {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let mut republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
-
+impl WidgetMatchEvent for TspSettingsScreen {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions {
             match action.downcast_ref() {
                 // Add the new wallet to the list of drawn wallets.
@@ -379,6 +377,7 @@ impl MatchEvent for TspSettingsScreen {
                 }
                 Some(TspIdentityAction::DidRepublishResult(result)) => {
                     // restore the republish button to its original state.
+                    let mut republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
                     script_apply_eval!(cx, republish_identity_button, {
                         enabled: true,
                         text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT,
@@ -410,6 +409,10 @@ impl MatchEvent for TspSettingsScreen {
             }
         }
 
+        // Handle clicks, which can only happen while the settings screen is shown.
+        if !is_settings_screen_shown(scope) {
+            return;
+        }
 
         if self.view.button(cx, ids!(copy_identity_button)).clicked(actions) { 
             if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
@@ -431,7 +434,8 @@ impl MatchEvent for TspSettingsScreen {
         // Allow the user to republish their identity to the DID server.
         // This is primarily needed because some DID servers (e.g., the test servers)
         // frequently wipe their identity storage after a certain period of time.
-        if self.view.button(cx, ids!(republish_identity_button)).clicked(actions) {
+        let mut republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
+        if republish_identity_button.clicked(actions) {
             if self.has_default_wallet() {
                 if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                     script_apply_eval!(cx, republish_identity_button, {

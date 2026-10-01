@@ -5,6 +5,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::ConfirmDeleteAction,
+    settings::is_settings_screen_shown,
     shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}},
     tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
 };
@@ -133,7 +134,7 @@ impl Widget for WalletEntry {
         self.view.handle_event(cx, event, scope);
 
         let Some(metadata) = self.metadata.as_ref() else { return };
-        if let Event::Actions(actions) = event {
+        if let Event::Actions(actions) = event && is_settings_screen_shown(scope) {
             if self.view.button(cx, ids!(set_default_wallet_button)).clicked(actions) {
                 submit_tsp_request(TspRequest::SetDefaultWallet(metadata.clone()));
             }
