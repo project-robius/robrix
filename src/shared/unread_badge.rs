@@ -1,9 +1,13 @@
-//! This module defines a badge that shows the count of unread mentions (in red)
-//! or unread messages (in gray).
+//! This module defines a badge that shows the count of unread mentions
+//! (`@`-prefixed, in red) or unread messages (bare count, in gray).
+//!
+//! Color alone does not carry the mention/message distinction: the `@` prefix
+//! is the redundant channel that keeps the two readable for color-blind users
+//! and in isolation, where there is no neighbouring badge to compare against.
 
 use makepad_widgets::*;
 
-use crate::shared::styles::{COLOR_UNREAD_BADGE_MARKED, COLOR_UNREAD_BADGE_MESSAGES};
+use crate::shared::styles::{COLOR_UNREAD_BADGE_MARKED, COLOR_UNREAD_BADGE_MENTIONS, COLOR_UNREAD_BADGE_MESSAGES};
 
 
 script_mod! {
@@ -12,64 +16,30 @@ script_mod! {
 
     mod.widgets.UnreadBadge = #(UnreadBadge::register_widget(vm)) {
 
-        width: 27, height: 18,
+        width: 34, height: 20,
         align: Align{ x: 0.5, y: 0.5 }
         flow: Overlay,
-        // Let the badge's fade-out/glow effect render beyond its bounding rect
-        clip_x: false,
-        clip_y: false,
 
         rounded_view := View {
             width: Fill,
             height: Fill,
             show_bg: true,
-            clip_x: false,
-            clip_y: false,
-
             draw_bg +: {
                 badge_color: instance((COLOR_UNREAD_BADGE_MESSAGES)),
                 border_radius: instance(4.0)
-                // A larger border size results in a smaller oval
+                // Set this border_size to a larger value to make the oval smaller
                 border_size: instance(2.0)
-                // For unread mention badges only, we fade through a lighter color to reduce aliasing effects
-                // on lower-res screens, since red on purple looks blocky/pixellated otherwise.
-                fade_color: instance(#xFFC8B0)
-                fade_radius: uniform(5.0)
-                // Controls the transition of the outer border. 
-                // 0.0 is a crisp solid badge, 1.0 is a soft fading/dissolve transition.
-                soft: instance(0.0)
-
-                vertex: fn() {
-                    let m = self.fade_radius
-                    return self.clip_and_transform_vertex(
-                        self.rect_pos - vec2(m),
-                        self.rect_size + vec2(m * 2.0)
-                    )
-                }
 
                 pixel: fn() {
-                    let m = self.fade_radius
-                    let rs3 = self.rect_size + vec2(m * 2.0)
-                    let sdf = Sdf2d.viewport(self.pos * rs3)
-                    let bw = self.rect_size.x - (self.border_size * 2.0)
-                    let bh = self.rect_size.y - 2.0
-                    let bx = m + self.border_size
-                    let by = m + 1.0
-                    let rad = max(1.0, self.border_radius)
-                    sdf.box(bx, by, bw, bh, rad)
-                    let dist = sdf.shape
-                    // Note: this must NOT be named `half`, as that is a reserved
-                    // type keyword in MSL and HLSL (shader compilation fails).
-                    let half_bh = bh * 0.5
-                    let aa = clamp(0.5 - dist, 0.0, 1.0)
-                    let band_start = -half_bh * 0.45
-                    let t = clamp((dist - band_start) / (m - band_start), 0.0, 1.0)
-                    let s = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
-                    let warm = mix(self.badge_color.rgb, self.fade_color.rgb, s)
-                    let dissolve = 1.0 - s
-                    let color = mix(self.badge_color.rgb, warm, self.soft)
-                    let alpha = mix(aa, dissolve, self.soft)
-                    sdf.clear(vec4(color, alpha))
+                    let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                    sdf.box(
+                        self.border_size,
+                        1.0,
+                        self.rect_size.x - (self.border_size * 2.0),
+                        self.rect_size.y - 2.0,
+                        max(1.0, self.border_radius)
+                    )
+                    sdf.fill_keep(self.badge_color);
                     return sdf.result;
                 }
             }
@@ -83,7 +53,7 @@ script_mod! {
             text: "",
             draw_text +: {
                 color: #ffffff,
-                text_style: theme.font_regular {font_size: 8.0},
+                text_style: REGULAR_TEXT {font_size: 8.0},
             }
         }
     }
@@ -119,8 +89,12 @@ impl Widget for UnreadBadge {
         /// Helper function to format the badge's rounded rectangle.
         ///
         /// The rounded rectangle needs to be wider for longer text.
-        /// It also adds a plus sign at the end if the unread count is greater than 99. 
-        fn format_border_and_truncation(count: u64) -> (f64, &'static str) {
+        /// It also adds a plus sign at the end if the unread count is greater than 99.
+        ///
+        /// `extra_glyphs` accounts for characters drawn beyond the digits
+        /// themselves — the mention badge's leading `@` — so the pill grows to
+        /// fit them instead of clipping.
+        fn format_border_and_truncation(count: u64, extra_glyphs: u64) -> (f64, &'static str) {
             let (border_size, plus_sign) = if count > 99 {
                 (0.0, "+")
             } else if count > 9 {
@@ -128,7 +102,12 @@ impl Widget for UnreadBadge {
             } else {
                 (5.0, "")
             };
-            (border_size, plus_sign)
+            // Each extra glyph costs roughly one digit's worth of width, which
+            // the border insets by ~3px per step.
+            (
+                (border_size - 3.0 * extra_glyphs as f64).max(0.0),
+                plus_sign,
+            )
         }
 
         // Styling and label depend only on these counts; re-running the draw_bg
@@ -139,19 +118,21 @@ impl Widget for UnreadBadge {
         }
         self.last_drawn = Some(now);
 
-        // If there are unread mentions, show red badge and the number of unread mentions
+        // If there are unread mentions, show red badge and the number of unread mentions.
+        //
+        // The `@` matters: mentions and plain unreads were previously identical
+        // glyphs distinguished only by badge color, so a red "3" and a gray "3"
+        // are the same badge to anyone who can't separate the two hues. The
+        // prefix carries the same signal in a second channel.
         if self.unread_mentions > 0 {
-            let (border_size, plus_sign) = format_border_and_truncation(self.unread_mentions);
+            let (border_size, plus_sign) = format_border_and_truncation(self.unread_mentions, 1);
             self.label(cx, ids!(label_count))
-                .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_mentions, 99)));
+                .set_text(cx, &format!("@{}{plus_sign}", std::cmp::min(self.unread_mentions, 99)));
             let mut rounded_view = self.view(cx, ids!(rounded_view));
             script_apply_eval!(cx, rounded_view, {
                 draw_bg +: {
                     border_size: #(border_size),
-                    // Solid red core fading out through a lighter warm color.
-                    badge_color: #xFF1133,
-                    fade_color: #xFFC8B0,
-                    soft: 1.0
+                    badge_color: #(COLOR_UNREAD_BADGE_MENTIONS)
                 }
             });
             self.visible = true;
@@ -159,7 +140,7 @@ impl Widget for UnreadBadge {
         // If there are no unread mentions but there are unread messages, show the number
         // of unread messages, in the marked-unread color if the room is also marked unread.
         else if self.unread_messages > 0 {
-            let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages);
+            let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages, 0);
             let badge_color = if self.is_marked_unread {
                 COLOR_UNREAD_BADGE_MARKED
             } else {
@@ -171,8 +152,7 @@ impl Widget for UnreadBadge {
             script_apply_eval!(cx, rounded_view, {
                 draw_bg +: {
                     border_size: #(border_size),
-                    badge_color: #(badge_color),
-                    soft: 0.0
+                    badge_color: #(badge_color)
                 }
             });
             self.visible = true;
@@ -184,8 +164,7 @@ impl Widget for UnreadBadge {
             script_apply_eval!(cx, rounded_view, {
                 draw_bg +: {
                     border_size: 6.0, // larger value = smaller badge size
-                    badge_color: mod.widgets.COLOR_UNREAD_BADGE_MARKED,
-                    soft: 0.0
+                    badge_color: #(COLOR_UNREAD_BADGE_MARKED)
                 }
             });
             self.visible = true;
