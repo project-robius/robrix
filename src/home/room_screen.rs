@@ -111,8 +111,10 @@ script_mod! {
     // A download button or loading spinner shown beneath a message.
     mod.widgets.MessageDownloadSection = View {
         visible: false,
-        width: Fit, height: Fit,
-        flow: Right,
+        width: Fill, height: Fit,
+        flow: Flow.Right{wrap: true},
+        spacing: 8,
+        wrap_spacing: 8
         margin: Inset{top: 8, bottom: 2}
 
         download_button := RobrixIconButton {
@@ -127,7 +129,7 @@ script_mod! {
         share_button := RobrixIconButton {
             height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
             padding: Inset{left: 12, right: 12}
-            margin: Inset{left: 8}
+            margin: 0
             draw_icon.svg: (ICON_SHARE)
             icon_walk: Walk{width: 16, height: 16}
             text: "Share"
