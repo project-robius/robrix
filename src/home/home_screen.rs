@@ -18,7 +18,7 @@ use crate::{
     },
     shared::mention_popup::MentionablePopupRef,
     shared::speech_text_input::cancel_all_dictation,
-    utils::RoomNameId,
+    utils::{self, RoomNameId},
 };
 
 script_mod! {
@@ -357,6 +357,8 @@ pub struct SpacesBarWrapper {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+    /// Whether we drew the spaces bar last time (it's not drawn while hidden).
+    #[rust] was_drawn: bool,
 }
 
 impl ScriptHook for SpacesBarWrapper {
@@ -391,6 +393,11 @@ impl Widget for SpacesBarWrapper {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
+        // If we didn't draw the spaces bar last time, its areas are stale,
+        // so hit-testing them would be totally wrong.
+        if !self.was_drawn && utils::is_interactive_hit_event(event) {
+            return;
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -399,8 +406,10 @@ impl Widget for SpacesBarWrapper {
         if self.animator_in_state(cx, ids!(spaces_bar_animator.hide))
             && !self.animator.is_track_animating(live_id!(spaces_bar_animator))
         {
+            self.was_drawn = false;
             return DrawStep::done();
         }
+        self.was_drawn = true;
         self.view.draw_walk(cx, scope, walk)
     }
 }
