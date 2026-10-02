@@ -410,6 +410,8 @@ pub const COLOR_TEXT_WARNING_NOT_FOUND: Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
 pub const COLOR_BG_PREVIEW:            Vec4 = vec4(0.941, 0.961, 1.0, 1.0);
 /// #CDEDDF
 pub const COLOR_BG_PREVIEW_HOVER:      Vec4 = vec4(0.804, 0.929, 0.875, 1.0);
+/// The same as `SMALL_STATE_TEXT_COLOR` in the DSL above: #888888
+pub const SMALL_STATE_TEXT_COLOR:      Vec4 = vec4(0.533, 0.533, 0.533, 1.0);
 
 /// Applies positive (green) button styling to the given button.
 pub fn apply_positive_button_style(cx: &mut Cx, button: &mut ButtonRef) {
