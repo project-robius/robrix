@@ -97,8 +97,10 @@ impl WidgetNode for AvatarRow {
     fn set_visible(&mut self, cx: &mut Cx, visible: bool) { self.deref.set_visible(cx, visible) }
     fn set_scroll_pos(&mut self, cx: &mut Cx, v: Vec2d) { self.deref.set_scroll_pos(cx, v) }
 
-    /// The avatars and "+N" label come from templates, so the view doesn't know about them.
-    /// Include them here such that Makepad's widget tree can track and drop them when needed.
+    /// Visits the view's children plus the avatars and the "+N" label.
+    ///
+    /// The avatars and label come from templates, so the view doesn't know about them.
+    /// Listing them here lets Makepad's widget tree track them and drop them when needed.
     fn children(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) {
         self.deref.children(visit);
         for (i, (avatar, _)) in self.buttons.iter().enumerate() {
@@ -126,8 +128,8 @@ impl WidgetNode for AvatarRow {
 
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // we instantiated avatars via the template, so they're not tracked by makepad,
-        // meaning we have to forward actions to them directly.
+        // The avatars come from a template, so nothing else passes events to them;
+        // we forward actions to them directly, since they need those for async image loads.
         if let Event::Actions(_) = event {
             for (avatar_ref, _) in self.buttons.iter() {
                 avatar_ref.handle_event(cx, event, scope);
@@ -338,14 +340,14 @@ pub fn tooltip_list_of_users<'a>(
     room_id: &OwnedRoomId,
 ) -> String {
     let count = user_ids.len();
-    let named: Vec<(&OwnedUserId, Option<String>)> = user_ids
+    let ids_and_names: Vec<(&OwnedUserId, Option<String>)> = user_ids
         .take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
         .map(|user_id| (
             user_id,
             get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), true).into_option(),
         ))
         .collect();
-    let people: Vec<(&str, Option<&str>)> = named.iter()
+    let people: Vec<(&str, Option<&str>)> = ids_and_names.iter()
         .map(|(user_id, name)| (user_id.as_str(), name.as_deref()))
         .collect();
     let mut labels = distinct_user_labels(&people);

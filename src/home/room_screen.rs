@@ -17,7 +17,7 @@ use matrix_sdk::{
                 }
             },
             sticker::StickerEventContent,
-        }, matrix_uri::MatrixId, uint
+        }, matrix_uri::MatrixId
     }
 };
 use matrix_sdk_ui::timeline::{
@@ -38,9 +38,10 @@ use crate::{
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
+use crate::home::scroll_anchors::ScrollAnchors;
 use crate::home::state_event_group::{self, StateEventGroups};
-use crate::home::small_state_event::{populate_small_state_event, populate_state_event_group};
-use crate::home::timeline_items::{ItemDraw, PendingKnocks, TimelineInfo, date_divider_text, divider_span_end, item_draw};
+use crate::home::small_state_event::{populate_small_state_event, populate_group_summary_item};
+use crate::home::timeline_items::{ChangedItems, ItemDraw, PendingKnocks, TimelineInfo, date_divider_text, divider_span_end, index_of_event, item_draw, uses_compact_view};
 use crate::room::{
     pane_dock::{RoomPaneDockAction, RoomPaneDockWidgetExt, RoomPaneDockWidgetRefExt, SavedRoomPane},
     pinned_messages_list::{PinnedMessagesListAction, confirm_unpin_message},
@@ -87,17 +88,17 @@ const JUMP_SEARCH_NOT_FOUND_DELAY: f64 = 2.0;
 /// requesting more back pagination.
 const MAX_BACKWARDS_PAGINATIONS_WITHOUT_PROGRESS: usize = 5;
 
-/// The maximum number of backwards paginations where older events all get
-/// combined into a collapsed group at the top of the timline (meaning nothing new was displayed).
+/// The maximum number of backwards paginations in a row whose older events all go into the collapsed group at the top.
 ///
 /// That kind of pagination is common but is still real progress; we just need to keep going
 /// until we actually show something new to the user so they don't have to continually scroll up.
 ///
-/// This limit is kinda randomly chosen, but it covers an unlikely series of 2000 small state events
-/// (40 paginations * 50 events per pagination = 2000 events before we give up).
-const MAX_COLLAPSED_BACKWARDS_PAGINATIONS: usize = 40;
+/// This limit is kinda randomly chosen, but it covers an unlikely series of 500 small state events
+/// (10 paginations * 50 events per pagination = 500 events before we give up).
+const MAX_COLLAPSED_BACKWARDS_PAGINATIONS: usize = 10;
 
 /// How long after a backwards pagination fails before we try again, automatically or when the user scrolls up.
+///
 /// When offline, every try fails right away and pops up an error, so we shouldn't retry on every draw or scroll.
 const RETRY_PAGINATION_AFTER_ERROR_DELAY: Duration = Duration::from_secs(3);
 
@@ -628,7 +629,7 @@ script_mod! {
             ImageMessage := mod.widgets.ImageMessage {}
             CondensedImageMessage := mod.widgets.CondensedImageMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
-            StateEventGroup := mod.widgets.StateEventGroup {}
+            GroupSummaryItem := mod.widgets.GroupSummaryItem {}
             ZeroHeightItem := mod.widgets.ZeroHeightItem {}
             DateDivider := mod.widgets.DateDivider {}
             ReadMarker := mod.widgets.ReadMarker {}
@@ -812,27 +813,6 @@ fn display_name_or_user_id(cx: &mut Cx, room_id: &OwnedRoomId, user_id: OwnedUse
     user_profile_cache::get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), false)
         .into_option()
         .unwrap_or_else(|| user_id.to_string())
-}
-
-/// Searches backwards from `max_idx` through at most `limit` items
-/// for the item with the given event ID.
-pub(crate) fn index_of_event(
-    items: &Vector<Arc<TimelineItem>>,
-    event_id: &EventId,
-    max_idx: usize,
-    limit: usize,
-) -> Option<usize> {
-    items
-        .focus()
-        .narrow(..max_idx)
-        .into_iter()
-        .rev()
-        .take(limit)
-        .position(|i| i.as_event()
-            .and_then(|e| e.event_id())
-            .is_some_and(|ev_id| ev_id == event_id)
-        )
-        .map(|position| max_idx.saturating_sub(position).saturating_sub(1))
 }
 
 /// The main widget that displays a single Matrix room.
@@ -1541,7 +1521,7 @@ impl Widget for RoomScreen {
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
                     let (item, item_new_draw_status) = match draw {
-                        ItemDraw::GroupHead { group, event, content } => populate_state_event_group(
+                        ItemDraw::SummaryItem { group, event, content } => populate_group_summary_item(
                             cx,
                             list,
                             item_id,
@@ -1625,6 +1605,8 @@ impl Widget for RoomScreen {
                 };
                 item.draw_all(cx, scope);
             }
+
+            tl_state.scroll_anchors = None;
 
             // If the list is not filling the viewport (and back pagination isn't already in-progress),
             // then we need to back paginate the timeline until we have enough history to fill the viewport.
@@ -1730,9 +1712,6 @@ impl RoomScreen {
         let mut jump_to_read_receipt = None;
         let mut num_updates = 0;
 
-        // This is the scroll anchor used by an earlier update in this batch (see `anchor` below).
-        let mut followed_anchor: Option<ScrollAnchor> = None;
-
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             let update = match update {
@@ -1748,6 +1727,7 @@ impl RoomScreen {
                         changed_indices: 0..len,
                         clear_cache: true,
                         is_append: false,
+                        num_unchanged_at_end: 0,
                     }
                 }
                 update => update,
@@ -1755,7 +1735,6 @@ impl RoomScreen {
 
             match update {
                 TimelineUpdate::FirstUpdate { initial_items } => {
-                    followed_anchor = None;
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = initial_items.front().is_some_and(
@@ -1772,12 +1751,14 @@ impl RoomScreen {
                     tl.items = initial_items;
                     tl.pending_knocks = PendingKnocks::new(&tl.items);
                     let (groups, timeline) = tl.groups_and_timeline_info();
-                    groups.rebuild(&timeline, 0..usize::MAX);
+                    groups.rebuild(&timeline, 0..usize::MAX, 0);
+                    // The list hasn't drawn these items yet, so until it does, keep its new first item where it is.
+                    tl.scroll_anchors = Some(ScrollAnchors::at_list_position(portal_list, &tl.items, &tl.state_event_groups));
                     items_changed = true;
                     done_loading = true;
                 }
 
-                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache, num_unchanged_at_end } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("process_timeline_updates(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.kind.room_id());
@@ -1812,75 +1793,30 @@ impl RoomScreen {
                         //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                     }
 
-                    let prior_items_changed = clear_cache || changed_indices.start <= curr_first_id;
+                    let prior_items_changed = clear_cache || changed_indices.start <= tl.next_drawn_index(curr_first_id);
 
-                    // Knocks that were changed (answered or not) may cause collapsed groups to be recalculated.
-                    let changed_knocks = if clear_cache {
-                        Vec::new()
-                    } else {
-                        tl.pending_knocks.update(&tl.items, &new_items, changed_indices.clone())
-                    };
+                    let first_change = if clear_cache { 0 } else { changed_indices.start };
+                    let changes = ChangedItems::between(&tl.items, &new_items, first_change, num_unchanged_at_end);
+                    // Knocks that were changed (answered or not) might need us to recalculate collapsed groups.
+                    let changed_knocks = tl.pending_knocks.update(&tl.items, &new_items, &changes);
 
-                    // The scroll anchor: the item that was at the top of the view, which we keep at that same
-                    // spot on screen, so the view doesn't jump when items get added or removed above it.
-                    let mut anchor: Option<ScrollAnchor> = None;
-                    let mut view_moved = false;
+                    // Whether older events were added, even if they're not visible (like in a collapsed group).
+                    let added_older_events = new_items.iter().find_map(|i| i.as_event()?.event_id())
+                        != tl.items.iter().find_map(|i| i.as_event()?.event_id());
 
-                    if let Some(followed) = &followed_anchor {
-                        if let Some(new_index) = index_of_event(&new_items, &followed.event_id, new_items.len(), usize::MAX) {
-                            if portal_list.first_id() != new_index {
-                                portal_list.set_first_id_and_scroll(new_index, followed.scroll_offset);
-                            }
-                            // The current items are the ones that earlier update brought in.
-                            anchor = Some(ScrollAnchor { curr_index: followed.new_index, new_index, ..followed.clone() });
-                        }
-                    }
-
-                    else if !prior_items_changed && changed_knocks.is_empty() {
-                        // Nothing changed that would affect our viewport, so do nothing.
-                    }
-
-                    // If the prior items changed, we need to find the new index of an item that was visible
-                    // in the timeline viewport so that we can maintain the scroll position of that item,
-                    // which ensures that the timeline doesn't jump around unexpectedly and ruin the user's experience.
-                    //
-                    // This must be attempted before the jump below, because a re-created timeline can be
-                    // shorter than the old scroll index while still containing the anchored event.
-                    //
-                    // A knock that just got answered counts too, since it can result in more items joining a collapsed group.
-                    else if let Some(found) =
-                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items, |i| tl.next_drawn_index(i))
-                    {
-                        if found.curr_index != found.new_index {
-                            log!("process_timeline_updates(): jumping view from event index {} to new index {}, scroll {}, event ID {}",
-                                found.curr_index, found.new_index, found.scroll_offset, found.event_id,
-                            );
-                            portal_list.set_first_id_and_scroll(found.new_index, found.scroll_offset);
-                            // Hide the tooltip when the timeline jumps, as a hover-out event won't occur.
-                            cx.widget_action(ui, TooltipAction::HoverOut);
-                            view_moved = true;
-                        }
-                        anchor = Some(found);
-                    }
-                    else if curr_first_id >= new_items.len() {
-                        log!("process_timeline_updates(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
-                        portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
-                        portal_list.set_tail_range(true);
-                        jump_to_bottom_button.update_visibility(cx, true);
-                    }
-                    //
-                    // TODO: after a user is (un)blocked, all timelines are cleared. Handle that here.
-                    //
-                    else {
-                        // warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
-                    }
+                    // The items that were on screen when the portallist was last drawn,
+                    // which we want to keep at the same places on screen (in the viewport)
+                    // to prevent the view from jumping around.
+                    let mut anchors = ScrollAnchors::take(&mut tl.scroll_anchors, portal_list, &tl.items, &tl.state_event_groups);
+                    let added_at_front = first_change == 0 && added_older_events;
+                    let anchors_moved = anchors.refind(&tl.items, &new_items, added_at_front);
 
                     // If the last event in the timeline was even partially visible, we auto-tail it to the end.
                     let list_height = portal_list.area().rect(cx).size.y;
                     let bottom_was_visible = portal_list.is_at_end()
                         || tl.items.len().checked_sub(1).is_some_and(|last_id| {
                             // A last item hidden in a collapsed group takes up no space,
-                            // so check the sumamry item for that group instead.
+                            // so check the summary item for that group instead.
                             let last_shown = tl.state_event_groups.summary_item_if_collapsed(last_id).unwrap_or(last_id);
                             portal_list.position_of_item(cx, last_shown).is_some_and(|pos| pos < list_height)
                         });
@@ -1915,14 +1851,9 @@ impl RoomScreen {
 
                     let has_more_history = clear_cache && !tl.fully_paginated;
 
-                    // Whether older events were added, even if they're not visible (like in a collapsed group).
-                    let added_older_events = has_more_history
-                        && new_items.iter().find_map(|i| i.as_event()?.event_id())
-                            != tl.items.iter().find_map(|i| i.as_event()?.event_id());
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
-                        tl.pending_knocks = PendingKnocks::new(&new_items);
                         // Only the SDK's timeline start item says there's nothing older to load (threads never get one).
                         tl.fully_paginated = new_items.front().is_some_and(|item| item.is_timeline_start());
                     } else {
@@ -1934,13 +1865,8 @@ impl RoomScreen {
 
                     tl.items = new_items;
 
-                    let changed = if clear_cache {
-                        0..usize::MAX
-                    } else {
-                        changed_indices.clone()
-                    };
                     let (groups, timeline) = tl.groups_and_timeline_info();
-                    let regrouped = groups.rebuild(&timeline, changed);
+                    let regrouped = groups.rebuild_ranges(&timeline, changes.iter().map(|change| (change.new.clone(), change.len_change())));
                     // Regrouping can also change items outside of the given `changed_indices`,
                     // like a group's summary or the day divider above it,
                     // so we have to redraw those too just to be safe.
@@ -1952,24 +1878,35 @@ impl RoomScreen {
                     let (groups, timeline) = tl.groups_and_timeline_info();
                     let regrouped = groups.regroup_around(&timeline, &changed_knocks);
                     tl.forget_drawn(regrouped);
-    
-                    if let Some(anchor) = anchor {
-                        // If older state events that were added (or a knock that just got answered) have now caused
-                        // the scroll-anchor item to fall within a collapsed group,
-                        // we have to anchor the timeline against that collapsed group's summary item now.
-                        if anchor.shown && let Some(summary_item) = tl.state_event_groups.summary_item_if_collapsed(anchor.new_index) {
-                            portal_list.set_first_id_and_scroll(summary_item, anchor.scroll_offset);
-                            view_moved = true;
-                        }
-                        if view_moved || followed_anchor.is_some() {
-                            followed_anchor = Some(anchor);
-                        }
-                    }
 
-                    // If the top of the timeline is still showing after getting older items, go ahead and fetch
-                    // more right away, so the user doesn't have to do some kind of annoying scroll-up gesture again.
+                    // Find the first item that is still in the same viewport position that it was before,
+                    // and anchor our scroll position on that.
+                    if let Some((first_id, first_scroll)) = anchors.pin(&tl.items, &tl.state_event_groups) {
+                        if anchors_moved {
+                            log!("process_timeline_updates(): keeping the view in place at index {first_id}, scroll {first_scroll}");
+                            // Hide the tooltip when items move, as a hover-out event won't occur.
+                            cx.widget_action(ui, TooltipAction::HoverOut);
+                        }
+                        portal_list.set_first_id_and_scroll_in_place(first_id, first_scroll);
+                    }
+                    else if portal_list.first_id() >= tl.items.len() {
+                        log!("process_timeline_updates(): jumping to bottom: first_id {} is out of bounds for {} new items", portal_list.first_id(), tl.items.len());
+                        portal_list.set_first_id_and_scroll(tl.items.len().saturating_sub(1), 0.0);
+                        portal_list.set_tail_range(true);
+                        jump_to_bottom_button.update_visibility(cx, true);
+                    }
+                    //
+                    // TODO: after a user is (un)blocked, all timelines are cleared. Handle that here.
+                    //
+                    anchors.remember_list_position(portal_list);
+                    tl.scroll_anchors = Some(anchors);
+
+                    // If the top of the timeline is still showing after getting older items,
+                    // go ahead and paginate more so the user doesn't have to scroll up again manually.
                     if has_more_history {
-                        if state_event_group::shows_anything_before(&tl.timeline_info(), portal_list.first_id()) {
+                        let first_id = portal_list.first_id();
+                        let top = tl.state_event_groups.collapsed_group_right_before(&tl.timeline_info(), first_id).unwrap_or(first_id);
+                        if state_event_group::shows_anything_before(&tl.timeline_info(), top) {
                             // Something new showed up above, so the user can just keep scrolling up for more.
                             tl.num_backwards_pagination_rounds_without_progress = 0;
                             tl.num_collapsed_backwards_paginations = 0;
@@ -2077,7 +2014,7 @@ impl RoomScreen {
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
                     if direction == PaginationDirection::Backwards {
                         // Don't set `done_loading` here, since this page's `NewItems` may still be coming in.
-                        // (The loading message still comes down if nothing else is on its way, see below.)
+                        // (The loading message still gets hidden below if nothing else is on its way.)
                         tl.fully_paginated = fully_paginated;
                         tl.is_paginating = false;
                         if fully_paginated {
@@ -2976,27 +2913,38 @@ impl RoomScreen {
     /// Expands or collapses the state event group that contains the timeline item at `index`.
     fn toggle_state_event_group(&mut self, cx: &mut Cx, index: usize, portal_list: &PortalListRef) {
         let Some(tl) = self.tl_state.as_mut() else { return };
+        let anchors = ScrollAnchors::take(&mut tl.scroll_anchors, portal_list, &tl.items, &tl.state_event_groups);
         let (groups, timeline) = tl.groups_and_timeline_info();
-        let Some(group) = groups.toggle(index, &timeline) else { return };
+        let Some(group) = groups.toggle(index, &timeline) else {
+            tl.scroll_anchors = Some(anchors);
+            return;
+        };
         tl.forget_drawn(group.ranges_to_redraw());
+        let mut starts_at_summary_item = false;
 
         if !group.is_expanded {
-            let summary_item_scrolled_off = portal_list.position_of_item(cx, group.range.start).is_none_or(|top| top < 0.0);
+            let summary_item_scrolled_off = portal_list.drawn_slot(group.range.start).is_none_or(|slot| slot.start < 0.0);
             // If it was collapsed using the "Collapse" button under its last event while its summary item
             // is scrolled up (even partly) out of view, keep the item after the group where it is on screen,
             // so the view doesn't jump. The summary item then ends up right above it.
             if index + 1 == group.range.end
                 && summary_item_scrolled_off
-                && let Some(pos) = portal_list.position_of_item(cx, group.range.end)
+                && let Some(slot) = portal_list.drawn_slot(group.range.end)
             {
-                portal_list.set_first_id_and_scroll(group.range.end, pos);
+                portal_list.set_first_id_and_scroll_in_place(group.range.end, slot.start);
             }
             // Otherwise, if the list starts at an item that's now hidden in the collapsed group,
             // start it at the group's summary item instead, since hidden items take up no space.
             else if group.items_after_summary().contains(&portal_list.first_id()) {
-                portal_list.set_first_id_and_scroll(group.range.start, 0.0);
+                portal_list.set_first_id_and_scroll_in_place(group.range.start, 0.0);
+                starts_at_summary_item = true;
             }
         }
+        tl.scroll_anchors = Some(if starts_at_summary_item {
+            ScrollAnchors::at_list_position(portal_list, &tl.items, &tl.state_event_groups)
+        } else {
+            anchors.through_toggle(portal_list, &tl.items, &tl.state_event_groups, group.range.clone())
+        });
         self.redraw(cx);
     }
 
@@ -3006,13 +2954,17 @@ impl RoomScreen {
     /// and the scroll happens later, once the expanded group has been drawn.
     fn scroll_to_event(&mut self, cx: &mut Cx, portal_list: &PortalListRef, index: usize, event_id: OwnedEventId) {
         let Some(tl) = self.tl_state.as_mut() else { return };
+        // The items on screen, taken while the groups still match the list's last draw.
+        let anchors = ScrollAnchors::take(&mut tl.scroll_anchors, portal_list, &tl.items, &tl.state_event_groups);
         let (groups, timeline) = tl.groups_and_timeline_info();
         if let Some(group) = groups.expand_containing(index, &timeline) {
             tl.forget_drawn(group.ranges_to_redraw());
+            tl.scroll_anchors = Some(anchors.through_toggle(portal_list, &tl.items, &tl.state_event_groups, group.range.clone()));
             portal_list.redraw(cx);
             self.deferred_jump = Some(DeferredJump::new(DeferredJumpKind::ScrollTo { event_id }));
             return;
         }
+        tl.scroll_anchors = Some(anchors);
         portal_list.smooth_scroll_to(cx, index, 50.0, None, 10.0);
         // On a far jump, the list first moves close to the target, so redraw it there right away:
         // the scroll animation needs those items drawn to know their real heights.
@@ -3187,6 +3139,7 @@ impl RoomScreen {
                     expanded_reply_previews: HashSet::new(),
                     state_event_groups: StateEventGroups::default(),
                     pending_knocks: PendingKnocks::default(),
+                    scroll_anchors: None,
                 };
                 timeline_state_store::mark_taken(cx, &tl_state.kind, owner);
                 (tl_state, true)
@@ -3259,6 +3212,11 @@ impl RoomScreen {
 
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
+        // Until the list draws this timeline for the first time, keep its restored first item in place.
+        if tl_state.scroll_anchors.is_none() {
+            let list = self.portal_list(cx, ids!(timeline.list));
+            tl_state.scroll_anchors = Some(ScrollAnchors::at_list_position(&list, &tl_state.items, &tl_state.state_event_groups));
+        }
 
         // Store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future functions like event/draw handlers.
@@ -3422,6 +3380,10 @@ impl RoomScreen {
         };
 
         let portal_list = self.child_by_path(ids!(timeline.list)).as_portal_list();
+        // The list's last draw of this timeline won't be around once it's shown again, so capture its anchors now.
+        if tl.scroll_anchors.is_none() {
+            tl.scroll_anchors = Some(ScrollAnchors::capture(&portal_list, &tl.items, &tl.state_event_groups));
+        }
         let room_input_bar = self.child_by_path(ids!(room_input_bar)).as_room_input_bar();
         log!("Saving state for room {:?}\n\t{:?}\n\tfirst_id: {:?}, scroll: {}", self.room_name_id.as_ref().map(|r| r.display_name()), self.timeline_kind, portal_list.first_id(), portal_list.scroll_position());
         let state = SavedState {
@@ -3858,8 +3820,11 @@ pub enum TimelineUpdate {
         /// resulted in new items being *appended to the end* of the timeline.
         is_append: bool,
         /// Whether to clear the entire cache of drawn items in the timeline.
+        ///
         /// This supersedes `changed_indices` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
+        /// How many items at the end of `new_items` this update didn't touch, though they may have moved.
+        num_unchanged_at_end: usize,
     },
     /// Only the upload progress of local echoes (pending message) changed.
     LocalEchoProgress {
@@ -4193,8 +4158,8 @@ struct TimelineUiState {
 
     /// Whether a backwards pagination request is on its way.
     ///
-    /// Only a `PaginationIdle` or `PaginationError` timeline update ends this (marks it false),
-    /// not a `NewItems` update, which can come before those (or not at all).
+    /// A `PaginationIdle` or `PaginationError` timeline update ends this (marks it false),
+    /// but a `NewItems` update doesn't, since it can come before those (or not at all).
     is_paginating: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
@@ -4263,25 +4228,22 @@ struct TimelineUiState {
     /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
 
-    /// Whether another backwards pagingation was asked for while one was already in progress.
+    /// Whether another backwards pagination was asked for while one was already in progress.
     ///
     /// See `paginate_backwards()`, which handles this.
     paginate_again_when_done: bool,
 
-    /// Whether the user scrolled down at all since the start of the timeline
-    /// last came into view.
+    /// Whether the user scrolled down at all since the start of the timeline last came into view.
     user_scrolled_down: bool,
 
-    /// The number of back pagination rounds that have completed without any progress being made.
+    /// The number of automatic back pagination requests sent in a row without any progress being made.
     ///
     /// See [`MAX_BACKWARDS_PAGINATIONS_WITHOUT_PROGRESS`].
     num_backwards_pagination_rounds_without_progress: usize,
 
-    /// The number of consecutive backwards pagination rounds whose new events
-    /// were all part of the collapsed group of small state events at the top,
-    /// meaning that nothing visibly new to the user showed up at all.
+    /// The number of backwards pagination rounds in a row whose new events all went into the collapsed group at the top.
     ///
-    /// See [`MAX_COLLAPSED_BACKWARDS_PAGINATIONS`].
+    /// Nothing visibly new showed up for the user in those rounds. See [`MAX_COLLAPSED_BACKWARDS_PAGINATIONS`].
     num_collapsed_backwards_paginations: usize,
 
     /// When a backwards pagination last failed; see [`RETRY_PAGINATION_AFTER_ERROR_DELAY`].
@@ -4310,6 +4272,13 @@ struct TimelineUiState {
     ///
     /// Pending knocks should not be part of a collapsed group, and should show an invite button.
     pending_knocks: PendingKnocks,
+
+    /// The items to keep in place on screen through timeline updates, until the list draws again.
+    ///
+    /// Right after the list draws, this is `None`, since those items are wherever that draw put them
+    /// (see [`ScrollAnchors::take()`]). They're kept while the timeline is hidden too, so the updates
+    /// it gets in the meantime keep those items in place.
+    scroll_anchors: Option<ScrollAnchors>,
 }
 
 impl TimelineUiState {
@@ -4326,7 +4295,7 @@ impl TimelineUiState {
         (&mut self.state_event_groups, TimelineInfo { items: &self.items, kind: &self.kind, pending_knocks: &self.pending_knocks })
     }
 
-    /// Whether we've given up automatic back pagination.
+    /// Returns whether we've given up on automatic back pagination.
     ///
     /// This happens after we've done multiple back pagination rounds without getting any new events,
     /// or a lot of rounds in a row whose new events all went into the collapsed group at the top.
@@ -4391,6 +4360,7 @@ impl TimelineUiState {
 #[derive(Default, Debug)]
 enum MessageHighlightAnimationState {
     /// Highlight the item at `item_id` once the list's done scrolling to it.
+    ///
     /// `event_id` tells us if older items came in during the scroll and moved that item to a different index.
     Pending { item_id: usize, event_id: OwnedEventId },
     #[default]
@@ -4443,115 +4413,6 @@ struct SavedState {
     room_input_bar_state: RoomInputBarState,
     /// The panes docked around this timeline, e.g., the room's member list.
     room_panes: Vec<SavedRoomPane>,
-}
-
-/// A scroll anchor is an item that was visible in the timeline before an update
-/// that we successfully found again in the new timeline items after the update.
-///
-/// This is used to ensure that the viewport doesn't jump around and remains
-/// focused or "anchored" on the same item.
-#[derive(Clone)]
-struct ScrollAnchor {
-    /// The index of the item in the current items list.
-    curr_index: usize,
-    /// The index of the item in the new items list.
-    new_index: usize,
-    /// The positional "scroll" offset of the item in the portal list,
-    /// i.e., the distance from the top of the viewport to the top of the item.
-    scroll_offset: f64,
-    /// The unique event ID of the item.
-    event_id: OwnedEventId,
-    /// Whether the item took up any space (it wasn't hidden on its own or in a collapsed group).
-    shown: bool,
-}
-
-/// Returns the item in the list of `new_items` that matches the event ID
-/// of a visible item in the given `curr_items` list.
-///
-/// An item that took up no space just sits wherever the next shown item starts,
-/// so that's only returned if no shown item matches.
-///
-/// `next_drawn` gives the next item down that the portal list drew (see `TimelineUiState::next_drawn_index()`).
-fn find_new_item_matching_current_item(
-    cx: &mut Cx,
-    portal_list: &PortalListRef,
-    starting_at_curr_idx: usize,
-    curr_items: &Vector<Arc<TimelineItem>>,
-    new_items: &Vector<Arc<TimelineItem>>,
-    next_drawn: impl Fn(usize) -> usize,
-) -> Option<ScrollAnchor> {
-    let mut curr_item_focus = curr_items.focus();
-    let mut idx_curr = starting_at_curr_idx;
-    let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> = Vec::with_capacity(
-        portal_list.visible_items()
-    );
-
-    // Find all items with real event IDs that are currently visible in the portal list.
-    // TODO: if this is slow, we could limit it to 3-5 events at the most.
-    if curr_items_with_ids.len() <= portal_list.visible_items() {
-        while let Some(curr_item) = curr_item_focus.get(idx_curr) {
-            if let Some(event_id) = curr_item.as_event().and_then(|ev| ev.event_id()) {
-                curr_items_with_ids.push((idx_curr, event_id.to_owned()));
-            }
-            if curr_items_with_ids.len() >= portal_list.visible_items() {
-                break;
-            }
-            idx_curr = next_drawn(idx_curr);
-        }
-    }
-
-    let mut zero_height_match = None;
-    let mut check = |idx_curr: usize, idx_new: usize, event_id: &EventId| {
-        // Not all items in the portal list have a position, e.g., ones that weren't drawn.
-        let pos_offset = portal_list.position_of_item(cx, idx_curr)?;
-        let shown = was_drawn_with_height(cx, portal_list, idx_curr);
-        let found = ScrollAnchor {
-            curr_index: idx_curr,
-            new_index: idx_new,
-            scroll_offset: pos_offset,
-            event_id: event_id.to_owned(),
-            shown,
-        };
-        if !shown {
-            zero_height_match.get_or_insert(found);
-            return None;
-        }
-        Some(found)
-    };
-
-    // Most updates (read receipts, reactions, edits) cannot actually move any visible items,
-    // so check for that before bothering to scan through the whole timeline.
-    let unmoved = curr_items_with_ids.iter().all(|(idx, event_id)|
-        new_items.get(*idx).and_then(|item| item.as_event()?.event_id()) == Some(&**event_id)
-    );
-    if unmoved {
-        for (idx, event_id) in &curr_items_with_ids {
-            if let Some(found) = check(*idx, *idx, event_id) {
-                return Some(found);
-            }
-        }
-    } else {
-        // Find a new item that has the same real event ID as any of the current items.
-        for (idx_new, new_item) in new_items.iter().enumerate() {
-            let Some(event_id) = new_item.as_event().and_then(|ev| ev.event_id()) else {
-                continue;
-            };
-            if let Some((idx_curr, _)) = curr_items_with_ids.iter().find(|(_, ev_id)| ev_id == event_id)
-                && let Some(found) = check(*idx_curr, idx_new, event_id)
-            {
-                return Some(found);
-            }
-        }
-    }
-
-    zero_height_match
-}
-
-/// Returns whether the item at `item_id` took up any space in the portal list's last draw.
-///
-/// An item takes up no space if it's hidden, either on its own or in a collapsed group.
-fn was_drawn_with_height(cx: &Cx, portal_list: &PortalListRef, item_id: usize) -> bool {
-    portal_list.get_item(item_id).is_some_and(|(_, item)| item.area().rect(cx).size.y > 0.0)
 }
 
 /// The timeline's zero-height item, for hidden items, plus the odd one in a collapsed group that the list couldn't skip over.
@@ -4657,21 +4518,7 @@ fn populate_message_view(
     let mut is_notice = false; // whether this message is a Notice (automated bot message)
     let mut is_server_notice = false; // whether this message is a Server Notice
 
-    // Determine whether we can use a more compact UI view that hides the user's profile info
-    // if the previous message (including stickers) was sent by the same user within 10 minutes.
-    let use_compact_view = match prev_event.map(|p| p.kind()) {
-        Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
-            TimelineItemContent::MsgLike(_msg_like_content) => {
-                let prev_msg_sender = prev_event_tl_item.sender();
-                prev_msg_sender == event_tl_item.sender()
-                    && ts_millis.0
-                        .checked_sub(prev_event_tl_item.timestamp().0)
-                        .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
-            }
-            _ => false,
-        },
-        _ => false,
-    };
+    let use_compact_view = uses_compact_view(prev_event, event_tl_item);
 
     let has_html_body: bool;
 

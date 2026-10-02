@@ -91,9 +91,9 @@ impl Timestamp {
         self.end = None;
     }
 
-    /// Like `set_date_time()`, but for a span of time that runs until `end`, if given.
+    /// Sets this timestamp to a span of time from `start` until `end`, if given.
     ///
-    /// A timestamp still only shows its start time, it only uses the end time when hovered.
+    /// It still only shows the start time; its hover tooltip shows the end time too.
     pub fn set_date_time_span(&mut self, cx: &mut Cx, start: DateTime<Local>, end: Option<DateTime<Local>>) {
         self.set_date_time(cx, start);
         self.end = end;

@@ -239,21 +239,21 @@ impl WidgetNode for LinkPreview {
     fn set_visible(&mut self, cx: &mut Cx, visible: bool) { self.view.set_visible(cx, visible) }
     fn set_scroll_pos(&mut self, cx: &mut Cx, v: Vec2d) { self.view.set_scroll_pos(cx, v) }
 
+    /// Visits the deref view's children, plus each preview card that we manage ourselves.
+    ///
     /// The cards come from a template, so the deref view doesn't know about them.
+    /// Listing them here lets the widget tree track them and drop them along with
+    /// this LinkPreview widget (e.g., when its parent `Message` gets dropped).
     ///
-    /// We need to report them here such that the widget tree can track them
-    /// and thus drop them along with this LinkPreview widget
-    /// (e.g., when its parent `Message` gets dropped).
-    ///
-    /// Similarly, lookups should go through `self` rather than `self.view` to ensure
-    /// that the widget tree that Makepad maintains is correctly marked as in use.
+    /// Lookups must go through `self`, not `self.view`: a lookup re-lists this widget's children,
+    /// and `self.view` doesn't list the cards, so the widget tree would lose track of them.
     fn children(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) {
         self.view.children(visit);
         for (i, card) in self.cards.iter().enumerate() {
             visit(live_id_num!(preview, i as u64), WidgetRef::clone(card));
         }
     }
-    /// Nothing outside of this widget should find anything in it, like a card's title.
+    /// Returns true, so searches from outside this widget don't find what's in it, like a card's title.
     fn skip_widget_tree_search(&self) -> bool { true }
 
     fn cancel_children_impl(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) -> bool {

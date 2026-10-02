@@ -9,22 +9,22 @@ use std::collections::HashMap;
 use crate::utils::{distinct_user_labels, join_with_and};
 
 /// How many people get named in one sentence before "and N others".
-pub const MAX_NAMES_PER_SENTENCE: usize = 3;
+const MAX_NAMES_PER_SENTENCE: usize = 3;
 
 /// How many room settings get named in one phrase before "and N other settings".
 const MAX_SETTINGS_PER_PHRASE: usize = 3;
 
-/// Sentences should be ordered in the same order that events actually happened.
+/// The most sentences a summary can have while maintaining their original order.
 ///
-/// But we also don't want a ton of semi-repetitive sentences, so if we have more than
-/// this many sentences, then we strive for a shorter summary at the cost of preserving the exact order.
+/// Beyond that, everyone who did the same state action will be combined into one sentence
+/// so that we don't get a ton of repetitive sentences.
 const MAX_CHRONOLOGICAL_SENTENCES: usize = 4;
 
 /// One state event, reduced to who it's about and what happened.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SummaryEntry {
     pub who: Who,
-    /// Their display name, or `None` if we don't know one (their user ID gets shown instead).
+    /// Their display name, or `None` if the event didn't have one (`summarize()` then looks it up).
     pub name: Option<String>,
     pub change: StateChange,
 }
@@ -34,8 +34,7 @@ pub struct SummaryEntry {
 pub enum Who {
     /// A user, by their user ID.
     User(String),
-    /// Someone invited by email, known only by their (partial) email address
-    /// shown in their invitation text, like `"ali...@exa..."`.
+    /// Someone invited by email, known only by the partial email address in their invitation, like `"ali...@exa..."`.
     EmailInvitee(String),
 }
 
@@ -78,13 +77,15 @@ pub enum MembershipTransition {
     KnockDenied,
     /// The membership stayed the same, e.g. a ban whose reason got updated.
     Unchanged(Membership),
-    /// Someone else set it to leave, but we can't tell if that was a kick, an unban,
-    /// or a revoked invite or knock (e.g. because the event got redacted).
+    /// Someone else set their state to left, which could've been a kick,
+    /// an unban, a revoked invite, a denied knock, or even something else.
+    ///
+    /// We can't tell which, e.g. because the event got redacted.
     Removed,
     /// A redacted join by someone who'd already joined, which was most likely a profile change.
     ProfileChanged,
-    /// A redacted join by someone whose history we don't know: they either joined,
-    /// or were already here and changed their profile.
+    /// A redacted join by someone whose history we don't know,
+    /// implying that they either joined or changed their profile.
     JoinedOrChangedProfile,
     /// A membership state the spec doesn't define.
     Custom,
@@ -174,7 +175,7 @@ pub fn membership_transition(previous: Option<Membership>, now: Membership, by_s
         (M::Invite, M::Leave) if by_self => MT::InvitationRejected,
         (M::Invite, M::Leave) => MT::InvitationRevoked,
         (M::Invite | M::Leave | M::Knock, M::Ban) => MT::Banned,
-        // Without the event's details we can't see what changed, but this is almost always why.
+        // Joining while already joined is generally always a profile change.
         (M::Join, M::Join) if by_self => MT::ProfileChanged,
         (M::Join, M::Leave) if by_self => MT::Left,
         (M::Join, M::Leave) => MT::Kicked,
@@ -211,18 +212,15 @@ fn guess_membership_transition(now: Membership, by_self: bool) -> MembershipTran
     }
 }
 
-/// A membership or profile change after pairing up join/leave churn.
+/// An activity within a person's state changes, either one change, or a pair of back-to-back changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Step {
+enum Activity {
+    One(StateChange),
     JoinedAndLeft,
     LeftAndRejoined,
-    /// Asked to join, then got invited in.
     KnockedAndInvited,
-    /// Asked to join, then got turned down.
     KnockedAndDenied,
-    /// Asked to join, then withdrew the request.
     KnockedAndWithdrew,
-    One(StateChange),
 }
 
 fn times(count: usize) -> String {
@@ -299,8 +297,8 @@ fn settings_list(settings: &[RoomSetting]) -> String {
     join_with_and(&items)
 }
 
-/// Stringifies a sequence of state changes all done by the same one person.
-fn in_sequence(phrases: &[String]) -> String {
+/// Joins one person's phrases in order, like "joined, changed their name, then left".
+fn join_with_then(phrases: &[String]) -> String {
     match phrases {
         [] => String::new(),
         [one] => one.clone(),
@@ -308,10 +306,10 @@ fn in_sequence(phrases: &[String]) -> String {
     }
 }
 
-/// Everything one person did in a group, in order, with repeats counted.
+/// The changes about one person in a group, in order, with repeats counted.
 #[derive(Default)]
 struct PersonChanges {
-    steps: Vec<(Step, usize)>,
+    activities: Vec<(Activity, usize)>,
 }
 
 impl PersonChanges {
@@ -324,45 +322,45 @@ impl PersonChanges {
         };
         // Knocking (or being invited) again right after the first time just counts as one more time,
         // e.g. "asked to join 3 times" rather than "asked to join, then asked to join again twice".
-        let change = match (self.steps.last(), change) {
-            (Some((Step::One(StateChange::Membership(MT::Knocked)), _)), StateChange::Membership(MT::Unchanged(Membership::Knock))) => {
+        let change = match (self.activities.last(), change) {
+            (Some((Activity::One(StateChange::Membership(MT::Knocked)), _)), StateChange::Membership(MT::Unchanged(Membership::Knock))) => {
                 StateChange::Membership(MT::Knocked)
             }
-            (Some((Step::One(StateChange::Membership(MT::Invited)), _)), StateChange::Membership(MT::Unchanged(Membership::Invite))) => {
+            (Some((Activity::One(StateChange::Membership(MT::Invited)), _)), StateChange::Membership(MT::Unchanged(Membership::Invite))) => {
                 StateChange::Membership(MT::Invited)
             }
             (_, change) => change,
         };
-        // Combine a leave+join or join+leave into one step to make it even less verbose.
+        // Combine a leave+join or join+leave into one activity to make it even less verbose.
         // Do the same for name changes and profile avatar changes that are adjacent too.
-        let step = match (self.steps.last(), change) {
-            (Some((Step::One(StateChange::Membership(MT::Joined)), 1)), StateChange::Membership(MT::Left)) => {
-                self.steps.pop();
-                Step::JoinedAndLeft
+        let activity = match (self.activities.last(), change) {
+            (Some((Activity::One(StateChange::Membership(MT::Joined)), 1)), StateChange::Membership(MT::Left)) => {
+                self.activities.pop();
+                Activity::JoinedAndLeft
             }
-            (Some((Step::One(StateChange::Membership(MT::Left)), 1)), StateChange::Membership(MT::Joined)) => {
-                self.steps.pop();
-                Step::LeftAndRejoined
+            (Some((Activity::One(StateChange::Membership(MT::Left)), 1)), StateChange::Membership(MT::Joined)) => {
+                self.activities.pop();
+                Activity::LeftAndRejoined
             }
             // Same for a knock and its answer, so someone knocking over and over gets counted too.
-            (Some((Step::One(StateChange::Membership(MT::Knocked)), 1)), StateChange::Membership(answer @ (MT::KnockAccepted | MT::KnockDenied | MT::KnockRetracted))) => {
-                self.steps.pop();
+            (Some((Activity::One(StateChange::Membership(MT::Knocked)), 1)), StateChange::Membership(answer @ (MT::KnockAccepted | MT::KnockDenied | MT::KnockRetracted))) => {
+                self.activities.pop();
                 match answer {
-                    MT::KnockAccepted => Step::KnockedAndInvited,
-                    MT::KnockDenied => Step::KnockedAndDenied,
-                    _ => Step::KnockedAndWithdrew,
+                    MT::KnockAccepted => Activity::KnockedAndInvited,
+                    MT::KnockDenied => Activity::KnockedAndDenied,
+                    _ => Activity::KnockedAndWithdrew,
                 }
             }
-            (Some((Step::One(StateChange::Profile(ProfileChange::Name)), 1)), StateChange::Profile(ProfileChange::Avatar))
-            | (Some((Step::One(StateChange::Profile(ProfileChange::Avatar)), 1)), StateChange::Profile(ProfileChange::Name)) => {
-                self.steps.pop();
-                Step::One(StateChange::Profile(ProfileChange::NameAndAvatar))
+            (Some((Activity::One(StateChange::Profile(ProfileChange::Name)), 1)), StateChange::Profile(ProfileChange::Avatar))
+            | (Some((Activity::One(StateChange::Profile(ProfileChange::Avatar)), 1)), StateChange::Profile(ProfileChange::Name)) => {
+                self.activities.pop();
+                Activity::One(StateChange::Profile(ProfileChange::NameAndAvatar))
             }
-            _ => Step::One(change),
+            _ => Activity::One(change),
         };
-        match self.steps.last_mut() {
-            Some((last, count)) if *last == step => *count += 1,
-            _ => self.steps.push((step, 1)),
+        match self.activities.last_mut() {
+            Some((last, count)) if *last == activity => *count += 1,
+            _ => self.activities.push((activity, 1)),
         }
     }
 
@@ -383,8 +381,8 @@ impl PersonChanges {
             settings.clear();
             *num_changes = 0;
         };
-        for &(step, count) in &self.steps {
-            if let Step::One(StateChange::Room(RoomChange::Setting(setting))) = step {
+        for &(activity, count) in &self.activities {
+            if let Activity::One(StateChange::Room(RoomChange::Setting(setting))) = activity {
                 if !settings.contains(&setting) {
                     settings.push(setting);
                 }
@@ -392,15 +390,15 @@ impl PersonChanges {
                 continue;
             }
             flush_settings(&mut settings, &mut num_setting_changes, &mut phrases);
-            phrases.push(match step {
-                Step::JoinedAndLeft => format!("joined and left{}", times(count)),
-                Step::LeftAndRejoined => format!("left and rejoined{}", times(count)),
-                Step::KnockedAndInvited => format!("asked to join and {} invited{}", if plural { "were" } else { "was" }, times(count)),
-                Step::KnockedAndDenied => format!("asked to join and had their request{} denied{}", if plural { "s" } else { "" }, times(count)),
-                Step::KnockedAndWithdrew => format!("asked to join and withdrew their request{}{}", if plural { "s" } else { "" }, times(count)),
-                Step::One(StateChange::Membership(transition)) => format!("{}{}", membership_phrase(transition, plural), times(count)),
-                Step::One(StateChange::Profile(change)) => format!("{}{}", profile_phrase(change, plural), times(count)),
-                Step::One(StateChange::Room(change)) => format!("{each}{}", room_action_phrase(change, count)),
+            phrases.push(match activity {
+                Activity::JoinedAndLeft => format!("joined and left{}", times(count)),
+                Activity::LeftAndRejoined => format!("left and rejoined{}", times(count)),
+                Activity::KnockedAndInvited => format!("asked to join and {} invited{}", if plural { "were" } else { "was" }, times(count)),
+                Activity::KnockedAndDenied => format!("asked to join and had their request{} denied{}", if plural { "s" } else { "" }, times(count)),
+                Activity::KnockedAndWithdrew => format!("asked to join and withdrew their request{}{}", if plural { "s" } else { "" }, times(count)),
+                Activity::One(StateChange::Membership(transition)) => format!("{}{}", membership_phrase(transition, plural), times(count)),
+                Activity::One(StateChange::Profile(change)) => format!("{}{}", profile_phrase(change, plural), times(count)),
+                Activity::One(StateChange::Room(change)) => format!("{each}{}", room_action_phrase(change, count)),
             });
         }
         flush_settings(&mut settings, &mut num_setting_changes, &mut phrases);
@@ -408,21 +406,31 @@ impl PersonChanges {
     }
 }
 
-/// Someone in a group, with everything they did (all the state changes they made).
+/// How the creator set up a room whose creation starts the group.
+#[derive(Clone, Copy)]
+enum RoomSetup {
+    Created,
+    CreatedAndConfigured,
+}
+
+/// Someone in a group, with every change that's about them.
 struct Person<'a> {
     who: &'a Who,
     /// Their latest known name.
     name: Option<&'a str>,
     changes: PersonChanges,
-    /// Set to `Some(true)` for the creator of a room whose creation starts the group.
-    created_room: Option<bool>,
+    /// Set for the creator of a room whose creation starts the group.
+    room_setup: Option<RoomSetup>,
 }
 
 impl Person<'_> {
     fn phrases(&self, plural: bool) -> Vec<String> {
-        let mut phrases = Vec::with_capacity(self.changes.steps.len() + 1);
-        if let Some(configured) = self.created_room {
-            phrases.push(String::from(if configured { "created and configured the room" } else { "created the room" }));
+        let mut phrases = Vec::with_capacity(self.changes.activities.len() + 1);
+        if let Some(setup) = self.room_setup {
+            phrases.push(String::from(match setup {
+                RoomSetup::Created => "created the room",
+                RoomSetup::CreatedAndConfigured => "created and configured the room",
+            }));
         }
         phrases.extend(self.changes.phrases(plural));
         phrases
@@ -439,7 +447,7 @@ fn collect_people(entries: &[SummaryEntry]) -> Vec<Person<'_>> {
     let mut creator_joined = false;
     for entry in entries {
         let index = *index_of.entry(&entry.who).or_insert_with(|| {
-            people.push(Person { who: &entry.who, name: None, changes: PersonChanges::default(), created_room: None });
+            people.push(Person { who: &entry.who, name: None, changes: PersonChanges::default(), room_setup: None });
             people.len() - 1
         });
         let person = &mut people[index];
@@ -450,15 +458,15 @@ fn collect_people(entries: &[SummaryEntry]) -> Vec<Person<'_>> {
         if creator == Some(&entry.who) {
             let is_setup = match entry.change {
                 StateChange::Room(RoomChange::Created) => {
-                    person.created_room.get_or_insert(false);
+                    person.room_setup.get_or_insert(RoomSetup::Created);
                     true
                 }
                 // Settings only count as setup until the creator does anything else.
-                StateChange::Room(RoomChange::Setting(_) | RoomChange::EnabledEncryption) if person.changes.steps.is_empty() => {
-                    person.created_room = Some(true);
+                StateChange::Room(RoomChange::Setting(_) | RoomChange::EnabledEncryption) if person.changes.activities.is_empty() => {
+                    person.room_setup = Some(RoomSetup::CreatedAndConfigured);
                     true
                 }
-                StateChange::Membership(MembershipTransition::Joined) if !creator_joined && person.changes.steps.is_empty() => {
+                StateChange::Membership(MembershipTransition::Joined) if !creator_joined && person.changes.activities.is_empty() => {
                     creator_joined = true;
                     true
                 }
@@ -500,23 +508,23 @@ fn names_to_show(whos: &[&Who], names: &[Option<String>]) -> Vec<Option<String>>
 /// This prevents the caller from having to look up lots of names for people that'll never get used.
 pub fn summarize(entries: &[SummaryEntry], mut name_of: impl FnMut(&Who) -> Option<String>) -> String {
     let people = collect_people(entries);
-    let keys: Vec<Vec<String>> = people.iter().map(|person| person.phrases(false)).collect();
+    let phrases_per_person: Vec<Vec<String>> = people.iter().map(|person| person.phrases(false)).collect();
 
     let mut sentences: Vec<Vec<usize>> = Vec::new();
-    for (index, key) in keys.iter().enumerate() {
+    for (index, phrases) in phrases_per_person.iter().enumerate() {
         match sentences.last_mut() {
-            Some(sentence) if keys[sentence[0]] == *key => sentence.push(index),
+            Some(sentence) if phrases_per_person[sentence[0]] == *phrases => sentence.push(index),
             _ => sentences.push(vec![index]),
         }
     }
     if sentences.len() > MAX_CHRONOLOGICAL_SENTENCES {
-        let mut index_of_key: HashMap<&[String], usize> = HashMap::new();
+        let mut sentence_with_phrases: HashMap<&[String], usize> = HashMap::new();
         sentences.clear();
-        for (index, key) in keys.iter().enumerate() {
-            match index_of_key.get(key.as_slice()) {
-                Some(&sentence) => sentences[sentence].push(index),
+        for (index, phrases) in phrases_per_person.iter().enumerate() {
+            match sentence_with_phrases.get(phrases.as_slice()) {
+                Some(&sentence_index) => sentences[sentence_index].push(index),
                 None => {
-                    index_of_key.insert(key, sentences.len());
+                    sentence_with_phrases.insert(phrases, sentences.len());
                     sentences.push(vec![index]);
                 }
             }
@@ -524,13 +532,13 @@ pub fn summarize(entries: &[SummaryEntry], mut name_of: impl FnMut(&Who) -> Opti
     }
 
     // Only the first few people in each sentence get named; the rest are just counted.
-    let named: Vec<&Person> = sentences.iter()
+    let named_people: Vec<&Person> = sentences.iter()
         .flat_map(|sentence| sentence.iter().take(MAX_NAMES_PER_SENTENCE).map(|&index| &people[index]))
         .collect();
-    let names: Vec<Option<String>> = named.iter()
+    let names: Vec<Option<String>> = named_people.iter()
         .map(|person| person.name.map(ToOwned::to_owned).or_else(|| name_of(person.who)))
         .collect();
-    let whos: Vec<&Who> = named.iter().map(|person| person.who).collect();
+    let whos: Vec<&Who> = named_people.iter().map(|person| person.who).collect();
     let mut shown_names = names_to_show(&whos, &names).into_iter();
 
     sentences.iter()
@@ -546,7 +554,7 @@ pub fn summarize(entries: &[SummaryEntry], mut name_of: impl FnMut(&Who) -> Opti
                 n => items.push(format!("{n} others")),
             }
             let phrases = people[sentence[0]].phrases(sentence.len() > 1);
-            format!("{} {}.", join_with_and(&items), in_sequence(&phrases))
+            format!("{} {}.", join_with_and(&items), join_with_then(&phrases))
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -652,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn steps_read_in_order() {
+    fn changes_read_in_order() {
         let entries = [
             membership("Alice", MT::Invited),
             membership("Alice", MT::InvitationAccepted),
@@ -697,7 +705,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_steps_are_counted() {
+    fn repeated_changes_are_counted() {
         let entries = [
             profile("Alice", ProfileChange::Name),
             profile("Alice", ProfileChange::Name),

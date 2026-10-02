@@ -1,20 +1,19 @@
-//! Functions for populating small state events in the timeline,
-//! both as standalone items or as part of a collapsed group with a summary.
+//! Populates small state events in the timeline, plus the summary items of state event groups.
 
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{self, EventTimelineItem, MemberProfileChange, TimelineDetails};
+use matrix_sdk_ui::timeline::{self, EventTimelineItem, MemberProfileChange, Profile, TimelineDetails};
 use ruma::{OwnedRoomId, OwnedUserId, UserId, events::StateEventContentChange};
 
 use crate::{
-    event_preview::{is_revoked_email_invite, membership_transition_of},
+    event_preview::{is_email_invite_revocation, membership_transition_of},
     home::{
         room_read_receipt::{AvatarRowWidgetRefExt, populate_read_receipts},
         room_screen::ItemDrawnStatus,
-        state_event_group::{AvatarStackWidgetRefExt, GroupToggleLineWidgetRefExt, SmallStateEventWidgetRefExt, StateEventGroup, StateEventGroupHeaderWidgetRefExt},
+        state_event_group::{AvatarStackWidgetRefExt, GroupToggleLineWidgetRefExt, SmallStateEventWidgetRefExt, StackedUser, StateEventGroup, StateEventGroupHeaderWidgetRefExt},
         state_event_summary::{MembershipTransition, ProfileChange, RoomChange, RoomSetting, StateChange, SummaryEntry, Who, summarize},
-        timeline_items::{ItemDisplayKind, SmallStateContent, TimelineInfo, item_display_kind, later_day, previous_membership},
+        timeline_items::{ItemDisplayKind, SmallStateContent, TimelineInfo, item_display_kind, end_if_later_day, previous_membership},
     },
     profile::user_profile_cache::{self, RoomMemberEntry},
     shared::{avatar::AvatarWidgetRefExt, timestamp::TimestampWidgetRefExt},
@@ -25,13 +24,13 @@ use crate::{
 /// How many participant avatars a summary item shows; everyone else is only in the text.
 const MAX_STACKED_AVATARS: usize = 3;
 
-/// Creates, populates, and adds a `StateEventGroup` widget to the given `PortalList`
-/// with the given `item_id`, which must be the first item of the given `group`.
+/// Creates, populates, and adds a group's summary item (a `GroupSummaryItem` widget) at `item_id`.
 ///
-/// While collapsed, the widget sums up every other event in the group.
-/// Once expanded, that widget shows the group's first event instead,
-/// because the rest are each drawn as their own separate timeline items.
-pub(super) fn populate_state_event_group(
+/// `item_id` must be the first item of `group`.
+/// While collapsed, the widget sums up every event in the group.
+/// Once expanded, it shows the group's first event instead,
+/// because the rest are each drawn as their own timeline items.
+pub(super) fn populate_group_summary_item(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
@@ -43,16 +42,16 @@ pub(super) fn populate_state_event_group(
 ) -> (WidgetRef, ItemDrawnStatus) {
     let TimelineInfo { items, kind: timeline_kind, .. } = timeline;
     let room_id = timeline_kind.room_id();
-    let (item, existed) = list.item_with_existed(cx, item_id, id!(StateEventGroup));
-    let cached = existed && item_drawn_status.content_drawn;
-    if cached && item_drawn_status.profile_drawn {
+    let (item, existed) = list.item_with_existed(cx, item_id, id!(GroupSummaryItem));
+    let content_already_drawn = existed && item_drawn_status.content_drawn;
+    if content_already_drawn && item_drawn_status.profile_drawn {
         return (item, item_drawn_status);
     }
     let header = item.state_event_group_header(cx, ids!(header));
     // If some of the summary's names were still loading when we built it, and we still don't have
     // anything better to show for any of them, just skip rebuilding it.
     // Some names may never load, so we don't want to endlessly rebuild the summary on every draw.
-    if cached && !group.is_expanded && header.names_still_pending(|user_id| known_display_name(cx, room_id, user_id)) {
+    if content_already_drawn && !group.is_expanded && header.names_still_pending(|user_id| known_display_name(cx, room_id, user_id)) {
         return (item, item_drawn_status);
     }
     header.set_expanded(cx, group.is_expanded);
@@ -64,7 +63,7 @@ pub(super) fn populate_state_event_group(
     let first_event_was_shown = existed && first_event.visible();
     first_event.set_shown(group.is_expanded);
     if group.is_expanded {
-        // The summary is now hiddennow, so there's no point calculating it.
+        // The summary is hidden while expanded, so there's no point building it.
         populate_read_receipts(&first_event, cx, timeline_kind, first_event_tl_item);
         let (_, first_event_status) = populate_small_state_event_widget(
             cx,
@@ -73,7 +72,7 @@ pub(super) fn populate_state_event_group(
             timeline_kind,
             first_event_tl_item,
             first_event_content,
-            if first_event_was_shown { item_drawn_status } else { ItemDrawnStatus::default() },
+            item_drawn_status,
             false,
             false,
         );
@@ -84,20 +83,20 @@ pub(super) fn populate_state_event_group(
     // a short blurb about who did what.
     // The summary also shows the read receipts of everything collapsed within it.
     let mut entries = Vec::with_capacity(group.num_events);
-    let mut participants: Vec<OwnedUserId> = Vec::with_capacity(MAX_STACKED_AVATARS);
+    let mut participants: Vec<StackedUser> = Vec::with_capacity(MAX_STACKED_AVATARS);
     let mut read_receipts = IndexMap::new();
-    let mut email_invites = HashMap::new();
-    for (offset, member) in items.focus().narrow(group.range.clone()).into_iter().enumerate() {
-        let display = item_display_kind(member, timeline_kind).with_history(items, group.range.start + offset);
-        let ItemDisplayKind::SmallState(event_tl_item, content) = display else { continue };
-        let Some((entry, user_id)) = summary_entry_of(event_tl_item, &content, &mut email_invites) else { continue };
+    let mut invitee_by_token = HashMap::new();
+    for (offset, tl_item) in items.focus().narrow(group.range.clone()).into_iter().enumerate() {
+        let display_kind = item_display_kind(tl_item, timeline_kind).with_history(items, group.range.start + offset);
+        let ItemDisplayKind::SmallState(event_tl_item, content) = display_kind else { continue };
+        let Some((entry, user_id)) = summary_entry_of(event_tl_item, &content, &mut invitee_by_token) else { continue };
         entries.push(entry);
         // Only the first few relevant users get an avatar.
         if let Some(user_id) = user_id
             && participants.len() < MAX_STACKED_AVATARS
-            && !participants.contains(&user_id)
+            && !participants.iter().any(|participant| participant.user_id == user_id)
         {
-            participants.push(user_id);
+            participants.push(StackedUser { profile: profile_in(event_tl_item, &content), user_id });
         }
         read_receipts.extend(event_tl_item.read_receipts().iter().map(|(u, r)| (u.clone(), r.clone())));
     }
@@ -121,20 +120,44 @@ pub(super) fn populate_state_event_group(
         let end = items.get(group.range.end - 1).and_then(
             |item| unix_time_millis_to_datetime(item.as_event()?.timestamp())
         );
-        header.timestamp(cx, ids!(timestamp)).set_date_time_span(cx, start, later_day(start, end));
+        header.timestamp(cx, ids!(timestamp)).set_date_time_span(cx, start, end_if_later_day(start, end));
     }
     header.avatar_row(cx, ids!(avatar_row)).set_avatar_row(cx, timeline_kind, &read_receipts);
     (item, ItemDrawnStatus { profile_drawn: no_names_pending, content_drawn: true })
 }
 
-/// Reduces one event in a group to who it's about and what happened,
-/// plus the user to show an avatar for.
+/// Returns the profile that the given event shows for the user it's about, if it shows one.
 ///
-/// Returns `None` if it's not a small state event.
+/// A membership event has its user's name and avatar (or the ones it replaced), unless it got redacted,
+/// and a profile change has the new avatar if that changed. Other events go by their sender's profile.
+fn profile_in(event_tl_item: &EventTimelineItem, content: &SmallStateContent) -> Option<Profile> {
+    let sender_profile = || match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => Some(profile.clone()),
+        _ => None,
+    };
+    match content {
+        SmallStateContent::Membership(change, _) => matches!(change.content(), StateEventContentChange::Original { .. })
+            .then(|| Profile { display_name: change.display_name(), display_name_ambiguous: false, avatar_url: change.avatar_url() }),
+        SmallStateContent::Profile(change) => match change.avatar_url_change() {
+            Some(avatar) => Some(Profile {
+                display_name: change.displayname_change().and_then(|name| name.new.clone())
+                    .or_else(|| sender_profile().and_then(|profile| profile.display_name)),
+                display_name_ambiguous: false,
+                avatar_url: avatar.new.clone(),
+            }),
+            None => sender_profile(),
+        },
+        _ => sender_profile(),
+    }
+}
+
+/// Creates a summary part for the given single state event.
+///
+/// Returns `None` if this isn't a state event (a membership, profile, or other state change).
 fn summary_entry_of(
     event_tl_item: &EventTimelineItem,
     content: &SmallStateContent,
-    email_invites: &mut HashMap<String, String>,
+    invitee_by_token: &mut HashMap<String, String>,
 ) -> Option<(SummaryEntry, Option<OwnedUserId>)> {
     let sender = event_tl_item.sender();
     let sender_name = || utils::non_blank(get_profile_display_name(event_tl_item));
@@ -142,8 +165,8 @@ fn summary_entry_of(
         SummaryEntry { who: Who::User(user_id.to_string()), name, change },
         Some(user_id.to_owned()),
     );
-    let about_invitee = |key: String, name: Option<String>, transition: MembershipTransition| (
-        SummaryEntry { who: Who::EmailInvitee(key), name, change: StateChange::Membership(transition) },
+    let about_invitee = |invitee: String, name: Option<String>, transition: MembershipTransition| (
+        SummaryEntry { who: Who::EmailInvitee(invitee), name, change: StateChange::Membership(transition) },
         None,
     );
     Some(match content {
@@ -163,13 +186,13 @@ fn summary_entry_of(
         SmallStateContent::OtherState(other) => match other.content() {
             timeline::AnyOtherStateEventContentChange::RoomThirdPartyInvite(StateEventContentChange::Original { content, prev_content }) => {
                 let token = other.state_key();
-                if !is_revoked_email_invite(content) {
+                if !is_email_invite_revocation(content) {
                     let name = utils::non_blank(Some(content.display_name.clone()));
-                    let key = name.clone().unwrap_or_default();
-                    email_invites.insert(token.to_owned(), key.clone());
-                    about_invitee(key, name, MembershipTransition::Invited)
-                } else if let Some(key) = email_invites.get(token) {
-                    about_invitee(key.clone(), None, MembershipTransition::InvitationRevoked)
+                    let invitee = name.clone().unwrap_or_default();
+                    invitee_by_token.insert(token.to_owned(), invitee.clone());
+                    about_invitee(invitee, name, MembershipTransition::Invited)
+                } else if let Some(invitee) = invitee_by_token.get(token) {
+                    about_invitee(invitee.clone(), None, MembershipTransition::InvitationRevoked)
                 } else if let Some(name) = prev_content.as_ref().and_then(|prev| utils::non_blank(Some(prev.display_name.clone()))) {
                     about_invitee(name.clone(), Some(name), MembershipTransition::InvitationRevoked)
                 } else {
@@ -182,7 +205,7 @@ fn summary_entry_of(
     })
 }
 
-/// What a profile change did.
+/// Returns what the given profile change did.
 fn profile_change_of(change: &MemberProfileChange) -> ProfileChange {
     // Setting an empty display name is the same as removing it.
     let name_set = change.displayname_change()
@@ -198,7 +221,7 @@ fn profile_change_of(change: &MemberProfileChange) -> ProfileChange {
     }
 }
 
-/// What a change to the room's own state did.
+/// Returns what the given change to the room's own state did.
 fn room_change_of(other: &timeline::OtherState) -> RoomChange {
     use timeline::AnyOtherStateEventContentChange as SEC;
     match other.content() {
@@ -206,7 +229,7 @@ fn room_change_of(other: &timeline::OtherState) -> RoomChange {
         SEC::RoomTombstone(_) => RoomChange::Upgraded,
         SEC::RoomEncryption(_) => RoomChange::EnabledEncryption,
         SEC::RoomThirdPartyInvite(StateEventContentChange::Original { content, .. })
-            if is_revoked_email_invite(content) => RoomChange::RevokedEmailInvite,
+            if is_email_invite_revocation(content) => RoomChange::RevokedEmailInvite,
         SEC::RoomThirdPartyInvite(_) => RoomChange::EmailInvite,
         SEC::RoomName(_) => RoomChange::Setting(RoomSetting::Name),
         SEC::RoomTopic(_) => RoomChange::Setting(RoomSetting::Topic),
@@ -256,8 +279,7 @@ pub(super) fn populate_small_state_event(
     )
 }
 
-/// Populates the given `SmallStateEvent` widget with the given event's profile and content
-/// (but not its read receipts).
+/// Populates the given `SmallStateEvent` widget with the event's profile and content, but not its read receipts.
 ///
 /// ## Arguments
 /// * `existed`: whether this widget was already showing this event.

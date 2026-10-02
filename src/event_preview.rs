@@ -552,7 +552,7 @@ pub fn text_preview_of_other_state(
             String::from("set the server access control list for this room.")
         }
         AnyOtherStateEventContentChange::RoomThirdPartyInvite(StateEventContentChange::Original { content, prev_content }) => {
-            if is_revoked_email_invite(content) {
+            if is_email_invite_revocation(content) {
                 // The invitation it revokes usually says who it was for.
                 match prev_content.as_ref().map(|prev| prev.display_name.trim()).filter(|name| !name.is_empty()) {
                     Some(invitee) => format!("revoked {}'s invitation to this room.", escaped(invitee, format_as_html)),
@@ -657,17 +657,17 @@ pub fn text_preview_of_member_profile_change(
 }
 
 
-/// The given text, HTML-escaped if it's going into HTML.
+/// HTML-escapes the given text, if `as_html` is true. Otherwise returns it as-is.
 fn escaped(text: &str, as_html: bool) -> Cow<'_, str> {
     if as_html { htmlize::escape_text(text) } else { Cow::Borrowed(text) }
 }
 
-/// Whether this is the empty invitation that revokes an earlier email invitation.
-pub fn is_revoked_email_invite(content: &RoomThirdPartyInviteEventContent) -> bool {
+/// Returns whether the given content is the empty invitation that revokes an earlier email invitation.
+pub fn is_email_invite_revocation(content: &RoomThirdPartyInviteEventContent) -> bool {
     content.display_name.is_empty() && content.key_validity_url.is_empty()
 }
 
-/// The membership that the given change results in, plus the reason given for it, if any.
+/// Returns the membership that the given change results in, plus the reason for it the change.
 pub fn membership_and_reason(change: &RoomMembershipChange) -> (&MembershipState, Option<&str>) {
     match change.content() {
         StateEventContentChange::Original { content, .. } => (&content.membership, content.reason.as_deref()),
@@ -675,7 +675,7 @@ pub fn membership_and_reason(change: &RoomMembershipChange) -> (&MembershipState
     }
 }
 
-/// A membership state, simplified for telling membership changes apart.
+/// Returns the given membership state as a [`Membership`].
 pub fn membership_of(state: &MembershipState) -> Membership {
     match state {
         MembershipState::Join => Membership::Join,
@@ -701,7 +701,7 @@ pub fn membership_transition_of(
     membership_transition_from(change.change(), change.content(), sender == change.user_id(), previous)
 }
 
-/// The guts of [`membership_transition_of()`], minus the SDK type that tests can't build.
+/// An inner function for [`membership_transition_of()`] that operates on separate parts of a `RoomMembershipChange`.
 fn membership_transition_from(
     change: Option<MembershipChange>,
     content: &StateEventContentChange<RoomMemberEventContent>,
@@ -709,8 +709,8 @@ fn membership_transition_from(
     previous: impl FnOnce() -> Option<Membership>,
 ) -> MembershipTransition {
     use MembershipTransition as MT;
-    // `prev_content` is `None` if the event was redacted, and `Some(None)` if the server didn't send one.
-    let (now, prev_content) = match content {
+    // `prev_membership` is `None` if the event was redacted, and `Some(None)` if it had no `prev_content`.
+    let (now, prev_membership) = match content {
         StateEventContentChange::Original { content, prev_content } => (
             membership_of(&content.membership),
             Some(prev_content.as_ref().map(|prev| membership_of(&prev.membership))),
@@ -732,15 +732,15 @@ fn membership_transition_from(
         Some(MembershipChange::KnockAccepted)      => MT::KnockAccepted,
         Some(MembershipChange::KnockRetracted)     => MT::KnockRetracted,
         Some(MembershipChange::KnockDenied)        => MT::KnockDenied,
-        // The SDK treats a missing `prev_content` as a "leave" action,
-        // so this could actually be a kick, unban, etc.
-        Some(MembershipChange::None) if now == Membership::Leave && prev_content.flatten().is_none() => {
+        // The SDK reads a missing `prev_content` as an earlier "leave", so it sees no change here,
+        // but this could actually be a kick, unban, etc.
+        Some(MembershipChange::None) if now == Membership::Leave && prev_membership.flatten().is_none() => {
             membership_transition(previous(), now, by_self)
         }
         Some(MembershipChange::None) if now == Membership::Leave && by_self => MT::Left,
         Some(MembershipChange::None)               => MT::Unchanged(now),
         None | Some(MembershipChange::NotImplemented | MembershipChange::Error) => {
-            let before = match prev_content {
+            let before = match prev_membership {
                 Some(Some(prev)) => Some(prev),
                 _ => previous(),
             };
@@ -760,8 +760,7 @@ pub fn text_preview_of_room_membership_change(
     text_preview_of_membership_transition(change, sender, transition, format_as_html)
 }
 
-/// Returns a text preview of what the given room membership change did
-/// as either a plaintext or HTML-formatted string.
+/// Returns a plaintext or HTML-formatted text preview of what the given membership change did (its `transition`).
 pub fn text_preview_of_membership_transition(
     change: &RoomMembershipChange,
     sender: &UserId,
@@ -836,20 +835,20 @@ mod tests {
         StateEventContentChange::Redacted(RedactedRoomMemberEventContent::new(now))
     }
 
-    /// For events that should settle it on their own.
-    fn no_history() -> Option<Membership> {
+    /// Panics if called, for events that shouldn't need an earlier membership to work out what they did.
+    fn history_not_needed() -> Option<Membership> {
         panic!("shouldn't need to look back")
     }
 
     #[test]
     fn the_sdks_reading_wins_when_it_has_one() {
         let kick = original(St::Leave, Some(St::Join));
-        assert_eq!(membership_transition_from(Some(MembershipChange::Kicked), &kick, false, no_history), T::Kicked);
+        assert_eq!(membership_transition_from(Some(MembershipChange::Kicked), &kick, false, history_not_needed), T::Kicked);
     }
 
     #[test]
     fn a_leave_without_prev_content_goes_by_what_came_before() {
-        // ruma reads the missing `prev_content` as "leave", so it calls someone else's leave no change.
+        // ruma reads a missing `prev_content` as an earlier "leave", so it calls this leave no change.
         let none = Some(MembershipChange::None);
         let leave = original(St::Leave, None);
         assert_eq!(membership_transition_from(none, &leave, false, || Some(Membership::Join)), T::Kicked);
@@ -864,13 +863,13 @@ mod tests {
     #[test]
     fn prev_content_settles_it_without_looking_back() {
         let none = Some(MembershipChange::None);
-        assert_eq!(membership_transition_from(none, &original(St::Leave, Some(St::Leave)), true, no_history), T::Left);
-        assert_eq!(membership_transition_from(none, &original(St::Leave, Some(St::Leave)), false, no_history), T::Unchanged(Membership::Leave));
-        assert_eq!(membership_transition_from(none, &original(St::Ban, Some(St::Ban)), false, no_history), T::Unchanged(Membership::Ban));
+        assert_eq!(membership_transition_from(none, &original(St::Leave, Some(St::Leave)), true, history_not_needed), T::Left);
+        assert_eq!(membership_transition_from(none, &original(St::Leave, Some(St::Leave)), false, history_not_needed), T::Unchanged(Membership::Leave));
+        assert_eq!(membership_transition_from(none, &original(St::Ban, Some(St::Ban)), false, history_not_needed), T::Unchanged(Membership::Ban));
         let accepted = original(St::Invite, Some(St::Knock));
-        assert_eq!(membership_transition_from(Some(MembershipChange::NotImplemented), &accepted, false, no_history), T::KnockAccepted);
+        assert_eq!(membership_transition_from(Some(MembershipChange::NotImplemented), &accepted, false, history_not_needed), T::KnockAccepted);
         let invited = original(St::Invite, Some(St::Join));
-        assert_eq!(membership_transition_from(Some(MembershipChange::Error), &invited, false, no_history), T::Invited);
+        assert_eq!(membership_transition_from(Some(MembershipChange::Error), &invited, false, history_not_needed), T::Invited);
     }
 
     #[test]

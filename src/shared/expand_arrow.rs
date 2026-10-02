@@ -83,7 +83,7 @@ impl ExpandArrow {
         self.animator_toggle(cx, is_open, animate, ids!(expand.expanded), ids!(expand.collapsed))
     }
 
-    /// Set the open/close state without animating.
+    /// Sets the open/close state without animating.
     ///
     /// This is okay to call at any point in any context.
     pub fn set_is_open_no_animate(&mut self, is_open: bool) {
@@ -95,7 +95,7 @@ impl ExpandArrow {
         self.draw_bg.redraw(cx);
     }
 
-    /// A convenience function for setting the arrow to point upwards without animating it.
+    /// Sets the arrow to point up without animating it.
     pub fn set_pointing_up_no_animate(&mut self) {
         // The shader draws the triangle pointing up at zero rotation, which is one step before "closed".
         self.opened_value = -1.0;

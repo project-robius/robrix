@@ -1,5 +1,5 @@
-//! Groups a series of contiguous small state events (joins, leaves, room changes, etc.)
-//! into one summary item that can be expanded and collapsed.
+//! Handles grouping a contiguous series of small state events into a collapsible/expandable group
+//! with a summary of what happened across those state events (like joins, leaves, profile changes, etc).
 //!
 //! The timeline's PortalList always maintains the invariant that `item id == timeline index`,
 //! so a group's first item contains its summary (and an expand button) when collapsed.
@@ -12,6 +12,7 @@ use std::ops::Range;
 use hashbrown::HashMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{EventId, OwnedEventId, OwnedUserId, UserId};
+use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use crate::{
     LivePtr, widget_ref_from_live_ptr,
     home::room_read_receipt::{AvatarRowRef, AvatarRowWidgetRefExt},
@@ -19,8 +20,7 @@ use crate::{
     sliding_sync::TimelineKind,
 };
 
-/// The size of each stacked avatar, and how far each one overlaps the one before it.
-const STACKED_AVATAR_SIZE: f64 = 16.0;
+/// How much each avatar in an [`AvatarStack`] overlaps the one before it.
 const STACKED_AVATAR_OVERLAP: f64 = 5.0;
 
 script_mod! {
@@ -58,7 +58,7 @@ script_mod! {
         }
     }
 
-    // The expand/collapse button (on a separate line) above the first item in a group.
+    // A line with just a collapse button, under the last event of an expanded group.
     mod.widgets.GroupToggleLine = set_type_default() do #(GroupToggleLine::register_widget(vm)) {
         width: Fill,
         height: Fit,
@@ -206,9 +206,8 @@ script_mod! {
     // The avatars of the people involved in a group of state events.
     mod.widgets.AvatarStack = #(AvatarStack::register_widget(vm)) {
         width: Fit,
-        height: 16.0,
+        height: Fit,
         margin: Inset{top: 2.0}
-        align: Align{y: 0.5},
         avatar_template: Avatar {
             width: 16.0,
             height: 16.0,
@@ -269,7 +268,7 @@ script_mod! {
             toggle := mod.widgets.GroupToggle {}
         }
 
-        // The summary, laid out like a SmallStateEvent so it lines up with the rows around it.
+        // The summary, laid out like a SmallStateEvent so it lines up with the items around it.
         body := View {
             width: Fill,
             height: Fit
@@ -308,9 +307,10 @@ script_mod! {
         }
     }
 
-    // A group of small state events: its header, and then the group's summary
-    // (when collapsed) or the group's first event (when expanded).
-    mod.widgets.StateEventGroup = View {
+    // A group's summary item.
+    // When collapsed this contains its header plus the group's summary.
+    // When expanded, this contains just the first event in the group, as normal.
+    mod.widgets.GroupSummaryItem = View {
         width: Fill,
         height: Fit,
         flow: Down,
@@ -328,12 +328,14 @@ script_mod! {
 /// The kind of grouping that a timeline item can be a part of.
 #[derive(Clone, Copy, Debug)]
 pub enum GroupingKind<'a> {
-    /// A visible state event that can go in a group, where it's counted and summarized.
-    GroupedItem(GroupedItemInfo<'a>),
+    /// A visible state event that can be part of a group.
+    Groupable(GroupableEvent<'a>),
     /// A hidden (zero-height) item: it sits inside a group without splitting it, but isn't counted.
-    Neutral,
-    /// A day divider. Groups can span day dividers, and a collapsed group still shows
-    /// the last day divider it covers; see [`StateEventGroups::day_shows_after()`].
+    Hidden,
+    /// A day divider, which can be spanned by or hidden within a group.
+    ///
+    /// A collapsed group still shows the last day divider it spans if that day goes on after the group
+    /// (see [`StateEventGroups::day_shows_after()`]).
     Divider,
     /// Anything else that's visible (a message, an undecryptable event, etc) that ends a group.
     Breaker,
@@ -341,16 +343,16 @@ pub enum GroupingKind<'a> {
     Marker,
 }
 
-/// What a group itself needs to know about each item in that group.
+/// What we needs to know about a state event to determine if it can go into a group.
 #[derive(Clone, Copy, Debug)]
-pub struct GroupedItemInfo<'a> {
+pub struct GroupableEvent<'a> {
     pub event_id: Option<&'a EventId>,
     pub sender: &'a UserId,
     /// If this event is a membership or profile change, this contains the user it's about.
     pub user_about: Option<&'a UserId>,
     /// Whether this is the room's initial creation event.
     pub is_room_create: bool,
-    /// Whether this only goes in a group as part of the room's setup, and gets its own row anywhere else.
+    /// Whether this only goes in a group as part of the room's setup, and is shown on its own anywhere else.
     pub only_grouped_in_room_setup: bool,
 }
 
@@ -372,29 +374,31 @@ pub trait GroupItems {
 pub struct StateEventGroup {
     /// The timeline indices in the group; `start` is its summary item.
     pub range: Range<usize>,
-    /// How many visible state events the group holds (hidden items in the run aren't counted).
+    /// How many visible state events the group holds (hidden items in its range aren't counted).
     pub num_events: usize,
     pub is_expanded: bool,
-    /// The last day divider inside the group, if it spans days. While collapsed, it only
-    /// stays visible if more of that day comes after the group, so that sits under the right day.
+    /// The last day divider inside the group, if it spans multiple days.
+    ///
+    /// While the group is collapsed, this divider is only shown if more events from that day
+    /// come after the group, ensuring that whatever comes next is shown under the correct day.
     pub last_divider: Option<usize>,
-    /// The day divider this group sits under, if any. While the group is collapsed and spans days,
-    /// that divider shows the whole date range if the group is the first thing under it.
+    /// The day divider this group sits under, if any.
+    ///
+    /// While the group is collapsed, this divider will show the whole date range of the group
+    /// (if it spans multiple days) just to make it clear to the user how many days were collapsed.
     pub preceding_divider: Option<usize>,
 }
 
-/// A group of state events that's still being "assembled" from a set of
-/// possible contiguous candidates. Only groups of 2 or more actually become a real group.
+/// A group of state events that's still being assembled while scanning the timeline.
 ///
-/// All of its position fields (`start`, `last_grouped_item`, the dividers) are just indices
-/// into the current timeline item vector.
+/// It only becomes a real group if it ends up having 2 or more events.
+/// All of its positions (`start`, `last_grouped_item`, and the dividers) are timeline item indices.
 struct PendingGroup<'a> {
     /// The first grouped item, where the summary will be shown.
     start: usize,
     /// The last grouped item so far. The group ends right after it.
     last_grouped_item: usize,
-    /// How many real items are in this group so far
-    /// (excluding dividers and other things that wouldn't actually get shown).
+    /// How many state events are in this group so far (hidden items and day dividers don't count).
     num_events: usize,
     /// The newest expand/collapse choice that any of its events remembers, which decides whether it's expanded.
     latest_choice: Option<ExpandChoice>,
@@ -407,8 +411,7 @@ struct PendingGroup<'a> {
     trailing_divider: Option<usize>,
     /// The nearest day divider before the group (the day it starts on), if any.
     preceding_divider: Option<usize>,
-    /// If `Some`, this group contains the initial room creation, such that all following events
-    /// from the same user ID (the creator's user ID) will be grouped together.
+    /// The room's creator, if this group starts with the room's creation.
     creator: Option<&'a UserId>,
 }
 
@@ -426,16 +429,17 @@ impl<'a> PendingGroup<'a> {
         }
     }
 
-    fn is_end_of_room_creation(&self, grouped_item: &GroupedItemInfo) -> bool {
+    /// Returns whether the given event is the end of the room creation/setup group.
+    fn ends_room_setup(&self, event: &GroupableEvent) -> bool {
         self.creator.is_some_and(|creator|
-            grouped_item.sender != creator
-                || grouped_item.user_about.is_some_and(|about| about != creator)
+            event.sender != creator
+                || event.user_about.is_some_and(|about| about != creator)
         )
     }
 
-    /// Whether the given item is still part of the initial room setup.
-    fn continues_room_setup(&self, grouped_item: &GroupedItemInfo) -> bool {
-        self.creator.is_some() && !self.is_end_of_room_creation(grouped_item)
+    /// Returns whether the given item is part of the room's creation/setup group.
+    fn continues_room_setup(&self, event: &GroupableEvent) -> bool {
+        self.creator.is_some() && !self.ends_room_setup(event)
     }
 
     /// Tries to turn this pending group into a real group, if it's long enough to be one.
@@ -445,7 +449,7 @@ impl<'a> PendingGroup<'a> {
         (self.num_events >= 2).then(|| StateEventGroup {
             range: self.start..self.last_grouped_item + 1,
             num_events: self.num_events,
-            is_expanded: self.latest_choice.is_some_and(|choice| choice.expanded),
+            is_expanded: self.latest_choice.is_some_and(|choice| choice.is_expanded),
             last_divider: self.last_divider,
             preceding_divider: self.preceding_divider,
         })
@@ -453,7 +457,7 @@ impl<'a> PendingGroup<'a> {
 }
 
 impl StateEventGroup {
-    /// The group's items after its summary item (its first item).
+    /// Returns the group's items after its summary item (its first item).
     ///
     /// While the group is collapsed, these are all hidden, except for
     /// its last day divider if that day still continues after the end of this group.
@@ -461,13 +465,29 @@ impl StateEventGroup {
         self.range.start + 1 .. self.range.end
     }
 
+    /// Returns this group with each of its indices at or after `first_shifted_index` shifted by `len_change`.
+    ///
+    /// That's where the group's items end up after an update adds `len_change` items (or removes some, if it's negative)
+    /// right before `first_shifted_index`. For example, adding 3 items before index 6 turns a group at 8..11 into 11..14,
+    /// but a group at 1..4 stays the same.
+    fn with_indices_shifted(&self, len_change: isize, first_shifted_index: usize) -> Self {
+        let shifted = |index: usize| if index < first_shifted_index { index } else { index.saturating_add_signed(len_change) };
+        Self {
+            // The range's end is one past its last item, so the last item decides whether the end shifts.
+            range: shifted(self.range.start)..shifted(self.range.end - 1) + 1,
+            last_divider: self.last_divider.map(shifted),
+            preceding_divider: self.preceding_divider.map(shifted),
+            ..self.clone()
+        }
+    }
+
     /// Returns the ranges of items to redraw when this group is toggled or changes.
     ///
     /// This includes its summary item and possibly also the day divider right before the group.
     pub fn ranges_to_redraw(&self) -> impl Iterator<Item = Range<usize>> {
-        let head = self.range.start..self.range.start + 1;
+        let summary_item = self.range.start..self.range.start + 1;
         let divider = self.preceding_divider.map(|d| d..d + 1);
-        std::iter::once(head).chain(divider)
+        std::iter::once(summary_item).chain(divider)
     }
 }
 
@@ -475,33 +495,51 @@ impl StateEventGroup {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ExpandChoice {
     /// Whether the user expanded the group (`true`) or collapsed it (`false`).
-    expanded: bool,
-    /// The sequence number of this choice: each new choice gets one more than the last, so a higher
-    /// one is always newer. If events that remember different choices end up in the same group
-    /// (e.g., two groups merge), the group goes with the newest choice.
+    is_expanded: bool,
+    /// The sequence number of this choice, where a higher one is newer.
+    ///
+    /// This is incremented upon each new choice, which helps us determine
+    /// whether the user's choice to expand or collapse a group is more recent than a prior one.
     sequence_number: u32,
+}
+
+/// Where an event should show up with respect to its group, if it has one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroupPlacement {
+    /// On its own: it's not in a group, or it comes after the first event of an expanded group.
+    OnItsOwn,
+    /// The first event of an expanded group, shown under the group's header.
+    UnderHeader,
+    /// The first event of a collapsed group, whose summary item is shown instead.
+    Summary,
+    /// Hidden in a collapsed group.
+    Hidden,
 }
 
 /// All state event groups within a timeline (in index order), plus which ones are expanded.
 #[derive(Default)]
 pub struct StateEventGroups {
     groups: Vec<StateEventGroup>,
-    /// The latest choice to expand or collapse each group the user toggled, for every event in that group
-    /// (including events that joined it later). Keyed by event ID, so a group stays the way the user
-    /// left it even after a timeline reset. If a group's events remember different choices, the newest one wins.
+    /// The latest expand/collapse choice for each event in a group the user toggled.
+    ///
+    /// This is just here to handle the case when multiple groups get merged together.
+    /// Basically, the latest expand or collapse choice for either group will win.
     expand_choices: HashMap<OwnedEventId, ExpandChoice>,
-    /// The sequence number of the user's newest choice (0 before they've made any).
+    /// The sequence number of the user's latest choice.
     latest_sequence_number: u32,
     /// What's hidden in collapsed groups, see [`Self::collapsed_ranges()`].
-    collapsed: Vec<Range<usize>>,
+    collapsed_ranges: Vec<Range<usize>>,
 }
 
 impl StateEventGroups {
     /// Recomputes how state events should be grouped after the given timeline items have changed.
     ///
-    /// `changed` is the range of item indices that changed in the timeline. If it ends before the
-    /// list does, it all changed in place: nothing after it moved, and no day divider changed.
-    /// Any items outside of `changed` that also changed in place need [`Self::regroup_around()`] afterward.
+    /// `changed` is the range of item indices that changed in the timeline.
+    /// If it ends before the list does, that means nothing after it changed,
+    /// though everything did move by `len_change` indices, which is the number of
+    /// items added minus the number removed.
+    /// Any items outside of `changed` that also changed in place need a call to
+    /// [`Self::regroup_around()`] after this.
     ///
     /// Returns the ranges of items to redraw beyond `changed` itself: the summary item and day divider
     /// of each group that changed or had something in it change.
@@ -509,6 +547,39 @@ impl StateEventGroups {
         &mut self,
         items: &I,
         changed: Range<usize>,
+        len_change: isize,
+    ) -> Vec<Range<usize>> {
+        self.rebuild_ranges(items, [(changed, len_change)])
+    }
+
+    /// Recomputes the groups after items changed in several separate ranges,
+    /// like [`Self::rebuild()`] does for a single one.
+    ///
+    /// Each one is the range of items that changed and its `len_change`, in order.
+    pub fn rebuild_ranges<I: GroupItems>(
+        &mut self,
+        items: &I,
+        changed_ranges: impl IntoIterator<Item = (Range<usize>, isize)>,
+    ) -> Vec<Range<usize>> {
+        let mut to_redraw = Vec::new();
+        let mut any_changed = false;
+        for (changed, len_change) in changed_ranges {
+            to_redraw.extend(self.regroup_range(items, changed, len_change));
+            any_changed = true;
+        }
+        if any_changed {
+            self.update_collapsed_ranges(items);
+        }
+        to_redraw
+    }
+
+    /// Regroups one range of changed items like [`Self::rebuild()`] does,
+    /// except for updating the collapsed ranges.
+    fn regroup_range<I: GroupItems>(
+        &mut self,
+        items: &I,
+        changed: Range<usize>,
+        len_change: isize,
     ) -> Vec<Range<usize>> {
         let len = items.num_items();
         // Start one item before the changed range such that a changed item
@@ -516,58 +587,64 @@ impl StateEventGroups {
         let mut scan_from = changed.start.min(len).saturating_sub(1);
         while scan_from > 0
             && items.get(scan_from).is_some_and(|item|
-                matches!(items.grouping_kind(item), GroupingKind::Neutral | GroupingKind::Divider)
+                matches!(items.grouping_kind(item), GroupingKind::Hidden | GroupingKind::Divider)
             )
         {
             scan_from -= 1;
         }
-        let index_to_keep = self.groups.partition_point(|g| g.range.end <= scan_from);
-        if let Some(g) = self.groups.get(index_to_keep) && g.range.start <= scan_from {
+        let num_groups_before_scan = self.groups.partition_point(|g| g.range.end <= scan_from);
+        if let Some(g) = self.groups.get(num_groups_before_scan) && g.range.start <= scan_from {
             scan_from = g.range.start;
         }
-        let old_tail = self.groups.split_off(index_to_keep);
+        let old_groups = self.groups.split_off(num_groups_before_scan);
 
         // We already know the bounds of the changed item(s), so we don't need to keep looking
         // once we've hit the ending boundary of a change.
         let is_bounded = changed.end < len;
-        let mut stop = len;
+        let mut scan_end = len;
         let mut pending: Option<PendingGroup> = None;
-        // The day divider the next group sits under: looked up once behind the scan, then tracked.
+        // The last day divider before `scan_from`.
+        let (unknown_from, last_known_divider) = match old_groups.first() {
+            Some(g) if g.range.start == scan_from => (scan_from, g.preceding_divider),
+            _ => self.groups.last().map_or((0, None), |g| (g.range.end, g.last_divider.or(g.preceding_divider))),
+        };
+        let last_divider_before_scan = || (unknown_from..scan_from).rev()
+            .find(|&i| items.get(i).is_some_and(|item| matches!(items.grouping_kind(item), GroupingKind::Divider)))
+            .or(last_known_divider);
+        // The last day divider before the item being scanned.
         let mut divider_above: Option<Option<usize>> = None;
         for (offset, item) in items.iter_from(scan_from).enumerate() {
             let index = scan_from + offset;
             match items.grouping_kind(item) {
-                GroupingKind::GroupedItem(grouped_item) => {
+                GroupingKind::Groupable(event) => {
                     // Some changes only go in a group as part of the room's setup.
-                    if grouped_item.only_grouped_in_room_setup
-                        && !pending.as_ref().is_some_and(|pending| pending.continues_room_setup(&grouped_item))
+                    if event.only_grouped_in_room_setup
+                        && !pending.as_ref().is_some_and(|pending| pending.continues_room_setup(&event))
                     {
                         self.add_group_if_long_enough(items, pending.take());
                         continue;
                     }
                     // A room's creation (the create event, then the creator setting it up) is its own special group:
-                    // it ends as soon as any other user has a state event.
-                    if grouped_item.is_room_create || pending.as_ref().is_some_and(|pending| pending.is_end_of_room_creation(&grouped_item)) {
+                    // it ends at the first state event by or about anyone else.
+                    if event.is_room_create || pending.as_ref().is_some_and(|pending| pending.ends_room_setup(&event)) {
                         self.add_group_if_long_enough(items, pending.take());
                     }
                     let pending = pending.get_or_insert_with(|| {
-                        let divider = *divider_above.get_or_insert_with(|| {
-                            (0..scan_from).rev().find(|&i| items.get(i).is_some_and(|item| matches!(items.grouping_kind(item), GroupingKind::Divider)))
-                        });
-                        PendingGroup::new(index, grouped_item.is_room_create.then_some(grouped_item.sender), divider)
+                        let divider = *divider_above.get_or_insert_with(last_divider_before_scan);
+                        PendingGroup::new(index, event.is_room_create.then_some(event.sender), divider)
                     });
                     pending.num_events += 1;
                     pending.last_grouped_item = index;
                     if let Some(divider) = pending.trailing_divider.take() {
                         pending.last_divider = Some(divider);
                     }
-                    if let Some(&choice) = grouped_item.event_id.and_then(|id| self.expand_choices.get(id))
+                    if let Some(&choice) = event.event_id.and_then(|id| self.expand_choices.get(id))
                         && pending.latest_choice.is_none_or(|latest| latest.sequence_number < choice.sequence_number)
                     {
                         pending.latest_choice = Some(choice);
                     }
                 }
-                GroupingKind::Neutral => { }
+                GroupingKind::Hidden => { }
                 GroupingKind::Divider => {
                     divider_above = Some(Some(index));
                     if let Some(pending) = &mut pending {
@@ -580,16 +657,25 @@ impl StateEventGroups {
                 GroupingKind::Breaker => {
                     self.add_group_if_long_enough(items, pending.take());
                     if is_bounded && index >= changed.end {
-                        stop = index;
+                        scan_end = index;
                         break;
                     }
                 }
             }
         }
         self.add_group_if_long_enough(items, pending.take());
-        let (still_valid, rescanned): (Vec<_>, Vec<_>) = old_tail.into_iter()
-            .partition(|g| is_bounded && g.range.start > stop);
-        let new_groups = &self.groups[index_to_keep..];
+        let (still_valid, old_rescanned): (Vec<_>, Vec<_>) = old_groups.into_iter()
+            .partition(|g| is_bounded && g.range.start > scan_end.saturating_add_signed(-len_change));
+        // The old groups that overlapped the changed items have now changed with them.
+        // To compare the others with the new groups, we have to shift the indices of the ones
+        // that came after the changed items to where those items are now.
+        let old_change_end = changed.end.saturating_add_signed(-len_change);
+        let (old_overlapping, mut old_unchanged): (Vec<_>, Vec<_>) = old_rescanned.into_iter()
+            .partition(|g| g.range.start < old_change_end && changed.start < g.range.end);
+        for g in old_unchanged.iter_mut() {
+            *g = g.with_indices_shifted(len_change, old_change_end);
+        }
+        let new_groups = &self.groups[num_groups_before_scan..];
 
         // A closure to determine if the given group depends on the change that happened
         // and thus needs to be redrawn.
@@ -602,12 +688,35 @@ impl StateEventGroups {
             first_item_it_depends_on < changed.end && changed.start < g.range.end
         };
 
-        let to_redraw = rescanned.iter().filter(|&g| !has_same(new_groups, g))
-            .chain(new_groups.iter().filter(|&g| !has_same(&rescanned, g) || depends_on_change(g)))
-            .flat_map(StateEventGroup::ranges_to_redraw)
-            .collect();
-        self.groups.extend(still_valid);
-        self.update_collapsed_ranges(items);
+        // If everything changed, there's nothing else to redraw.
+        let to_redraw = if changed.start == 0 && !is_bounded {
+            Vec::new()
+        } else {
+            old_unchanged.iter().filter(|&g| !contains_group(new_groups, g))
+                .flat_map(StateEventGroup::ranges_to_redraw)
+                // An old group that overlapped the changed items is still where it was, unless it was among the items that moved.
+                .chain(old_overlapping.iter().filter(|&g| !contains_group(new_groups, g))
+                    .flat_map(StateEventGroup::ranges_to_redraw)
+                    .filter(|range| len_change == 0 || range.start < changed.start)
+                )
+                .chain(new_groups.iter().filter(|&g| !contains_group(&old_unchanged, g) || depends_on_change(g))
+                    .flat_map(StateEventGroup::ranges_to_redraw)
+                )
+                .collect()
+        };
+
+        // The groups after the rescanned items didn't change, they just moved.
+        self.groups.extend(still_valid.iter().map(|old| {
+            let mut g = old.with_indices_shifted(len_change, old_change_end);
+            if old.preceding_divider.is_none_or(|divider| divider < old_change_end) {
+                g.preceding_divider = match divider_above {
+                    Some(divider) => divider,
+                    None if old.preceding_divider.is_none_or(|divider| divider < scan_from) => old.preceding_divider,
+                    None => *divider_above.get_or_insert_with(last_divider_before_scan),
+                };
+            }
+            g
+        }));
         to_redraw
     }
 
@@ -616,11 +725,7 @@ impl StateEventGroups {
     /// For example, a knock that just got answered can go in a group now, even though its answer
     /// came in further down the timeline. Returns the ranges of items to redraw, like `rebuild()` does.
     pub fn regroup_around<I: GroupItems>(&mut self, items: &I, indices: &[usize]) -> Vec<Range<usize>> {
-        let mut to_redraw = Vec::new();
-        for &index in indices {
-            to_redraw.extend(self.rebuild(items, index..index + 1));
-        }
-        to_redraw
+        self.rebuild_ranges(items, indices.iter().map(|&index| (index..index + 1, 0)))
     }
 
     /// Adds the given pending group to `self.groups`, if it has at least 2 events.
@@ -630,21 +735,16 @@ impl StateEventGroups {
     fn add_group_if_long_enough<I: GroupItems>(&mut self, items: &I, pending: Option<PendingGroup>) {
         let Some(pending) = pending else { return };
         if let Some(choice) = pending.latest_choice {
-            for id in grouped_event_ids(items, pending.start..pending.last_grouped_item + 1) {
-                match self.expand_choices.get_mut(id) {
-                    Some(its_choice) => *its_choice = choice,
-                    None => { self.expand_choices.insert(id.to_owned(), choice); }
-                }
-            }
+            remember_choice(&mut self.expand_choices, grouped_event_ids(items, pending.start..pending.last_grouped_item + 1), choice);
         }
         self.groups.extend(pending.into_group());
     }
 
     /// Returns the last item of the date range that the day divider at `divider_index` shows, if any.
     ///
-    /// A divider shows a date range when the first thing under it is a collapsed group that runs
-    /// into later days, and that range ends at the group's last item. Otherwise, the divider just
-    /// shows its own date, since a range would mislabel whatever else comes first.
+    /// A divider shows a date range when the first thing under it is a collapsed group that spans
+    /// multiple days, and that range ends at the group's last item.
+    /// Otherwise, the divider just shows its own singular date.
     pub fn collapsed_span_end<I: GroupItems>(
         &self,
         items: &I,
@@ -652,7 +752,7 @@ impl StateEventGroups {
     ) -> Option<usize> {
         // Hidden items and the read marker don't count.
         let first_shown = (divider_index + 1..items.num_items()).find(|&i| {
-            items.get(i).is_some_and(|item| !matches!(items.grouping_kind(item), GroupingKind::Neutral | GroupingKind::Marker))
+            items.get(i).is_some_and(|item| !matches!(items.grouping_kind(item), GroupingKind::Hidden | GroupingKind::Marker))
         })?;
         let group = self.containing(first_shown).filter(|g| g.range.start == first_shown)?;
         (!group.is_expanded && group.last_divider.is_some()).then(|| group.range.end - 1)
@@ -678,8 +778,8 @@ impl StateEventGroups {
             }
             match items.grouping_kind(item) {
                 GroupingKind::Divider => return false,
-                GroupingKind::Neutral | GroupingKind::Marker => i += 1,
-                GroupingKind::GroupedItem(_) | GroupingKind::Breaker => return true,
+                GroupingKind::Hidden | GroupingKind::Marker => i += 1,
+                GroupingKind::Groupable(_) | GroupingKind::Breaker => return true,
             }
         }
         false
@@ -691,6 +791,17 @@ impl StateEventGroups {
         self.groups.get(i).filter(|g| g.range.start <= index)
     }
 
+    /// Returns where the event at `index` should show up within its group.
+    pub fn placement_of(&self, index: usize) -> GroupPlacement {
+        match self.containing(index) {
+            None => GroupPlacement::OnItsOwn,
+            Some(group) if group.range.start == index && group.is_expanded => GroupPlacement::UnderHeader,
+            Some(group) if group.range.start == index => GroupPlacement::Summary,
+            Some(group) if group.is_expanded => GroupPlacement::OnItsOwn,
+            Some(_) => GroupPlacement::Hidden,
+        }
+    }
+
     /// Returns the ranges of items that are hidden in collapsed groups, in order.
     ///
     /// A collapsed group only shows its summary item, plus its last day divider if that day
@@ -698,7 +809,17 @@ impl StateEventGroups {
     ///
     /// The timeline's list skips drawing these ranges, since they're not visible anyway.
     pub fn collapsed_ranges(&self) -> &[Range<usize>] {
-        &self.collapsed
+        &self.collapsed_ranges
+    }
+
+    /// Returns the summary item for the collapsed group that ends right before `index`, if there is one.
+    ///
+    /// Day dividers, hidden items, and the read marker in between don't count.
+    pub fn collapsed_group_right_before<I: GroupItems>(&self, items: &I, index: usize) -> Option<usize> {
+        let last_shown = (0..index.min(items.num_items())).rev().find(|&i| items.get(i).is_some_and(|item|
+            matches!(items.grouping_kind(item), GroupingKind::Groupable(_) | GroupingKind::Breaker)
+        ))?;
+        self.summary_item_if_collapsed(last_shown)
     }
 
     /// Returns the index of the next item after `index` that the timeline's list draws.
@@ -708,30 +829,30 @@ impl StateEventGroups {
     /// This is because we always must draw the last item such that the portallist knows it's at the end.
     pub fn next_drawn_after(&self, index: usize, num_items: usize) -> usize {
         let next = index + 1;
-        let i = self.collapsed.partition_point(|run| run.end <= next);
-        let next = self.collapsed.get(i).filter(|run| run.start <= next).map_or(next, |run| run.end);
+        let i = self.collapsed_ranges.partition_point(|range| range.end <= next);
+        let next = self.collapsed_ranges.get(i).filter(|range| range.start <= next).map_or(next, |range| range.end);
         next.min(num_items.saturating_sub(1)).max(index + 1)
     }
 
     /// Recomputes which items are hidden in collapsed groups (see [`Self::collapsed_ranges()`]).
     ///
-    /// This always starts from scratch since the content of a group (like day dividers)
-    /// can change even if nothing in the group itself actually changed.
+    /// This always starts from scratch, since a collapsed group's last day divider
+    /// depends on what comes after that group, which itself can change even if the group doesn't change.
     fn update_collapsed_ranges<I: GroupItems>(&mut self, items: &I) {
-        let mut collapsed = std::mem::take(&mut self.collapsed);
-        collapsed.clear();
+        let mut collapsed_ranges = std::mem::take(&mut self.collapsed_ranges);
+        collapsed_ranges.clear();
         for group in self.groups.iter().filter(|group| !group.is_expanded) {
             match group.last_divider.filter(|&divider| self.day_shows_after(items, divider)) {
-                Some(divider) => collapsed.extend([group.range.start + 1..divider, divider + 1..group.range.end]),
-                None => collapsed.push(group.items_after_summary()),
+                Some(divider) => collapsed_ranges.extend([group.range.start + 1..divider, divider + 1..group.range.end]),
+                None => collapsed_ranges.push(group.items_after_summary()),
             }
         }
-        collapsed.retain(|run| !run.is_empty());
-        self.collapsed = collapsed;
+        collapsed_ranges.retain(|range| !range.is_empty());
+        self.collapsed_ranges = collapsed_ranges;
     }
 
-    /// Returns the summary item that should be shown instead of the item at `index`,
-    /// only if a collapsed group contains that item (and it's being hidden by said group).
+    /// Returns the summary item of the collapsed group that contains the item at `index`,
+    /// unless `index` *is* that summary item, in which case it returns `None`.
     pub fn summary_item_if_collapsed(&self, index: usize) -> Option<usize> {
         self.containing(index)
             .filter(|group| !group.is_expanded && group.range.start != index)
@@ -746,14 +867,14 @@ impl StateEventGroups {
         let group = self.groups.get_mut(i).filter(|g| g.range.start <= index)?;
         group.is_expanded = !group.is_expanded;
         self.latest_sequence_number += 1;
-        let choice = ExpandChoice { expanded: group.is_expanded, sequence_number: self.latest_sequence_number };
-        self.expand_choices.extend(grouped_event_ids(items, group.range.clone()).map(|id| (id.to_owned(), choice)));
+        let choice = ExpandChoice { is_expanded: group.is_expanded, sequence_number: self.latest_sequence_number };
+        remember_choice(&mut self.expand_choices, grouped_event_ids(items, group.range.clone()), choice);
         let group = group.clone();
         self.update_collapsed_ranges(items);
         Some(group)
     }
 
-    /// If the group containing the item at `index` is collapsed, this expands the group and returns it.
+    /// Expands the group containing the item at `index` and returns it, if that group is collapsed.
     pub fn expand_containing<I: GroupItems>(&mut self, index: usize, items: &I) -> Option<StateEventGroup> {
         if self.containing(index).is_none_or(|g| g.is_expanded) {
             return None;
@@ -768,12 +889,26 @@ impl StateEventGroups {
 pub fn shows_anything_before<I: GroupItems>(items: &I, index: usize) -> bool {
     items.iter_from(0)
         .take(index)
-        .any(|item| matches!(items.grouping_kind(item), GroupingKind::GroupedItem(_) | GroupingKind::Breaker))
+        .any(|item| matches!(items.grouping_kind(item), GroupingKind::Groupable(_) | GroupingKind::Breaker))
 }
 
-/// Returns whether the sorted `groups` array contains the given `group`.
-fn has_same(groups: &[StateEventGroup], group: &StateEventGroup) -> bool {
+/// Returns whether the sorted `groups` contain the given `group`, unchanged.
+fn contains_group(groups: &[StateEventGroup], group: &StateEventGroup) -> bool {
     groups.binary_search_by_key(&group.range.start, |g| g.range.start).is_ok_and(|i| groups[i] == *group)
+}
+
+/// Makes the given list of events remember the expand/collapse choice.
+fn remember_choice<'a>(
+    expand_choices: &mut HashMap<OwnedEventId, ExpandChoice>,
+    event_ids: impl Iterator<Item = &'a EventId>,
+    choice: ExpandChoice,
+) {
+    for id in event_ids {
+        match expand_choices.get_mut(id) {
+            Some(its_choice) => *its_choice = choice,
+            None => { expand_choices.insert(id.to_owned(), choice); }
+        }
+    }
 }
 
 /// Returns the event IDs of the grouped events among the items in `range`.
@@ -781,7 +916,7 @@ fn grouped_event_ids<I: GroupItems>(items: &I, range: Range<usize>) -> impl Iter
     items.iter_from(range.start)
         .take(range.len())
         .filter_map(move |item| match items.grouping_kind(item) {
-            GroupingKind::GroupedItem(info) => info.event_id,
+            GroupingKind::Groupable(info) => info.event_id,
             _ => None,
         })
 }
@@ -795,11 +930,24 @@ pub struct AvatarStack {
     #[layout] layout: Layout,
     #[walk] walk: Walk,
     #[live] avatar_template: Option<LivePtr>,
-    /// One avatar per shown user, plus whether its image is fully drawn yet.
-    #[rust] avatars: Vec<(AvatarRef, bool)>,
-    /// The users shown, in order.
-    #[rust] user_ids: Vec<OwnedUserId>,
+    /// One avatar per shown user, in order of the events.
+    #[rust] avatars: Vec<StackedAvatar>,
     #[rust] timeline_kind: Option<TimelineKind>,
+}
+
+/// Info about a user to show in an [`AvatarStack`].
+#[derive(Clone, PartialEq)]
+pub struct StackedUser {
+    pub user_id: OwnedUserId,
+    pub profile: Option<Profile>,
+}
+
+/// One avatar in an [`AvatarStack`].
+struct StackedAvatar {
+    user: StackedUser,
+    avatar: AvatarRef,
+    /// Whether its image is fully drawn yet.
+    is_drawn: bool,
 }
 
 impl WidgetNode for AvatarStack {
@@ -808,7 +956,7 @@ impl WidgetNode for AvatarStack {
     fn area(&self) -> Area { self.area }
     fn redraw(&mut self, cx: &mut Cx) { self.area.redraw(cx) }
     fn children(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) {
-        for (i, (avatar, _)) in self.avatars.iter().enumerate() {
+        for (i, StackedAvatar { avatar, .. }) in self.avatars.iter().enumerate() {
             visit(live_id_num!(avatar, i as u64), WidgetRef::clone(avatar));
         }
     }
@@ -821,23 +969,23 @@ impl Widget for AvatarStack {
         // The avatars come from a template, so nothing sends them events unless we do.
         // They only get actions here, mostly so they can show their images once loaded.
         if let Event::Actions(_) = event {
-            for (avatar, _) in &self.avatars {
+            for StackedAvatar { avatar, .. } in &self.avatars {
                 avatar.handle_event(cx, event, scope);
             }
         }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.user_ids.is_empty() {
+        if self.avatars.is_empty() {
             self.area = Area::Empty;
             return DrawStep::done();
         }
         // Avatars show a text placeholder while being fetched; keep drawing them until their image arrives.
         self.update_undrawn_avatars(cx);
         cx.begin_turtle(walk, self.layout);
-        for (i, (avatar, _)) in self.avatars.iter_mut().enumerate() {
-            // Each avatar after the first overlaps the one before it.
-            let mut avatar_walk = Walk::fixed(STACKED_AVATAR_SIZE, STACKED_AVATAR_SIZE);
+        for (i, StackedAvatar { avatar, .. }) in self.avatars.iter_mut().enumerate() {
+            // Each avatar slightly overlaps the one before it.
+            let mut avatar_walk = avatar.walk(cx);
             if i > 0 {
                 avatar_walk.margin.left = -STACKED_AVATAR_OVERLAP;
             }
@@ -850,13 +998,15 @@ impl Widget for AvatarStack {
 
 impl AvatarStack {
     /// Shows avatars for the given users.
-    pub fn set_users(&mut self, cx: &mut Cx, timeline_kind: &TimelineKind, user_ids: &[OwnedUserId]) {
-        if self.user_ids != user_ids {
-            self.user_ids = user_ids.to_vec();
-            self.avatars.clear();
-            for _ in user_ids {
-                self.avatars.push((widget_ref_from_live_ptr(cx, self.avatar_template).as_avatar(), false));
-            }
+    pub fn set_users(&mut self, cx: &mut Cx, timeline_kind: &TimelineKind, users: &[StackedUser]) {
+        if !self.avatars.iter().map(|a| &a.user).eq(users) {
+            self.avatars = users.iter()
+                .map(|user| StackedAvatar {
+                    user: user.clone(),
+                    avatar: widget_ref_from_live_ptr(cx, self.avatar_template).as_avatar(),
+                    is_drawn: false,
+                })
+                .collect();
             // Tell the widget tree to pick up the list of new avatars
             cx.widget_tree_mark_dirty(self.uid);
         }
@@ -867,9 +1017,10 @@ impl AvatarStack {
     /// Populates any avatars that aren't fully drawn yet.
     fn update_undrawn_avatars(&mut self, cx: &mut Cx) {
         let Some(timeline_kind) = &self.timeline_kind else { return };
-        for ((avatar, drawn), user_id) in self.avatars.iter_mut().zip(&self.user_ids) {
-            if !*drawn {
-                *drawn = avatar.set_avatar_and_get_username(cx, timeline_kind, user_id, None, None, false).1;
+        for StackedAvatar { user, avatar, is_drawn } in &mut self.avatars {
+            if !*is_drawn {
+                let profile = user.profile.clone().map(TimelineDetails::Ready);
+                *is_drawn = avatar.set_avatar_and_get_username(cx, timeline_kind, &user.user_id, profile.as_ref(), None, false).1;
             }
         }
     }
@@ -877,16 +1028,16 @@ impl AvatarStack {
 
 impl AvatarStackRef {
     /// See [`AvatarStack::set_users()`].
-    pub fn set_users(&self, cx: &mut Cx, timeline_kind: &TimelineKind, user_ids: &[OwnedUserId]) {
+    pub fn set_users(&self, cx: &mut Cx, timeline_kind: &TimelineKind, users: &[StackedUser]) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_users(cx, timeline_kind, user_ids);
+            inner.set_users(cx, timeline_kind, users);
         }
     }
 }
 
 
 #[derive(Clone, Debug, Default)]
-pub enum StateEventGroupAction {
+enum StateEventGroupAction {
     /// A group's expand/collapse button was clicked.
     Toggled,
     #[default]
@@ -897,7 +1048,7 @@ pub enum StateEventGroupAction {
 ///
 /// This includes hover highlights, animating the text/icon color and the background hover state.
 ///
-/// Returns `true` if it was clicked/tapped. 
+/// Returns `true` if it was clicked/tapped.
 fn handle_toggle_hit<W>(widget: &mut W, cx: &mut Cx, event: &Event, claim_before: Area) -> bool
 where
     W: AnimatorImpl + std::ops::Deref<Target = View>,
@@ -950,14 +1101,13 @@ impl GroupToggle {
     }
 }
 
-/// Whether the widget with the given `uid` was just clicked to toggle its group.
+/// Returns whether the widget with the given `uid` was just clicked to toggle its group.
 fn was_toggled(uid: WidgetUid, actions: &Actions) -> bool {
     actions.filter_widget_actions(uid)
         .any(|action| matches!(action.cast(), StateEventGroupAction::Toggled))
 }
 
-/// The header of a group of state events: its expand/collapse button, follow by
-/// a summary of the group while it's collapsed.
+/// The header of a group of state events: its expand/collapse button, followed by its summary while collapsed.
 ///
 /// Clicking anywhere on it toggles (expands/collapses) the group.
 #[derive(Script, ScriptHook, Widget, Animator)]
@@ -966,9 +1116,7 @@ pub struct StateEventGroupHeader {
     #[deref] view: View,
     #[apply_default] animator: Animator,
     #[rust] expanded: bool,
-    /// Users whos names in the summary that are still being looked up.
-    ///
-    /// The string is their currently-known/best effort name.
+    /// Users whose names in the summary are still being looked up.
     #[rust] pending_names: Vec<(OwnedUserId, Option<String>)>,
 }
 
@@ -1045,13 +1193,14 @@ impl StateEventGroupHeaderRef {
         })
     }
 
-    /// Whether this header was just clicked to toggle its group.
+    /// Returns whether this header was just clicked to toggle its group.
     pub fn toggled(&self, actions: &Actions) -> bool {
         was_toggled(self.widget_uid(), actions)
     }
 }
 
 /// A line with just the expand/collapse control, after the last event of an expanded group.
+///
 /// Clicking anywhere on it collapses the group.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct GroupToggleLine {
@@ -1077,7 +1226,7 @@ impl Widget for GroupToggleLine {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // It sits below the group it collapses, so it always points up at it.
+        // This line sits under the group it collapses, so its arrow always points up at the group.
         self.view.label(cx, ids!(toggle_label)).set_text(cx, "Collapse");
         if let Some(mut arrow) = self.view.widget(cx, ids!(toggle_arrow)).borrow_mut::<ExpandArrow>() {
             arrow.set_pointing_up_no_animate();
@@ -1094,14 +1243,15 @@ impl GroupToggleLineRef {
         }
     }
 
-    /// Whether this line was just clicked to collapse its group.
+    /// Returns whether this line was just clicked to collapse its group.
     pub fn toggled(&self, actions: &Actions) -> bool {
         was_toggled(self.widget_uid(), actions)
     }
 }
 
-/// A small state event in the timeline (a membership change, a room setting change, etc.),
-/// which can flash a highlight, e.g. after a jump to it.
+/// A small state event in the timeline, e.g., a membership, profile, or room setting change.
+///
+/// It can flash a highlight, e.g., after a jump to it.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SmallStateEvent {
     #[source] source: ScriptObjectRef,
@@ -1127,8 +1277,7 @@ impl Widget for SmallStateEvent {
 }
 
 impl SmallStateEventRef {
-    /// Shows or hides this event. Meant for right before it gets drawn, so it doesn't redraw anything
-    /// (`set_visible()` would redraw everything if this has never been drawn).
+    /// Shows or hides this event without redrawing anything.
     pub fn set_shown(&self, shown: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.view.visible = shown;
@@ -1180,7 +1329,8 @@ mod tests {
         Divider,
         ReadMarker,
         State { id: OwnedEventId, sender: OwnedUserId, about: Option<OwnedUserId>, is_create: bool, only_in_setup: bool },
-        /// A knock that's still waiting on an answer, which gets its own row like a message does.
+        /// A knock that's still waiting on an answer, which is shown on its own like a message is.
+        ///
         /// Once it's answered, it's a `State` event by and about whoever knocked.
         PendingKnock { id: OwnedEventId, sender: OwnedUserId },
     }
@@ -1193,10 +1343,10 @@ mod tests {
         fn grouping_kind<'a>(&'a self, item: &'a Item) -> GroupingKind<'a> {
             match item {
                 Item::Message | Item::PendingKnock { .. } => GroupingKind::Breaker,
-                Item::Hidden => GroupingKind::Neutral,
+                Item::Hidden => GroupingKind::Hidden,
                 Item::Divider => GroupingKind::Divider,
                 Item::ReadMarker => GroupingKind::Marker,
-                Item::State { id, sender, about, is_create, only_in_setup } => GroupingKind::GroupedItem(GroupedItemInfo {
+                Item::State { id, sender, about, is_create, only_in_setup } => GroupingKind::Groupable(GroupableEvent {
                     event_id: Some(id),
                     sender,
                     user_about: about.as_deref(),
@@ -1225,7 +1375,7 @@ mod tests {
         }
     }
 
-    /// A state event by alice about herself (the common case).
+    /// Returns a state event by alice about herself (the common case).
     fn state(n: usize) -> Item {
         event(n, "alice", Some("alice"))
     }
@@ -1235,8 +1385,9 @@ mod tests {
         Item::PendingKnock { id: OwnedEventId::try_from(format!("$ev{n}")).unwrap(), sender: user(sender) }
     }
 
-    /// Returns the item that `item` turns into once it gets answered (if it's a pending knock),
-    /// or once its answer goes away (if it's an answered knock), or `None` if it isn't a knock.
+    /// Returns what the knock `item` turns into once it's answered, or once its answer goes away.
+    ///
+    /// Here, any state event by and about the same person counts as an answered knock. Returns `None` for anything else.
     fn flip_knock(item: &Item) -> Option<Item> {
         match item {
             Item::PendingKnock { id, sender } => Some(Item::State {
@@ -1268,13 +1419,25 @@ mod tests {
 
     fn rebuild_all(items: &Vec<Item>) -> StateEventGroups {
         let mut groups = StateEventGroups::default();
-        groups.rebuild(items, 0..usize::MAX);
+        groups.rebuild(items, 0..usize::MAX, 0);
         groups
     }
 
-    /// (range, num_events, last_divider) of every group, for terse assertions.
-    fn summary(groups: &StateEventGroups) -> Vec<(Range<usize>, usize, Option<usize>)> {
-        groups.groups.iter().map(|g| (g.range.clone(), g.num_events, g.last_divider)).collect()
+    /// A group's range, event count, and last day divider.
+    #[derive(Debug, PartialEq)]
+    struct GroupShape {
+        range: Range<usize>,
+        num_events: usize,
+        last_divider: Option<usize>,
+    }
+
+    fn shape(range: Range<usize>, num_events: usize, last_divider: Option<usize>) -> GroupShape {
+        GroupShape { range, num_events, last_divider }
+    }
+
+    /// Returns the [`GroupShape`] of every group, for terse assertions.
+    fn group_shapes(groups: &StateEventGroups) -> Vec<GroupShape> {
+        groups.groups.iter().map(|g| shape(g.range.clone(), g.num_events, g.last_divider)).collect()
     }
 
     #[test]
@@ -1286,7 +1449,7 @@ mod tests {
         let mut groups = rebuild_all(&items);
         assert_eq!(groups.containing(2).unwrap().preceding_divider, Some(0));
         assert_eq!(groups.containing(7).unwrap().preceding_divider, Some(6));
-        // The first group runs into the next day, so the divider above it covers its last event too.
+        // The first group continues into the next day, so the divider above it covers its last event too.
         assert_eq!(groups.collapsed_span_end(&items, 0), Some(4));
         assert_eq!(groups.collapsed_span_end(&items, 6), None);
         assert_eq!(groups.containing(2).unwrap().ranges_to_redraw().collect::<Vec<_>>(), vec![2..3, 0..1]);
@@ -1295,27 +1458,27 @@ mod tests {
         assert_eq!(groups.collapsed_span_end(&items, 0), None);
         assert_eq!(groups.containing(2).unwrap().ranges_to_redraw().collect::<Vec<_>>(), vec![2..3, 0..1]);
         // A rebuild that starts partway through a day still finds the divider above.
-        let to_redraw = groups.rebuild(&items, 8..9);
+        let to_redraw = groups.rebuild(&items, 8..9, 0);
         assert!(to_redraw.contains(&(7..8)) && to_redraw.contains(&(6..7)));
         assert_eq!(groups.containing(7).unwrap().preceding_divider, Some(6));
     }
 
     #[test]
-    fn runs_of_two_or_more_become_groups() {
+    fn two_or_more_contiguous_state_events_become_a_group() {
         let items = vec![state(0), state(1), Item::Message, state(3), Item::Message, state(5), state(6), state(7)];
-        assert_eq!(summary(&rebuild_all(&items)), vec![(0..2, 2, None), (5..8, 3, None)]);
+        assert_eq!(group_shapes(&rebuild_all(&items)), vec![shape(0..2, 2, None), shape(5..8, 3, None)]);
     }
 
     #[test]
     fn hidden_items_are_absorbed_but_not_counted() {
         let items = vec![Item::Hidden, state(1), Item::Hidden, state(3), Item::Hidden, Item::Message, state(6), Item::Hidden, Item::Message];
-        assert_eq!(summary(&rebuild_all(&items)), vec![(1..4, 2, None)]);
+        assert_eq!(group_shapes(&rebuild_all(&items)), vec![shape(1..4, 2, None)]);
     }
 
     #[test]
     fn day_dividers_are_spanned() {
         let items = vec![state(0), Item::Divider, state(2), Item::Divider, state(4), Item::Divider, Item::Message];
-        assert_eq!(summary(&rebuild_all(&items)), vec![(0..5, 3, Some(3))]);
+        assert_eq!(group_shapes(&rebuild_all(&items)), vec![shape(0..5, 3, Some(3))]);
     }
 
     #[test]
@@ -1329,7 +1492,7 @@ mod tests {
             event(5, "carol", Some("carol")),
             event(6, "alice", None),            // alice changing the topic later is a normal change
         ];
-        assert_eq!(summary(&rebuild_all(&items)), vec![(0..4, 4, None), (4..7, 3, None)]);
+        assert_eq!(group_shapes(&rebuild_all(&items)), vec![shape(0..4, 4, None), shape(4..7, 3, None)]);
     }
 
     #[test]
@@ -1343,7 +1506,7 @@ mod tests {
             event(5, "carol", Some("carol")),
         ];
         // However long it takes, it's all the room's setup until someone else shows up.
-        assert_eq!(summary(&rebuild_all(&items)), vec![(0..4, 3, Some(2)), (4..6, 2, None)]);
+        assert_eq!(group_shapes(&rebuild_all(&items)), vec![shape(0..4, 3, Some(2)), shape(4..6, 2, None)]);
     }
 
     #[test]
@@ -1354,7 +1517,7 @@ mod tests {
             event(2, "alice", Some("bob")),     // alice invites bob
             event(3, "bob", Some("bob")),
         ];
-        assert_eq!(summary(&rebuild_all(&items)), vec![(0..2, 2, None), (2..4, 2, None)]);
+        assert_eq!(group_shapes(&rebuild_all(&items)), vec![shape(0..2, 2, None), shape(2..4, 2, None)]);
     }
 
     #[test]
@@ -1364,22 +1527,22 @@ mod tests {
             event(1, "alice", Some("alice")),
             access_change(2, "alice"),          // part of setting up the room
             event(3, "bob", Some("bob")),
-            access_change(4, "alice"),          // like alice making the room public later: that gets its own row
+            access_change(4, "alice"),          // like alice making the room public later: that's shown on its own
             event(5, "carol", Some("carol")),
             event(6, "dave", Some("dave")),
         ];
-        assert_eq!(summary(&rebuild_all(&items)), vec![(0..3, 3, None), (5..7, 2, None)]);
+        assert_eq!(group_shapes(&rebuild_all(&items)), vec![shape(0..3, 3, None), shape(5..7, 2, None)]);
 
-        // Whether one's part of the setup depends on what's before it, so a change there can regroup what's after it.
+        // The items after the create event are only part of the setup while it's there, so replacing it regroups them.
         let mut items = vec![create(0, "alice"), access_change(1, "alice"), event(2, "alice", None), event(3, "bob", Some("bob"))];
         let mut groups = rebuild_all(&items);
-        assert_eq!(summary(&groups), vec![(0..3, 3, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..3, 3, None)]);
         items[0] = event(0, "alice", Some("alice"));
-        groups.rebuild(&items, 0..1);
-        assert_eq!(summary(&groups), vec![(2..4, 2, None)]);
+        groups.rebuild(&items, 0..1, 0);
+        assert_eq!(group_shapes(&groups), vec![shape(2..4, 2, None)]);
         items[0] = create(0, "alice");
-        groups.rebuild(&items, 0..1);
-        assert_eq!(summary(&groups), vec![(0..3, 3, None)]);
+        groups.rebuild(&items, 0..1, 0);
+        assert_eq!(group_shapes(&groups), vec![shape(0..3, 3, None)]);
     }
 
     #[test]
@@ -1394,25 +1557,25 @@ mod tests {
     }
 
     #[test]
-    fn bounded_change_only_redoes_the_run_it_touches() {
+    fn bounded_change_only_redoes_the_group_it_touches() {
         let items = vec![state(0), state(1), Item::Message, state(3), state(4), Item::Message, state(6), state(7)];
         let mut groups = rebuild_all(&items);
         // Something about item 3 changed (e.g. a read receipt), but the list is the same shape.
-        let to_redraw = groups.rebuild(&items, 3..4);
+        let to_redraw = groups.rebuild(&items, 3..4, 0);
         assert_eq!(to_redraw, vec![3..4]);
-        assert_eq!(summary(&groups), vec![(0..2, 2, None), (3..5, 2, None), (6..8, 2, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..2, 2, None), shape(3..5, 2, None), shape(6..8, 2, None)]);
     }
 
     #[test]
-    fn appended_event_joins_the_run_before_it() {
+    fn appended_event_groups_with_the_state_event_before_it() {
         let mut items = vec![state(0), state(1), Item::Message, state(3)];
         let mut groups = rebuild_all(&items);
-        assert_eq!(summary(&groups), vec![(0..2, 2, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..2, 2, None)]);
         items.push(Item::Hidden);
         items.push(state(5));
-        let to_redraw = groups.rebuild(&items, 4..6);
+        let to_redraw = groups.rebuild(&items, 4..6, 0);
         assert_eq!(to_redraw, vec![3..4]);
-        assert_eq!(summary(&groups), vec![(0..2, 2, None), (3..6, 2, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..2, 2, None), shape(3..6, 2, None)]);
     }
 
     #[test]
@@ -1421,14 +1584,14 @@ mod tests {
         let mut groups = rebuild_all(&items);
         // A message got inserted at index 3, shifting everything after it.
         items.insert(3, Item::Message);
-        let to_redraw = groups.rebuild(&items, 3..usize::MAX);
-        // The old group's head, then the new one's.
+        let to_redraw = groups.rebuild(&items, 3..usize::MAX, 0);
+        // The old group's summary item, then the new one's.
         assert_eq!(to_redraw, vec![3..4, 4..5]);
-        assert_eq!(summary(&groups), vec![(0..2, 2, None), (4..6, 2, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..2, 2, None), shape(4..6, 2, None)]);
         // And a shorter list can't keep stale groups around.
         let items = vec![state(0)];
-        groups.rebuild(&items, 0..usize::MAX);
-        assert_eq!(summary(&groups), vec![]);
+        groups.rebuild(&items, 0..usize::MAX, 0);
+        assert_eq!(group_shapes(&groups), vec![]);
     }
 
     #[test]
@@ -1438,32 +1601,32 @@ mod tests {
         assert_eq!(groups.collapsed_span_end(&items, 0), Some(3));
         // The group's first event gets hidden (e.g. redacted into a no-op), leaving just one event.
         items[1] = Item::Hidden;
-        let to_redraw = groups.rebuild(&items, 1..2);
-        assert_eq!(summary(&groups), vec![]);
+        let to_redraw = groups.rebuild(&items, 1..2, 0);
+        assert_eq!(group_shapes(&groups), vec![]);
         // The divider above was showing the group's dates, so it needs a redraw.
         assert!(to_redraw.contains(&(0..1)));
     }
 
     #[test]
     fn an_answered_knock_joins_the_groups_around_it() {
-        // A knock still waiting on an answer gets its own row, so it splits up the state events around it.
+        // A knock still waiting on an answer is shown on its own, so it splits up the state events around it.
         let mut items = vec![state(0), state(1), pending_knock(2, "alice"), state(3), state(4)];
         let mut groups = rebuild_all(&items);
         groups.toggle(3, &items);
-        assert_eq!(summary(&groups), vec![(0..2, 2, None), (3..5, 2, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..2, 2, None), shape(3..5, 2, None)]);
         // Its answer comes in at the end. Once it's answered, it can go in a group,
         // so it joins both groups into one, which the user left expanded.
         items.push(Item::Message);
         items[2] = flip_knock(&items[2]).unwrap();
-        let mut to_redraw = groups.rebuild(&items, 5..6);
+        let mut to_redraw = groups.rebuild(&items, 5..6, 0);
         to_redraw.extend(groups.regroup_around(&items, &[2]));
-        assert_eq!(summary(&groups), vec![(0..5, 5, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..5, 5, None)]);
         assert!(groups.containing(0).unwrap().is_expanded);
         assert!(to_redraw.contains(&(0..1)) && to_redraw.contains(&(3..4)));
         // If it goes back to waiting on an answer, it splits them up again, and both stay expanded.
         items[2] = flip_knock(&items[2]).unwrap();
         groups.regroup_around(&items, &[2]);
-        assert_eq!(summary(&groups), vec![(0..2, 2, None), (3..5, 2, None)]);
+        assert_eq!(group_shapes(&groups), vec![shape(0..2, 2, None), shape(3..5, 2, None)]);
         assert!(groups.containing(0).unwrap().is_expanded && groups.containing(3).unwrap().is_expanded);
     }
 
@@ -1472,12 +1635,12 @@ mod tests {
         let items = vec![Item::Message, state(1), state(2), Item::Message, Item::Message];
         let mut groups = rebuild_all(&items);
         // e.g. a reaction on the message right after it
-        assert!(groups.rebuild(&items, 3..4).is_empty());
+        assert!(groups.rebuild(&items, 3..4, 0).is_empty());
         // unlike a change to one of its events, which its summary sums up
-        assert_eq!(groups.rebuild(&items, 2..3), vec![1..2]);
+        assert_eq!(groups.rebuild(&items, 2..3, 0), vec![1..2]);
         // still nothing to redraw once it's expanded
         groups.toggle(1, &items);
-        assert!(groups.rebuild(&items, 3..4).is_empty());
+        assert!(groups.rebuild(&items, 3..4, 0).is_empty());
     }
 
     #[test]
@@ -1485,14 +1648,14 @@ mod tests {
         let items = vec![state(0), state(1), state(2), Item::Message, state(4), state(5)];
         let mut groups = rebuild_all(&items);
         assert!(groups.toggle(2, &items).is_some_and(|g| g.is_expanded && g.range == (0..3)));
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(groups.containing(0).unwrap().is_expanded);
         assert!(!groups.containing(4).unwrap().is_expanded);
         // Expanding via a jump is a no-op on an already expanded group.
         assert!(groups.expand_containing(1, &items).is_none());
         assert_eq!(groups.expand_containing(5, &items).map(|g| g.range.start), Some(4));
         assert!(groups.toggle(0, &items).is_some_and(|g| !g.is_expanded));
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(!groups.containing(0).unwrap().is_expanded);
         assert!(groups.containing(4).unwrap().is_expanded);
     }
@@ -1503,12 +1666,12 @@ mod tests {
         let mut groups = rebuild_all(&items);
         groups.toggle(1, &items);
         items.push(state(3));
-        groups.rebuild(&items, 3..4);
+        groups.rebuild(&items, 3..4, 0);
         items.push(state(4));
-        groups.rebuild(&items, 4..5);
+        groups.rebuild(&items, 4..5, 0);
         // The timeline gets reset with only the events that joined after the group was expanded.
         let items = vec![state(3), state(4)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(groups.containing(0).unwrap().is_expanded);
 
         // Same for older events paginated in above the group, even after the group's original events
@@ -1517,10 +1680,10 @@ mod tests {
         let mut groups = rebuild_all(&items);
         groups.toggle(0, &items);
         let mut items = vec![state(0), state(1), state(2), state(3)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         items[2] = Item::Hidden;
         items[3] = Item::Hidden;
-        groups.rebuild(&items, 2..4);
+        groups.rebuild(&items, 2..4, 0);
         assert!(groups.containing(0).unwrap().is_expanded);
     }
 
@@ -1531,18 +1694,18 @@ mod tests {
         let mut groups = rebuild_all(&items);
         groups.toggle(1, &items);
         items.push(state(3));
-        groups.rebuild(&items, 3..4);
+        groups.rebuild(&items, 3..4, 0);
         let items = vec![state(3)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         let items = vec![state(2), state(3)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(groups.containing(0).unwrap().is_expanded);
         groups.toggle(0, &items);
         let items = vec![state(1), state(2), state(3)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(!groups.containing(0).unwrap().is_expanded);
         let items = vec![Item::Message, state(1), state(2), state(3)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(!groups.containing(1).unwrap().is_expanded);
 
         // Same for two groups that got expanded separately and then merged.
@@ -1551,13 +1714,13 @@ mod tests {
         groups.toggle(1, &items);
         groups.toggle(4, &items);
         items[3] = Item::Hidden;
-        groups.rebuild(&items, 3..4);
+        groups.rebuild(&items, 3..4, 0);
         assert_eq!(groups.containing(1).map(|g| (g.range.clone(), g.is_expanded)), Some((1..6, true)));
         let items = vec![state(4), state(5)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         groups.toggle(0, &items);
         let items = vec![Item::Message, state(1), state(2), Item::Hidden, state(4), state(5)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(!groups.containing(1).unwrap().is_expanded);
     }
 
@@ -1569,11 +1732,11 @@ mod tests {
         groups.toggle(1, &items);
         groups.toggle(1, &items);
         let items = vec![state(2), state(3)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(!groups.containing(0).unwrap().is_expanded);
         groups.toggle(0, &items);
         let items = vec![Item::Message, state(1), state(2), state(3)];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert!(groups.containing(1).unwrap().is_expanded);
     }
 
@@ -1587,7 +1750,7 @@ mod tests {
         // Older state events get paginated in right above the group and join it,
         // so its old summary item (now at index 5) gets hidden too.
         let items = vec![Item::Divider, state(10), Item::Hidden, state(11), Item::Divider, state(2), state(3), Item::Message];
-        groups.rebuild(&items, 0..usize::MAX);
+        groups.rebuild(&items, 0..usize::MAX, 0);
         assert_eq!(groups.summary_item_if_collapsed(1), None);
         assert_eq!(groups.summary_item_if_collapsed(2), Some(1));
         assert_eq!(groups.summary_item_if_collapsed(5), Some(1));
@@ -1597,7 +1760,7 @@ mod tests {
         assert_eq!(groups.summary_item_if_collapsed(5), None);
     }
 
-    /// Which of the day dividers in `items` have anything to show under them.
+    /// Returns the indices of the day dividers in `items` that have anything to show under them.
     fn shown_dividers(groups: &StateEventGroups, items: &Vec<Item>) -> Vec<usize> {
         (0..items.len())
             .filter(|&i| matches!(items[i], Item::Divider) && groups.day_shows_after(items, i))
@@ -1612,7 +1775,7 @@ mod tests {
             Item::Divider, Item::Message,
         ];
         let mut groups = rebuild_all(&items);
-        assert_eq!(summary(&groups), vec![(1..6, 3, Some(4))]);
+        assert_eq!(group_shapes(&groups), vec![shape(1..6, 3, Some(4))]);
         // Collapsed, only the divider above the summary shows: nothing else happened on the last day.
         assert_eq!(shown_dividers(&groups, &items), vec![0, 6]);
         groups.toggle(1, &items);
@@ -1635,7 +1798,7 @@ mod tests {
         // A message comes before the group under this divider, which a range would mislabel.
         let items = vec![Item::Divider, Item::Message, state(2), Item::Divider, state(4), Item::Divider, Item::Message];
         let groups = rebuild_all(&items);
-        assert_eq!(summary(&groups), vec![(2..5, 2, Some(3))]);
+        assert_eq!(group_shapes(&groups), vec![shape(2..5, 2, Some(3))]);
         assert_eq!(groups.collapsed_span_end(&items, 0), None);
         // With nothing but the read marker before it, the group is still first under the divider.
         let items = vec![Item::Divider, Item::ReadMarker, state(2), Item::Divider, state(4)];
@@ -1656,11 +1819,44 @@ mod tests {
     }
 
     #[test]
+    fn older_events_only_regroup_the_items_before_the_ones_already_there() {
+        let mut items = vec![Item::Divider, state(1), state(2), Item::Message, state(4), state(5)];
+        let mut groups = rebuild_all(&items);
+        // Back pagination adds older events right after the top day divider, which changes to their day,
+        // and the events that were there before get a divider of their own.
+        items.splice(1..1, [state(10), state(11), Item::Message, Item::Divider]);
+        groups.rebuild(&items, 0..5, 4);
+        assert_eq!(groups.groups, rebuild_all(&items).groups);
+        // The groups that were there before moved down, under their new divider.
+        assert_eq!(groups.containing(8).map(|g| (g.range.clone(), g.preceding_divider)), Some((8..10, Some(4))));
+    }
+
+    #[test]
+    fn where_events_show_up_in_their_groups() {
+        use GroupPlacement::*;
+        let items = vec![Item::Message, state(1), state(2), state(3), Item::Message, state(5), state(6)];
+        let mut groups = rebuild_all(&items);
+        // Both groups start out collapsed.
+        assert_eq!([0, 1, 2, 3, 5, 6].map(|i| groups.placement_of(i)), [OnItsOwn, Summary, Hidden, Hidden, Summary, Hidden]);
+        groups.toggle(1, &items);
+        assert_eq!([1, 2, 3, 4].map(|i| groups.placement_of(i)), [UnderHeader, OnItsOwn, OnItsOwn, OnItsOwn]);
+    }
+
+    #[test]
+    fn finding_the_collapsed_group_right_before_an_item() {
+        let items = vec![Item::Divider, state(1), state(2), Item::Divider, Item::Hidden, Item::Message];
+        let groups = rebuild_all(&items);
+        assert_eq!(groups.collapsed_group_right_before(&items, 5), Some(1));
+        assert_eq!(groups.collapsed_group_right_before(&items, 2), None);
+        assert_eq!(groups.collapsed_group_right_before(&items, 0), None);
+    }
+
+    #[test]
     fn drawing_skips_over_collapsed_items() {
         // A collapsed group over two days, the second of which goes on after the group.
         let items = vec![Item::Divider, state(1), Item::Hidden, state(3), Item::Divider, state(5), state(6), Item::Message];
         let mut groups = rebuild_all(&items);
-        assert_eq!(summary(&groups), vec![(1..7, 4, Some(4))]);
+        assert_eq!(group_shapes(&groups), vec![shape(1..7, 4, Some(4))]);
         assert_eq!(groups.collapsed_ranges(), [2..4, 5..7]);
         let next = |i| groups.next_drawn_after(i, items.len());
         assert_eq!((next(0), next(1), next(4), next(5), next(6), next(7)), (1, 4, 7, 7, 7, 8));
@@ -1686,7 +1882,7 @@ mod tests {
         assert_eq!(groups.collapsed_ranges(), vec![2..4]);
         // Something shows up on the group's last day past the read marker, so that day's divider shows.
         items[5] = Item::Message;
-        assert!(groups.rebuild(&items, 5..6).is_empty());
+        assert!(groups.rebuild(&items, 5..6, 0).is_empty());
         assert_eq!(groups.collapsed_ranges(), vec![3..4]);
     }
 
@@ -1708,7 +1904,7 @@ mod tests {
         let mut groups = rebuild_all(&items);
         assert_eq!(groups.collapsed_span_end(&items, 0), None);
         items[1] = Item::Hidden;
-        let to_redraw = groups.rebuild(&items, 1..2);
+        let to_redraw = groups.rebuild(&items, 1..2, 0);
         assert_eq!(groups.collapsed_span_end(&items, 0), Some(5));
         assert!(to_redraw.contains(&(0..1)));
     }
@@ -1727,8 +1923,10 @@ mod tests {
 
     const PEOPLE: [&str; 3] = ["alice", "bob", "carol"];
 
-    /// A random event with a fresh ID: a message, a hidden event, or a state event
-    /// by and about a few people (now and then a room's creation, or a change to who can join it).
+    /// Returns a random event with a fresh ID.
+    ///
+    /// That's a message, a hidden event, a pending knock, or a state event by and about a few people
+    /// (now and then a room's creation, or a change to who can join it).
     fn random_event(rng: &mut Rng, next_id: &mut usize) -> Item {
         *next_id += 1;
         let sender = PEOPLE[rng.below(PEOPLE.len())];
@@ -1757,10 +1955,18 @@ mod tests {
         }
     }
 
-    /// Applies a random diff to `items` and widens the changed range (`first..last`) the way the
-    /// timeline subscriber in `sliding_sync.rs` does. Nothing gets inserted or removed at index 0,
-    /// since that clears the cache, which rebuilds everything anyway.
-    fn random_diff(rng: &mut Rng, next_id: &mut usize, items: &mut Vec<Item>, first: &mut usize, last: &mut usize) {
+    /// Applies a random diff to `items`, keeping track of what changed like the timeline subscriber in `sliding_sync.rs` does.
+    ///
+    /// That's widening `first..last`, and counting how many items at the end the diffs didn't touch.
+    /// An insert or remove at index 0 clears the cache there, which counts as everything changing from index 0 on.
+    fn random_diff(
+        rng: &mut Rng,
+        next_id: &mut usize,
+        items: &mut Vec<Item>,
+        first: &mut usize,
+        last: &mut usize,
+        num_unchanged_at_end: &mut usize,
+    ) {
         let len = items.len();
         match rng.below(7) {
             // Set. The SDK only ever swaps a day divider for another one.
@@ -1774,6 +1980,7 @@ mod tests {
                 items[i] = new_item;
                 *first = (*first).min(i);
                 *last = (*last).max(i + 1);
+                *num_unchanged_at_end = (*num_unchanged_at_end).min(len - i - 1);
             }
             // Append.
             2 => {
@@ -1782,20 +1989,23 @@ mod tests {
                     items.push(random_item(rng, next_id));
                 }
                 *last = (*last).max(items.len());
+                *num_unchanged_at_end = 0;
             }
-            // Insert.
-            3 if len > 1 => {
-                let i = 1 + rng.below(len - 1);
+            // Insert, which back pagination does at the start.
+            3 if len > 0 => {
+                let i = rng.below(len);
                 items.insert(i, random_item(rng, next_id));
                 *first = (*first).min(i);
                 *last = usize::MAX;
+                *num_unchanged_at_end = (*num_unchanged_at_end).min(len - i);
             }
             // Remove.
-            4 if len > 1 => {
-                let i = 1 + rng.below(len - 1);
+            4 if len > 0 => {
+                let i = rng.below(len);
                 items.remove(i);
-                *first = (*first).min(i - 1);
+                *first = (*first).min(i.saturating_sub(1));
                 *last = usize::MAX;
+                *num_unchanged_at_end = (*num_unchanged_at_end).min(len - i - 1);
             }
             // Truncate.
             5 if len > 1 => {
@@ -1803,12 +2013,14 @@ mod tests {
                 items.truncate(new_len);
                 *first = (*first).min(new_len - 1);
                 *last = usize::MAX;
+                *num_unchanged_at_end = 0;
             }
             // PopBack.
             6 if len > 1 => {
                 items.pop();
                 *first = (*first).min(items.len());
                 *last = usize::MAX;
+                *num_unchanged_at_end = 0;
             }
             _ => {}
         }
@@ -1832,17 +2044,17 @@ mod tests {
                 .unwrap_or(false)
         };
         let is_access_change = |i: usize| matches!(items[i], Item::State { only_in_setup: true, .. });
-        let ends_runs = |i: usize| matches!(items[i], Item::Message | Item::PendingKnock { .. } | Item::ReadMarker) || (is_access_change(i) && !in_setup(i));
+        let breaks_groups = |i: usize| matches!(items[i], Item::Message | Item::PendingKnock { .. } | Item::ReadMarker) || (is_access_change(i) && !in_setup(i));
         let collapsed_into = |i: usize| groups.groups.iter()
             .find(|g| !g.is_expanded && g.range.start < i && i < g.range.end)
             .map(|g| g.range.start);
 
         let mut prev_end = 0;
         for g in &groups.groups {
-            assert!(prev_end <= g.range.start && g.range.end <= items.len(), "{g:?} overlaps or runs off the end");
+            assert!(prev_end <= g.range.start && g.range.end <= items.len(), "{g:?} overlaps or goes past the end");
             prev_end = g.range.end;
             assert!(is_state(g.range.start) && is_state(g.range.end - 1), "{g:?} doesn't start and end with a state event");
-            assert!(!g.range.clone().any(ends_runs), "{g:?} spans a message, the read marker, or a change to who can join");
+            assert!(!g.range.clone().any(breaks_groups), "{g:?} spans a message, the read marker, or a change to who can join");
             assert_eq!(g.num_events, g.range.clone().filter(|&i| is_state(i)).count(), "{g:?}");
             assert!(g.num_events >= 2, "{g:?}");
             assert_eq!(g.last_divider, g.range.clone().rev().find(|&i| is_divider(i)), "{g:?}");
@@ -1853,18 +2065,18 @@ mod tests {
                 .filter_map(|i| match &items[i] { Item::State { id, .. } => Some(groups.expand_choices.get(id).copied()), _ => None })
                 .collect();
             assert!(choices.windows(2).all(|pair| pair[0] == pair[1]), "{g:?} has events with different choices: {choices:?}");
-            assert_eq!(g.is_expanded, choices[0].is_some_and(|choice| choice.expanded), "{g:?}");
+            assert_eq!(g.is_expanded, choices[0].is_some_and(|choice| choice.is_expanded), "{g:?}");
         }
-        // Without a room's creation in it, a whole run of state events is one group.
-        let mut run_start = 0;
-        for run_end in (0..=items.len()).filter(|&i| i == items.len() || ends_runs(i)) {
-            let states: Vec<usize> = (run_start..run_end).filter(|&i| is_state(i)).collect();
+        // Without a room's creation among them, all the state events between two items that break groups are one group.
+        let mut after_prev_breaker = 0;
+        for next_breaker in (0..=items.len()).filter(|&i| i == items.len() || breaks_groups(i)) {
+            let states: Vec<usize> = (after_prev_breaker..next_breaker).filter(|&i| is_state(i)).collect();
             let has_create = states.iter().any(|&i| matches!(items[i], Item::State { is_create: true, .. }));
             if states.len() >= 2 && !has_create {
-                let run = states[0]..states[states.len() - 1] + 1;
-                assert!(groups.groups.iter().any(|g| g.range == run), "{run:?} isn't one group");
+                let expected_group = states[0]..states[states.len() - 1] + 1;
+                assert!(groups.groups.iter().any(|g| g.range == expected_group), "{expected_group:?} isn't one group");
             }
-            run_start = run_end + 1;
+            after_prev_breaker = next_breaker + 1;
         }
         // A change to who can join only goes in a group as part of the room's setup.
         for i in (0..items.len()).filter(|&i| is_access_change(i)) {
@@ -1897,8 +2109,8 @@ mod tests {
         // which is everything but its summary item and maybe its last day divider...
         let skipped = |j: usize| collapsed_into(j).is_some() && !(is_divider(j) && groups.day_shows_after(items, j));
         let collapsed = groups.collapsed_ranges();
-        assert!(collapsed.iter().all(|run| !run.is_empty()) && collapsed.windows(2).all(|pair| pair[0].end < pair[1].start), "{collapsed:?}");
-        assert_eq!(collapsed.iter().flat_map(|run| run.clone()).collect::<Vec<_>>(), (0..items.len()).filter(|&j| skipped(j)).collect::<Vec<_>>());
+        assert!(collapsed.iter().all(|range| !range.is_empty()) && collapsed.windows(2).all(|pair| pair[0].end < pair[1].start), "{collapsed:?}");
+        assert_eq!(collapsed.iter().flat_map(|range| range.clone()).collect::<Vec<_>>(), (0..items.len()).filter(|&j| skipped(j)).collect::<Vec<_>>());
         for i in 0..items.len() {
             // ...except for the last item, which always gets drawn.
             let next = (i + 1..items.len()).find(|&j| j + 1 == items.len() || !skipped(j)).unwrap_or(i + 1);
@@ -1922,9 +2134,10 @@ mod tests {
                 }
                 let old_groups = groups.groups.clone();
                 let old_spans: Vec<_> = (0..items.len()).map(|i| groups.collapsed_span_end(&items, i)).collect();
-                let (mut first, mut last) = (usize::MAX, 0);
+                let old_len = items.len();
+                let (mut first, mut last, mut num_unchanged_at_end) = (usize::MAX, 0, old_len);
                 for _ in 0..=rng.below(3) {
-                    random_diff(&mut rng, &mut next_id, &mut items, &mut first, &mut last);
+                    random_diff(&mut rng, &mut next_id, &mut items, &mut first, &mut last, &mut num_unchanged_at_end);
                 }
                 if first == usize::MAX {
                     continue;
@@ -1941,23 +2154,37 @@ mod tests {
                     }
                 }
                 flipped.sort_unstable();
-                let mut to_redraw = groups.rebuild(&items, changed.clone());
+                // Like `process_timeline_updates()`, only regroup the items up to the ones at the end that the diffs didn't touch.
+                let first_change = first.min(old_len).min(items.len());
+                let num_unchanged_at_end = num_unchanged_at_end.min(old_len - first_change).min(items.len() - first_change);
+                let len_change = items.len() as isize - old_len as isize;
+                let regrouped = first_change..items.len() - num_unchanged_at_end;
+                let mut to_redraw = groups.rebuild(&items, regrouped.clone(), len_change);
                 to_redraw.extend(groups.regroup_around(&items, &flipped));
+                // The old groups after the regrouped items are the same ones as before, just moved along with them.
+                let old_groups: Vec<_> = old_groups.iter().map(|g| g.with_indices_shifted(len_change, old_len - num_unchanged_at_end)).collect();
 
                 // Same as working it all out again (with the same events expanded)...
                 let mut full = StateEventGroups { expand_choices: groups.expand_choices.clone(), ..Default::default() };
-                full.rebuild(&items, 0..usize::MAX);
+                full.rebuild(&items, 0..usize::MAX, 0);
                 assert_eq!(groups.groups, full.groups, "after changing {changed:?} and flipping {flipped:?}");
                 check_groups(&groups, &items);
 
                 // ...and whatever looks different gets redrawn: the summary of a group that changed (or had
                 // an event change), and the dates in the divider above a collapsed one that spans days.
-                // Each flipped knock counts as a change of its own.
+                // Each flipped knock counts as a change of its own. The caller redraws the whole range the diffs
+                // reported (which goes to the end once items move), but only the regrouped items really changed.
                 let changes: Vec<Range<usize>> = std::iter::once(changed.clone()).chain(flipped.iter().map(|&i| i..i + 1)).collect();
+                let real_changes: Vec<Range<usize>> = std::iter::once(regrouped.clone()).chain(flipped.iter().map(|&i| i..i + 1)).collect();
                 let redrawn = |i: usize| changes.iter().any(|c| c.contains(&i)) || to_redraw.iter().any(|range| range.contains(&i));
-                let overlaps_change = |g: &StateEventGroup| changes.iter().any(|c| g.range.start < c.end && c.start < g.range.end);
+                let overlaps_change = |g: &StateEventGroup| real_changes.iter().any(|c| g.range.start < c.end && c.start < g.range.end);
                 let shows_dates = |g: &StateEventGroup| !g.is_expanded && g.last_divider.is_some();
-                for g in groups.groups.iter().filter(|&g| overlaps_change(g) || !old_groups.contains(g)) {
+                // A group that went under another day divider after the change is still the same group, since that divider
+                // can't show its dates: a group only gets moved there if something visible comes between them.
+                let still_there = |g: &StateEventGroup, others: &[StateEventGroup]| others.iter().any(|other|
+                    StateEventGroup { preceding_divider: other.preceding_divider, ..g.clone() } == *other
+                );
+                for g in groups.groups.iter().filter(|&g| overlaps_change(g) || !still_there(g, &old_groups)) {
                     assert!(redrawn(g.range.start), "{g:?}'s summary after changing {changed:?} and flipping {flipped:?}");
                     assert!(!shows_dates(g) || g.preceding_divider.is_none_or(redrawn), "{g:?}'s dates after changing {changed:?} and flipping {flipped:?}");
                 }
@@ -1965,18 +2192,18 @@ mod tests {
                 // changed. If it's collapsed and spans days, a change between it and the divider above counts too.
                 let depends_on_change = |g: &StateEventGroup| {
                     let first_item_it_depends_on = g.preceding_divider.filter(|_| shows_dates(g)).unwrap_or(g.range.start);
-                    changes.iter().any(|c| first_item_it_depends_on < c.end && c.start < g.range.end)
+                    real_changes.iter().any(|c| first_item_it_depends_on < c.end && c.start < g.range.end)
                 };
                 for g in groups.groups.iter().filter(|&g| old_groups.contains(g) && !depends_on_change(g)) {
                     assert!(!to_redraw.iter().any(|range| range.contains(&g.range.start)), "{g:?} was redrawn for nothing after changing {changed:?} and flipping {flipped:?}");
                 }
-                for g in old_groups.iter().filter(|&g| shows_dates(g) && !groups.groups.contains(g)) {
+                for g in old_groups.iter().filter(|&g| shows_dates(g) && !still_there(g, &groups.groups)) {
                     assert!(g.preceding_divider.is_none_or(redrawn), "old {g:?}'s dates after changing {changed:?} and flipping {flipped:?}");
                 }
                 // ...and so does a divider whose date range changed. Only the indices before the
                 // change still line up, unless it all changed in place.
-                let unmoved = if changed.end < items.len() { items.len() } else { changed.start.min(items.len()) };
-                for d in (0..unmoved).filter(|&d| matches!(items[d], Item::Divider)) {
+                let num_unmoved = if changed.end < items.len() { items.len() } else { changed.start.min(items.len()) };
+                for d in (0..num_unmoved).filter(|&d| matches!(items[d], Item::Divider)) {
                     assert!(old_spans[d] == groups.collapsed_span_end(&items, d) || redrawn(d), "divider {d}'s dates after changing {changed:?}");
                 }
             }

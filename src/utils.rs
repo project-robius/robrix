@@ -1018,10 +1018,11 @@ pub fn non_blank(name: Option<String>) -> Option<String> {
     name.filter(|name| !name.trim().is_empty())
 }
 
-/// Iterates over the given people (their user id and display name) to look for duplicates.
+/// Returns a label for each of the given people (their user ID and display name, if any).
 ///
-/// Returns a list of either their display name or display name + user ID to ensure
-/// that no overlapping display names get confused as the same person.
+/// A label is their display name, or their user ID if the display name is missing or blank.
+/// An ambiguous display name (the same as someone else's name) will also include
+/// the user ID added in parentheses, in order to avoid confusing two different users as the same.
 pub fn distinct_user_labels(people: &[(&str, Option<&str>)]) -> Vec<String> {
     let labels: Vec<&str> = people.iter()
         .map(|&(user_id, name)| name.filter(|name| !name.trim().is_empty()).unwrap_or(user_id))
