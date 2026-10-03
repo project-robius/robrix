@@ -102,7 +102,16 @@ pub enum PinnedMessagesListAction {
     None,
 }
 
-#[derive(Script, Widget)]
+/// The state of a [`PinnedMessagesList`] that is saved and restored.
+#[derive(Default)]
+pub struct SavedPinnedMessagesList {
+    pub(super) list: SavedMessageList,
+    pub(super) messages: Option<Arc<Vec<Arc<TimelineItem>>>>,
+    num_pinned: usize,
+    can_unpin: bool,
+}
+
+#[derive(Script, ScriptHook, Widget)]
 pub struct PinnedMessagesList {
     #[deref] view: View,
 
@@ -114,12 +123,6 @@ pub struct PinnedMessagesList {
     #[rust] error: Option<String>,
     /// Shows the "Unpin" tooltip of the unpin button in each row.
     #[rust] tooltip: RoomActionTooltip,
-}
-
-impl ScriptHook for PinnedMessagesList {
-    fn on_after_new(&mut self, _vm: &mut ScriptVm) {
-        self.state.set_widget_uid(self.widget_uid());
-    }
 }
 
 impl Widget for PinnedMessagesList {
@@ -145,21 +148,7 @@ impl Widget for PinnedMessagesList {
         for action in actions {
             match action.downcast_ref() {
                 Some(PinnedMessagesAction::Updated { room_id, messages, num_pinned, can_unpin }) if self.state.is_showing_room(room_id) => {
-                    if self.messages.as_ref().is_some_and(|m| Arc::ptr_eq(m, messages))
-                        && self.can_unpin == *can_unpin
-                    {
-                        continue;
-                    }
-                    let old_messages = self.messages.replace(messages.clone());
-                    let is_can_unpin_changed = self.can_unpin != *can_unpin;
-                    self.num_pinned = *num_pinned;
-                    self.can_unpin = *can_unpin;
-                    self.error = None;
-                    self.tooltip.hide(cx);
-                    self.update_pinned_count(cx);
-                    // Every row shows whether the message can be unpinned, so a change to that changes them all.
-                    self.state.handle_new_messages(cx, &list_ref, old_messages.as_deref().filter(|_| !is_can_unpin_changed), messages, true);
-                    self.redraw(cx);
+                    self.set_messages(cx, messages, *num_pinned, *can_unpin);
                 }
                 Some(PinnedMessagesAction::Failed { room_id, error }) if self.state.is_showing_room(room_id) => {
                     error!("Failed to load the pinned messages of room {room_id}: {error}");
@@ -173,7 +162,7 @@ impl Widget for PinnedMessagesList {
                 && let Some(RoomsListHeaderAction::StateUpdate(state)) = action.downcast_ref()
                 && !matches!(state, SyncServiceState::Offline)
             {
-                self.state.set_subscribed(true);
+                self.state.subscribe();
             }
         }
 
@@ -271,7 +260,7 @@ impl PinnedMessagesList {
         self.view.child(id!(pinned_list)).as_portal_list()
     }
 
-    /// Shows the pinned messages of the given room.
+    /// Shows the pinned messages for the given room.
     ///
     /// Call this again with the same room whenever its name changes.
     fn set_room(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
@@ -279,6 +268,31 @@ impl PinnedMessagesList {
             self.reset(cx);
         }
         self.state.set_room(room_name_id);
+    }
+
+    fn set_messages(&mut self, cx: &mut Cx, messages: &Arc<Vec<Arc<TimelineItem>>>, num_pinned: usize, can_unpin: bool) {
+        if self.messages.as_ref().is_some_and(|m| Arc::ptr_eq(m, messages))
+            && self.can_unpin == can_unpin
+        {
+            return;
+        }
+        let old_messages = self.messages.replace(messages.clone());
+        let is_can_unpin_changed = self.can_unpin != can_unpin;
+        self.num_pinned = num_pinned;
+        self.can_unpin = can_unpin;
+        self.error = None;
+        self.tooltip.hide(cx);
+        self.update_pinned_count(cx);
+        // Every row shows whether the message can be unpinned,
+        // so a change to that user power level needs to change all rows.
+        self.state.handle_new_messages(
+            cx,
+            &self.pinned_list(),
+            old_messages.as_deref().filter(|_| !is_can_unpin_changed),
+            messages,
+            true,
+        );
+        self.redraw(cx);
     }
 
     /// Clears this list and unsubscribes from its room's pinned messages,
@@ -358,15 +372,25 @@ impl PinnedMessagesListRef {
         }
     }
 
-    /// Returns this list's state, e.g., to be restored when its room's timeline is shown again.
-    pub fn save_state(&self) -> SavedMessageList {
-        self.borrow().map(|inner| inner.state.save_state(&inner.pinned_list())).unwrap_or_default()
+    /// Saves and returns this list's state, e.g., to be restored when its room's timeline is shown again.
+    pub fn save_state(&self) -> SavedPinnedMessagesList {
+        let Some(mut inner) = self.borrow_mut() else { return SavedPinnedMessagesList::default() };
+        let list = inner.pinned_list();
+        SavedPinnedMessagesList {
+            list: inner.state.save_state(&list),
+            messages: inner.messages.clone(),
+            num_pinned: inner.num_pinned,
+            can_unpin: inner.can_unpin,
+        }
     }
 
-    /// Shows the given room's pinned messages, restoring the given saved state once they arrive.
-    pub fn restore_state(&self, cx: &mut Cx, room_name_id: &RoomNameId, saved: SavedMessageList) {
+    /// Restores the given room's pinned messages from a saved snapshot without loading them again.
+    pub fn restore_state(&self, cx: &mut Cx, room_name_id: &RoomNameId, saved: SavedPinnedMessagesList) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_room(cx, room_name_id);
-        inner.state.restore_state(saved);
+        inner.reset(cx);
+        inner.state.restore_state(room_name_id, saved.list);
+        if let Some(messages) = saved.messages {
+            inner.set_messages(cx, &messages, saved.num_pinned, saved.can_unpin);
+        }
     }
 }

@@ -834,7 +834,8 @@ pub enum MatrixRequest {
     SubscribeToRoomData {
         room_id: OwnedRoomId,
         kind: RoomDataKind,
-        /// The widget that wants to show and be informed of changes to this data.
+        /// A unique ID for this subscription, which a list holds while it shows this data
+        /// (or keeps in its saved state, so the data isn't reloaded when it's shown again).
         subscriber: WidgetUid,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
@@ -3292,9 +3293,9 @@ struct JoinedRoomDetails {
     pending_thread_timelines: HashSet<OwnedEventId>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
-    /// The task that watches this room's pinned messages while any widget is showing them.
+    /// The task that watches this room's pinned messages while any list shows them (or saved them).
     pinned_messages_subscriber: Option<RoomDataSubscriber>,
-    /// The task that watches this room's threads while any widget shows them.
+    /// The task that watches this room's threads while any list shows them (or saved them).
     threads_list_subscriber: Option<RoomDataSubscriber<Arc<Notify>>>,
 }
 impl Drop for JoinedRoomDetails {
@@ -5744,9 +5745,9 @@ pub enum RoomDataKind {
     Threads,
 }
 
-/// A task that watches some of a room's data while any widgets show it, e.g., its pinned messages.
+/// A task that watches some of a room's data while any lists show it (or saved it), e.g., its pinned messages.
 struct RoomDataSubscriber<L = ()> {
-    /// The widgets that are currently showing this data.
+    /// The subscriptions to this data, held by the lists showing it or by their saved states.
     subscribers: HashSet<WidgetUid>,
     /// Asks the task to post its data again, e.g., for a new subscriber.
     resend_notifier: Arc<Notify>,
@@ -5762,20 +5763,20 @@ impl<L> Drop for RoomDataSubscriber<L> {
 }
 
 
-/// Adds or removes the given widget as a subscriber to the room data in `room_data_subscriber`.
+/// Adds or removes the given subscriber to the room data in `room_data_subscriber`.
 ///
 /// The first subscriber starts the task via `start`, which gets the resend notifier
-/// that widgets should use to ask for the data to be posted again.
-/// The last widget to unsubscribe stops the task.
+/// that subscribers should use to ask for the data to be posted again.
+/// The last subscriber to unsubscribe stops the task.
 fn add_or_remove_room_data_subscriber<L>(
     room_data_subscriber: &mut Option<RoomDataSubscriber<L>>,
-    widget_subscriber: WidgetUid,
+    subscriber: WidgetUid,
     subscribe: bool,
     start: impl FnOnce(Arc<Notify>) -> (L, JoinHandle<()>),
 ) {
     if !subscribe {
         if let Some(s) = room_data_subscriber.as_mut()
-            && s.subscribers.remove(&widget_subscriber)
+            && s.subscribers.remove(&subscriber)
             && s.subscribers.is_empty()
         {
             *room_data_subscriber = None;
@@ -5784,7 +5785,7 @@ fn add_or_remove_room_data_subscriber<L>(
     }
     match room_data_subscriber.as_mut() {
         Some(s) if !s.task.is_finished() => {
-            s.subscribers.insert(widget_subscriber);
+            s.subscribers.insert(subscriber);
             s.resend_notifier.notify_one();
         }
         _ => {
@@ -5792,7 +5793,7 @@ fn add_or_remove_room_data_subscriber<L>(
             let mut subscribers = room_data_subscriber.take()
                 .map(|mut s| std::mem::take(&mut s.subscribers))
                 .unwrap_or_default();
-            subscribers.insert(widget_subscriber);
+            subscribers.insert(subscriber);
             let resend_notifier = Arc::new(Notify::new());
             let (load_more, task) = start(resend_notifier.clone());
             *room_data_subscriber = Some(RoomDataSubscriber { subscribers, resend_notifier, load_more, task });
