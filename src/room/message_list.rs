@@ -5,7 +5,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, RoomId, UserId};
+use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId, UserId};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails, TimelineItemContent};
 
 use crate::{
@@ -230,10 +230,45 @@ pub struct RowMessage<'a> {
     pub content: Option<&'a TimelineItemContent>,
 }
 
-/// The state of a list of messages that is saved and restored along with its room's timeline.
-#[derive(Clone, Default)]
+/// The state of a list of messages that is saved/restored.
+#[derive(Default)]
 pub struct SavedMessageList {
     first_id_and_scroll: (usize, f64),
+    pub(super) subscription: Option<RoomDataSubscription>,
+}
+
+/// A list's subscription to its room's messages, which auto-unsubscribes when dropped.
+pub(super) struct RoomDataSubscription {
+    room_id: OwnedRoomId,
+    kind: RoomDataKind,
+    id: WidgetUid,
+}
+
+impl RoomDataSubscription {
+    fn new(room_id: OwnedRoomId, kind: RoomDataKind) -> Self {
+        // Each subscription needs its own ID; a saved subscription can outlive the widget itself.
+        let subscription = Self { room_id, kind, id: WidgetUid::new() };
+        subscription.set_subscribed(true);
+        subscription
+    }
+
+    /// Subscribes to or unsubscribes from the room's messages.
+    ///
+    /// Subscribing again is harmless, and makes the worker post the messages again.
+    fn set_subscribed(&self, subscribe: bool) {
+        submit_async_request(MatrixRequest::SubscribeToRoomData {
+            room_id: self.room_id.clone(),
+            kind: self.kind,
+            subscriber: self.id,
+            subscribe,
+        });
+    }
+}
+
+impl Drop for RoomDataSubscription {
+    fn drop(&mut self) {
+        self.set_subscribed(false);
+    }
 }
 
 /// The state that each list of a room's messages keeps about its room, its subscription, and its rows.
@@ -242,9 +277,8 @@ pub struct SavedMessageList {
 pub struct MessageListState {
     /// The kind of room data that this message list is showing and subscribing to.
     kind: RoomDataKind,
-    /// The widget that shows this list, i.e., the subscriber.
-    widget_uid: WidgetUid,
     room_name_id: Option<RoomNameId>,
+    subscription: Option<RoomDataSubscription>,
     /// The room's main timeline, which avatars use to look up senders' room profiles.
     main_timeline_kind: Option<TimelineKind>,
     /// The scroll position to restore once enough messages have arrived to reach it.
@@ -264,18 +298,12 @@ pub struct MessageListState {
     timestamp_refresh_timer: Timer,
 }
 
-impl Drop for MessageListState {
-    fn drop(&mut self) {
-        self.set_subscribed(false);
-    }
-}
-
 impl MessageListState {
     pub fn new(kind: RoomDataKind) -> Self {
         Self {
             kind,
-            widget_uid: WidgetUid::default(),
             room_name_id: None,
+            subscription: None,
             main_timeline_kind: None,
             pending_scroll: None,
             has_scrolled_to_pending: false,
@@ -286,11 +314,6 @@ impl MessageListState {
         }
     }
 
-    /// Sets the widget that shows this list, which is only known once that widget exists.
-    pub fn set_widget_uid(&mut self, widget_uid: WidgetUid) {
-        self.widget_uid = widget_uid;
-    }
-
     pub fn room_name_id(&self) -> Option<&RoomNameId> {
         self.room_name_id.as_ref()
     }
@@ -299,17 +322,16 @@ impl MessageListState {
         self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id)
     }
 
-    /// Subscribes to (or unsubscribes from) the room's messages.
-    ///
-    /// Subscribing again is harmless, and makes the worker post the messages again.
-    pub fn set_subscribed(&self, subscribe: bool) {
+    /// Subscribes to our room's messages, or asks the worker to post them again if already subscribed.
+    pub fn subscribe(&mut self) {
         let Some(room_name_id) = self.room_name_id.as_ref() else { return };
-        submit_async_request(MatrixRequest::SubscribeToRoomData {
-            room_id: room_name_id.room_id().clone(),
-            kind: self.kind,
-            subscriber: self.widget_uid,
-            subscribe,
-        });
+        if let Some(subscription) = self.subscription.as_ref()
+            && subscription.room_id == *room_name_id.room_id()
+        {
+            subscription.set_subscribed(true);
+        } else {
+            self.subscription = Some(RoomDataSubscription::new(room_name_id.room_id().clone(), self.kind));
+        }
     }
 
     /// Shows the messages of the given room, which must be reset first if it's a different room.
@@ -319,15 +341,13 @@ impl MessageListState {
         self.main_timeline_kind = Some(TimelineKind::MainRoom { room_id: room_name_id.room_id().clone() });
         self.room_name_id = Some(room_name_id.clone());
         // Also re-subscribe so we get the latest datat feed.
-        self.set_subscribed(true);
+        self.subscribe();
     }
 
     /// Unsubscribes from the room and resets the widget to its clean default state.
     pub fn reset(&mut self, cx: &mut Cx, list: &PortalListRef) {
         cx.stop_timer(self.timestamp_refresh_timer);
-        let (kind, widget_uid) = (self.kind, self.widget_uid);
-        *self = Self::new(kind);
-        self.widget_uid = widget_uid;
+        *self = Self::new(self.kind);
         list.set_first_id_and_scroll(0, 0.0);
     }
 
@@ -353,7 +373,7 @@ impl MessageListState {
             if let Some(TimelineEndpointsRecreated { room_id }) = action.downcast_ref()
                 && self.is_showing_room(room_id)
             {
-                self.set_subscribed(true);
+                self.subscribe();
             } else if !self.is_fully_drawn && action.downcast_ref::<UserProfilesUpdated>().is_some() {
                 must_redraw = true;
             }
@@ -468,15 +488,18 @@ impl MessageListState {
         (row, true)
     }
 
-    pub fn save_state(&self, list: &PortalListRef) -> SavedMessageList {
+    pub fn save_state(&mut self, list: &PortalListRef) -> SavedMessageList {
         SavedMessageList {
-            // Messages may not have arrived to apply the last restored position to.
             first_id_and_scroll: self.pending_scroll.unwrap_or((list.first_id(), list.scroll_position())),
+            subscription: self.subscription.take(),
         }
     }
 
-    pub fn restore_state(&mut self, saved: SavedMessageList) {
+    /// Restores the given room's messages and data subscription from the given saved state.
+    pub fn restore_state(&mut self, room_name_id: &RoomNameId, saved: SavedMessageList) {
         self.pending_scroll = Some(saved.first_id_and_scroll);
         self.has_scrolled_to_pending = false;
+        self.subscription = saved.subscription;
+        self.set_room(room_name_id);
     }
 }

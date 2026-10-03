@@ -2,7 +2,8 @@
 //!
 //! A pane is docked to one edge of a RoomScreen's timeline,
 //! or popped out into its own dock tab (desktop) or stack view (mobile).
-//! Docked panes are saved and restored along with their timeline's UI state.
+//! Docked panes are saved and restored along with their timeline's UI state,
+//! as are their loaded contents and scroll position.
 
 use std::{borrow::Cow, cell::RefCell, collections::HashMap};
 
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use ruma::{OwnedRoomId, RoomId};
 
-use crate::{app::SelectedRoom, home::rooms_list::RoomsListAction, sliding_sync::TimelineKind, utils::RoomNameId};
+use crate::{app::SelectedRoom, home::rooms_list::RoomsListAction, room::pane_dock::SavedPaneContent, sliding_sync::TimelineKind, utils::RoomNameId};
 
 /// The kinds of panes that can be shown for a room.
 ///
@@ -102,10 +103,19 @@ impl Default for PaneLayout {
 struct RoomPanes {
     /// The layout the user last chose, which newly-opened panes start with.
     last_layout: Option<PaneLayout>,
-    /// Panes to dock in a timeline the next time it's shown, e.g., upon returning from a pop-out.
-    pending: HashMap<TimelineKind, Vec<RoomPaneKind>>,
-    /// The timeline that each popped-out pane came from, which it returns to.
-    popped_out_from: HashMap<(OwnedRoomId, RoomPaneKind), TimelineKind>,
+    /// Panes to dock in a timeline the next time it's shown.
+    pending: HashMap<TimelineKind, Vec<(RoomPaneKind, Option<SavedPaneContent>)>>,
+    /// The panes that are currently popped out into a separate view.
+    /// * Key: the popped-out pane's room ID and kind.
+    /// * Value: the timeline it came from, plus its saved state.
+    popped_out: HashMap<(OwnedRoomId, RoomPaneKind), PoppedOutPane>,
+}
+
+struct PoppedOutPane {
+    /// The timeline that this pane came from, which it can return to.
+    from: TimelineKind,
+    /// This pane's state while it's not being shown.
+    saved: Option<SavedPaneContent>,
 }
 
 thread_local! {
@@ -136,20 +146,31 @@ pub fn set_last_layout(layout: PaneLayout) {
 }
 
 /// Docks a pane of the given kind in the given timeline once it's shown,
-/// or right away if it's currently shown.
-pub fn dock_when_shown(cx: &mut Cx, timeline_kind: TimelineKind, kind: RoomPaneKind) {
+/// or right away if it's currently shown, restoring the given saved state into it.
+pub fn dock_when_shown(
+    cx: &mut Cx,
+    timeline_kind: TimelineKind,
+    kind: RoomPaneKind,
+    saved: Option<SavedPaneContent>,
+) {
     with_room_panes(|rp| {
         let pending = rp.pending.entry(timeline_kind.clone()).or_default();
-        if !pending.contains(&kind) {
-            pending.push(kind);
+        match pending.iter_mut().find(|(pending_kind, _)| *pending_kind == kind) {
+            Some((_, pending_saved)) => *pending_saved = saved.or(pending_saved.take()),
+            None => pending.push((kind, saved)),
         }
     });
     cx.action(RoomPanesPending { timeline_kind });
 }
 
-/// Takes the panes waiting to be docked in the given timeline.
-pub fn take_pending(timeline_kind: &TimelineKind) -> Vec<RoomPaneKind> {
+/// Takes the pane(s) waiting to be docked in the given timeline, along with the state(s) to restore into them.
+pub fn take_pending(timeline_kind: &TimelineKind) -> Vec<(RoomPaneKind, Option<SavedPaneContent>)> {
     with_room_panes(|rp| rp.pending.remove(timeline_kind).unwrap_or_default())
+}
+
+/// Drops the panes waiting to be docked in the given timeline, as its screen was closed for good.
+pub fn drop_pending(timeline_kind: &TimelineKind) {
+    with_room_panes(|rp| rp.pending.remove(timeline_kind));
 }
 
 /// Requests that a pane be shown in its own dock tab (desktop) or stack view (mobile).
@@ -162,8 +183,10 @@ pub fn pop_out(
     room_name_id: &RoomNameId,
     kind: RoomPaneKind,
     timeline_kind: TimelineKind,
+    saved: SavedPaneContent,
 ) {
-    with_room_panes(|rp| rp.popped_out_from.insert((room_name_id.room_id().clone(), kind.clone()), timeline_kind));
+    let popped_out = PoppedOutPane { from: timeline_kind, saved: Some(saved) };
+    with_room_panes(|rp| rp.popped_out.insert((room_name_id.room_id().clone(), kind.clone()), popped_out));
     cx.widget_action(
         widget_uid,
         RoomsListAction::Selected(SelectedRoom::RoomPane {
@@ -175,8 +198,28 @@ pub fn pop_out(
 
 /// Returns the timeline that the given popped-out pane came from, or else its room's main timeline.
 pub fn popped_out_from(room_id: &RoomId, kind: &RoomPaneKind) -> TimelineKind {
-    with_room_panes(|rp| rp.popped_out_from.get(&(room_id.to_owned(), kind.clone())).cloned())
+    with_room_panes(|rp| rp.popped_out.get(&(room_id.to_owned(), kind.clone())).map(|pane| pane.from.clone()))
         .unwrap_or_else(|| TimelineKind::MainRoom { room_id: room_id.to_owned() })
+}
+
+/// Takes the saved state of the given popped-out pane, so its original roomscreen can show the same pane.
+pub fn take_popped_out_state(room_id: &RoomId, kind: &RoomPaneKind) -> Option<SavedPaneContent> {
+    with_room_panes(|rp| rp.popped_out.get_mut(&(room_id.to_owned(), kind.clone()))?.saved.take())
+}
+
+/// Saves the state of the given popped-out pane while its screen is hidden,
+/// unless that pane has since been closed or returned to its timeline.
+pub fn save_popped_out_state(room_id: &RoomId, kind: &RoomPaneKind, saved: SavedPaneContent) {
+    with_room_panes(|rp| {
+        if let Some(pane) = rp.popped_out.get_mut(&(room_id.to_owned(), kind.clone())) {
+            pane.saved = Some(saved);
+        }
+    });
+}
+
+/// Drops the given popped-out pane and its saved state, as its screen was closed for good.
+pub fn drop_popped_out(room_id: &RoomId, kind: &RoomPaneKind) {
+    with_room_panes(|rp| rp.popped_out.remove(&(room_id.to_owned(), kind.clone())));
 }
 
 /// Returns the screen that shows the given timeline of the given room.
@@ -200,7 +243,7 @@ pub fn restore_saved_layout(layout: Option<PaneLayout>) {
     with_room_panes(|rp| rp.last_layout = layout);
 }
 
-/// Forgets all pending panes and the last layout, e.g., upon logout.
+/// Forgets all pending and popped-out panes, and the last layout, e.g., upon logout.
 pub fn clear_all() {
     with_room_panes(|rp| *rp = RoomPanes::default());
 }

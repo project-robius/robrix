@@ -207,6 +207,10 @@ impl MainDesktopUI {
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         // Do nothing if the room to select is already created and focused.
         if self.most_recently_selected_room.as_ref().is_some_and(|sr| sr == &room) {
+            if matches!(room, SelectedRoom::RoomPane { .. }) {
+                // A pane that was popped out into a focused dock tab needs to be initialized.
+                self.init_tab_if_needed(cx, room.tab_id());
+            }
             return;
         }
 
@@ -294,7 +298,7 @@ impl MainDesktopUI {
             return;
         };
         // If we're closing a thread timeline, free up its resources & bkgd async tasks.
-        room_being_closed.close_thread_timeline(cx);
+        room_being_closed.drop_resources(cx);
         self.room_order.retain(|sr| sr != &room_being_closed);
 
         let is_active_tab = self.most_recently_selected_room.as_ref() == Some(&room_being_closed);
@@ -317,7 +321,7 @@ impl MainDesktopUI {
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(cx, ids!(dock));
         for (tab_id, room) in self.open_rooms.iter() {
-            room.close_thread_timeline(cx);
+            room.drop_resources(cx);
             dock.close_tab(cx, *tab_id);
         }
 
@@ -721,7 +725,8 @@ impl WidgetMatchEvent for MainDesktopUI {
                 let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), &kind);
                 let pane_tab_id = SelectedRoom::RoomPane { room_name_id: room_name_id.clone(), kind: kind.clone() }.tab_id();
                 let screen = room_pane::timeline_screen(&room_name_id, &timeline_kind);
-                room_pane::dock_when_shown(cx, timeline_kind, kind);
+                let saved = self.view.dock(cx, ids!(dock)).item(pane_tab_id).as_room_pane_screen().save_state();
+                room_pane::dock_when_shown(cx, timeline_kind, kind, saved);
                 // Use the room's existing tab, which has the room's current name.
                 let screen = self.open_rooms.get(&screen.tab_id()).cloned().unwrap_or(screen);
                 self.focus_or_create_tab(cx, screen);

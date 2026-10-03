@@ -11,7 +11,7 @@ use crate::{
         space_lobby::SpaceLobbyScreenWidgetRefExt,
         spaces_bar::SpacesBarAction,
     },
-    room::{pane_dock::RoomPaneDockAction, pinned_messages_list::PinnedMessagesListAction, room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt}, room_pane::{self, RoomPaneKind}},
+    room::{pane_dock::{RoomPaneDockAction, SavedPaneContent}, pinned_messages_list::PinnedMessagesListAction, room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt}, room_pane::{self, RoomPaneKind}},
     settings::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
@@ -594,11 +594,16 @@ impl Widget for HomeScreen {
                 match action.as_widget_action().cast() {
                     RoomsListAction::Selected(selected_room) if !effective_is_desktop(cx) => {
                         self.push_selected_screen_view(cx, app_state, selected_room.clone());
-                        // A pane that couldn't be popped out (e.g., mid-transition) is returned its timeline.
-                        if let SelectedRoom::RoomPane { room_name_id, kind } = &selected_room
-                            && app_state.selected_room.as_ref() != Some(&selected_room)
-                        {
-                            room_pane::dock_when_shown(cx, room_pane::popped_out_from(room_name_id.room_id(), kind), kind.clone());
+                        if let SelectedRoom::RoomPane { room_name_id, kind } = &selected_room {
+                            if app_state.selected_room.as_ref() == Some(&selected_room) {
+                                // Like its desktop tab, a pane has only one popped-out screen, so an older one won't be shown again.
+                                self.mobile_screen_history.retain(|sr| sr != &selected_room);
+                            } else {
+                                // A pane that couldn't be popped out (e.g., mid-transition) is returned its timeline.
+                                let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), kind);
+                                let saved = room_pane::take_popped_out_state(room_name_id.room_id(), kind);
+                                room_pane::dock_when_shown(cx, timeline_kind, kind.clone(), saved);
+                            }
                         }
                     }
                     // On desktop, `MainDesktopUI` handles this, so we only need to update this in mobile view mode.
@@ -662,7 +667,8 @@ impl Widget for HomeScreen {
                     && self.navigate_to_screen(cx, app_state, room_pane::timeline_screen(&room_name_id, &timeline_kind))
                 {
                     // Navigating away hid the pinned messages pane, so we show it again here.
-                    room_pane::dock_when_shown(cx, timeline_kind.clone(), RoomPaneKind::PinnedMessages);
+                    let saved = self.save_pane_screen_state(cx);
+                    room_pane::dock_when_shown(cx, timeline_kind.clone(), RoomPaneKind::PinnedMessages, saved);
                     let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
                     if let Some(view_id) = stack_navigation.destination_view() {
                         stack_navigation.view_by_id(cx, view_id)
@@ -775,7 +781,7 @@ impl HomeScreen {
         // (if it was a thread timeline), and then also clear any thread timelines in the mobile nav stack.
         if !was_desktop && is_desktop {
             if let Some(room) = app_state.selected_room.as_ref() {
-                room.close_thread_timeline(cx);
+                room.drop_resources(cx);
             }
         }
 
@@ -917,7 +923,7 @@ impl HomeScreen {
         // and thus we need to free & destroy any thread timelines in it.
         // Note that freeing the current room is handled in `sync_effective_view_mode`.
         for room in &self.mobile_screen_history {
-            room.close_thread_timeline(cx);
+            room.drop_resources(cx);
         }
         self.mobile_screen_history.clear();
 
@@ -1037,8 +1043,18 @@ impl HomeScreen {
         }
         let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), &kind);
         if self.navigate_to_screen(cx, app_state, room_pane::timeline_screen(&room_name_id, &timeline_kind)) {
-            room_pane::dock_when_shown(cx, timeline_kind, kind);
+            let saved = self.save_pane_screen_state(cx);
+            room_pane::dock_when_shown(cx, timeline_kind, kind, saved);
         }
+    }
+
+    /// Returns the state of the pane in the popped-out pane screen that we just
+    /// navigated away from, such that the pane can be docked again into its parent roomscreen.
+    fn save_pane_screen_state(&self, cx: &mut Cx) -> Option<SavedPaneContent> {
+        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+        stack_navigation.dynamic_stack_view_ids().into_iter().find_map(|view_id|
+            stack_navigation.view_by_id(cx, view_id).room_pane_screen(cx, ids!(room_pane_screen)).save_state()
+        )
     }
 
     /// Shows the screen for the given selected room.
@@ -1071,6 +1087,7 @@ impl HomeScreen {
                 && self.mobile_screen_history.last() == Some(&pane_screen)
             {
                 self.mobile_screen_history.pop();
+                pane_screen.drop_resources(cx);
             }
         }
         app_state.selected_room.as_ref().is_some_and(is_screen)
@@ -1099,12 +1116,12 @@ impl HomeScreen {
                     return;
                 };
                 // current_screen is gone for good — free its thread timeline if it is one.
-                current_screen.close_thread_timeline(cx);
+                current_screen.drop_resources(cx);
                 app_state.selected_room = Some(previous);
                 stack_nav.pop_to_view(cx, view_id);
             }
             None => {
-                current_screen.close_thread_timeline(cx);
+                current_screen.drop_resources(cx);
                 app_state.selected_room = None;
                 stack_nav.pop_to_root(cx);
             }
