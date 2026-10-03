@@ -10,9 +10,9 @@ use crate::{
     profile::user_profile::UserProfileSlidingPaneWidgetExt,
     room::{
         room_members_list::{RoomMembersChanged, RoomMembersFetchAction, RoomMembersListAction, RoomMembersListWidgetRefExt, show_member_profile},
-        pane_dock::set_pane_header,
+        pane_dock::{SavedPaneContent, populate_content, restore_content, save_content, set_pane_header},
         pinned_messages_list::PinnedMessagesListWidgetRefExt,
-        room_pane::RoomPaneKind,
+        room_pane::{self, RoomPaneKind},
         threads_list::ThreadsListWidgetRefExt,
     },
     sliding_sync::{MatrixRequest, submit_async_request},
@@ -86,6 +86,12 @@ pub struct RoomPaneScreen {
     #[deref] view: View,
     /// The room and kind of pane being displayed.
     #[rust] displayed: Option<(RoomNameId, RoomPaneKind)>,
+}
+
+impl Drop for RoomPaneScreen {
+    fn drop(&mut self) {
+        self.save_popped_out_state();
+    }
 }
 
 impl Widget for RoomPaneScreen {
@@ -192,15 +198,14 @@ impl RoomPaneScreen {
         self.view.child_by_path(ids!(content.pinned_messages)).set_visible(cx, kind == RoomPaneKind::PinnedMessages);
         self.view.child_by_path(ids!(content.threads)).set_visible(cx, kind == RoomPaneKind::Threads);
         self.displayed = Some((room_name_id.clone(), kind.clone()));
-        match &kind {
-            // Also re-fetch upon re-showing, in case we missed changes while hidden.
-            RoomPaneKind::Members => {
-                members.set_members(cx, room_name_id, None);
-                self.fetch_members(false);
-            }
-            RoomPaneKind::PinnedMessages => pinned_messages.set_room(cx, room_name_id),
-            RoomPaneKind::Threads => threads.set_room(cx, room_name_id),
+        // If we just popped out or hid a room pane, restore its previous state/content.
+        let frame = self.view.child_by_path(ids!(pane_screen_content));
+        match room_pane::take_popped_out_state(room_name_id.room_id(), &kind) {
+            Some(saved) => restore_content(cx, &frame, room_name_id, saved, &None),
+            None => populate_content(cx, &kind, &frame, room_name_id, &None),
         }
+        // Also re-fetch members upon re-showing the pane, in case we missed some membership changes.
+        self.fetch_members(false);
         self.redraw(cx);
     }
 
@@ -214,8 +219,24 @@ impl RoomPaneScreen {
         }
     }
 
-    /// Stops displaying this screen's pane.
+    /// Saves and returns the state of this displayed pane, which takes its data subscription with it.
+    fn save_state(&self) -> Option<SavedPaneContent> {
+        let (_, kind) = self.displayed.as_ref()?;
+        Some(save_content(kind, &self.view.child_by_path(ids!(pane_screen_content))))
+    }
+
+    /// Saves our displayed pane's state for the next time it's shown.
+    fn save_popped_out_state(&self) {
+        if let Some((room_name_id, kind)) = self.displayed.as_ref()
+            && let Some(saved) = self.save_state()
+        {
+            room_pane::save_popped_out_state(room_name_id.room_id(), kind, saved);
+        }
+    }
+
+    /// Stops displaying this screen's pane, keeping its state in case it's shown again.
     pub fn hide_displayed(&mut self, cx: &mut Cx) {
+        self.save_popped_out_state();
         self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
         self.view.child_by_path(ids!(content.room_members)).as_room_members_list().reset(cx);
         self.view.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().reset(cx);
@@ -237,5 +258,11 @@ impl RoomPaneScreenRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.hide_displayed(cx);
         }
+    }
+
+    /// Returns the state of this screen's pane, e.g., for docking it back into its timeline.
+    /// See [`RoomPaneScreen::save_state()`].
+    pub fn save_state(&self) -> Option<SavedPaneContent> {
+        self.borrow()?.save_state()
     }
 }

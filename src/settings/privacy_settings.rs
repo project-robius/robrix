@@ -7,6 +7,7 @@ use matrix_sdk::ruma::OwnedUserId;
 
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserRequest},
+    settings::is_settings_screen_shown,
     sliding_sync::{BlockedUsersUpdated, get_blocked_users},
 };
 
@@ -125,7 +126,7 @@ impl Widget for BlockedUserEntry {
 
         let Some(user_id) = self.user_id.as_ref() else { return };
         let Event::Actions(actions) = event else { return };
-        if self.view.button(cx, ids!(unblock_button)).clicked(actions) {
+        if is_settings_screen_shown(scope) && self.view.button(cx, ids!(unblock_button)).clicked(actions) {
             cx.action(BlockUserModalAction::Open(BlockUserRequest {
                 user_id: user_id.clone(),
                 display_name: None,

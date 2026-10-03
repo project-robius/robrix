@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
     avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::clear_room_preview_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -172,8 +172,6 @@ pub struct App {
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
-    /// The latest known recovery state, used to warn on logout if recovery isn't set up.
-    #[rust(RecoveryState::Unknown)] recovery_state: RecoveryState,
     /// Latest known window geometry (size, fullscreen/maximized, etc).
     #[rust] window_geom: WindowGeomTracker,
 }
@@ -277,7 +275,7 @@ impl MatchEvent for App {
                 Some(LogoutConfirmModalAction::Open) => {
                     let logout_confirm_modal = self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal.content));
                     logout_confirm_modal.reset_state(cx);
-                    if self.recovery_state == RecoveryState::Disabled {
+                    if self.app_state.recovery_state == RecoveryState::Disabled {
                         logout_confirm_modal.set_message(cx, "Are you sure you want to logout?\n\n\
                             Your encryption keys aren't backed up. If this is your only device, you'll \
                             lose access to your encrypted messages for good.\n\n\
@@ -309,7 +307,6 @@ impl MatchEvent for App {
                     clear_all_app_state(cx);
                     self.ui.modal(cx, ids!(verification_modal)).close(cx);
                     self.app_state = Default::default();
-                    self.recovery_state = RecoveryState::Unknown;
                     // We also need to broadcast those default values out,
                     // such that all other widgets can be reset to their default state.
                     self.app_state.app_prefs.broadcast_all(cx);
@@ -335,6 +332,7 @@ impl MatchEvent for App {
                     log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
                     cancel_all_dictation();
                     self.app_state.logged_in = false;
+                    self.app_state.recovery_state = RecoveryState::Unknown;
                     self.update_login_visibility(cx);
                     self.ui.redraw(cx);
                 }
@@ -454,8 +452,11 @@ impl MatchEvent for App {
                 Some(AppStateAction::RestoreAppStateFromPersistentState(app_state)) => {
                     // Ignore the `logged_in` state that was stored persistently.
                     let logged_in_actual = self.app_state.logged_in;
+                    // The recovery state isn't persisted, so keep what we already know.
+                    let recovery_state = self.app_state.recovery_state;
                     self.app_state = app_state.clone();
                     self.app_state.logged_in = logged_in_actual;
+                    self.app_state.recovery_state = recovery_state;
                     room_pane::restore_saved_layout(self.app_state.room_pane_layout);
                     // Broadcast the restored preferences first so listeners
                     // (e.g. the Dock's captured `room_screen` template) are
@@ -544,7 +545,7 @@ impl MatchEvent for App {
                 _ => {}
             }
             if let Some(RecoveryAction::StateChanged(state)) = action.downcast_ref() {
-                self.recovery_state = *state;
+                self.app_state.recovery_state = *state;
                 continue;
             }
             match action.downcast_ref() {
@@ -1111,6 +1112,11 @@ pub struct AppState {
     /// so the `Home` screen and tab are always selected upon app startup.
     #[serde(skip)]
     pub selected_tab: SelectedTab,
+    /// The latest known recovery state.
+    ///
+    /// This isn't persisted, and is only updated by the top-level app.
+    #[serde(skip)]
+    pub recovery_state: RecoveryState,
     /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub saved_dock_state_home: SavedDockState,
@@ -1254,26 +1260,40 @@ impl SelectedRoom {
     }
 
     /// Closes & cleans up the UI-side cached state and stops the backend async task
-    /// for this thread timeline (if it is one).
+    /// for this thread timeline or room pane.
     ///
-    /// Does nothing for non-thread room kinds (e.g., main room timelines).
+    /// If this is a main room timeline, it'll keep its UI state, but its docked panes will drop their data.
     ///
-    /// This should be called only when the RoomScreen showing this room thread
-    /// has been hidden (e.g., its tab was closed, or the user navigated back on mobile view mode),
+    /// This should be called only when the screen showing this room, thread, or pane
+    /// has been fully hidden (e.g., its tab was closed, or the user navigated back on mobile view mode),
     /// but not when it's still reachable via the mobile nav stack or a saved desktop dock.
-    pub fn close_thread_timeline(&self, cx: &mut Cx) {
-        let SelectedRoom::Thread { room_name_id, thread_root_event_id } = self else { return };
-        let room_id = room_name_id.room_id().clone();
-        // Drop the stale UI cache so reopening rebuilds a fresh timeline instead of reusing
-        // a cache whose backend is about to be freed.
-        invalidate_single_timeline_state(cx, &TimelineKind::Thread {
-            room_id: room_id.clone(),
-            thread_root_event_id: thread_root_event_id.clone(),
-        });
-        submit_async_request(MatrixRequest::CloseThreadTimeline {
-            room_id,
-            thread_root_event_id: thread_root_event_id.clone(),
-        });
+    pub fn drop_resources(&self, cx: &mut Cx) {
+        match self {
+            SelectedRoom::JoinedRoom { room_name_id } => {
+                let timeline_kind = TimelineKind::MainRoom { room_id: room_name_id.room_id().clone() };
+                drop_docked_pane_data(cx, &timeline_kind);
+                room_pane::drop_pending(&timeline_kind);
+            }
+            SelectedRoom::Thread { room_name_id, thread_root_event_id } => {
+                let room_id = room_name_id.room_id().clone();
+                let timeline_kind = TimelineKind::Thread {
+                    room_id: room_id.clone(),
+                    thread_root_event_id: thread_root_event_id.clone(),
+                };
+                // Drop the stale UI cache so reopening rebuilds a fresh timeline instead of reusing
+                // a cache whose backend is about to be freed.
+                invalidate_single_timeline_state(cx, &timeline_kind);
+                room_pane::drop_pending(&timeline_kind);
+                submit_async_request(MatrixRequest::CloseThreadTimeline {
+                    room_id,
+                    thread_root_event_id: thread_root_event_id.clone(),
+                });
+            }
+            SelectedRoom::RoomPane { room_name_id, kind } => {
+                room_pane::drop_popped_out(room_name_id.room_id(), kind);
+            }
+            SelectedRoom::InvitedRoom { .. } | SelectedRoom::Space { .. } => {}
+        }
     }
 
     /// Returns the display name to be shown for this room in the UI.

@@ -130,8 +130,10 @@ script_mod! {
     // A download button or loading spinner shown beneath a message.
     mod.widgets.MessageDownloadSection = View {
         visible: false,
-        width: Fit, height: Fit,
-        flow: Right,
+        width: Fill, height: Fit,
+        flow: Flow.Right{wrap: true},
+        spacing: 8,
+        wrap_spacing: 8
         margin: Inset{top: 8, bottom: 2}
 
         download_button := RobrixIconButton {
@@ -146,7 +148,7 @@ script_mod! {
         share_button := RobrixIconButton {
             height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
             padding: Inset{left: 12, right: 12}
-            margin: Inset{left: 8}
+            margin: 0
             draw_icon.svg: (ICON_SHARE)
             icon_walk: Walk{width: 16, height: 16}
             text: "Share"
@@ -3986,6 +3988,9 @@ mod timeline_state_store {
             /// timeline sync & updates was closed while the timeline was still being shown.
             /// See [`put_back()`] for more info. 
             invalidated: bool,
+            /// A flag indicating that the screen showing this timeline was closed,
+            /// so its docked panes can drop their loaded data once it's put back.
+            was_closed: bool,
         },
     }
 
@@ -4012,11 +4017,11 @@ mod timeline_state_store {
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(kind) {
                 Some(StateEntry::Stored(state)) => {
-                    states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false });
+                    states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false, was_closed: false });
                     TakeResult::Taken(state)
                 }
-                Some(StateEntry::Taken { owner: current_owner, invalidated }) => {
-                    states.insert(kind.clone(), StateEntry::Taken { owner: current_owner, invalidated });
+                Some(StateEntry::Taken { owner: current_owner, invalidated, was_closed }) => {
+                    states.insert(kind.clone(), StateEntry::Taken { owner: current_owner, invalidated, was_closed });
                     TakeResult::AlreadyTaken { owner: current_owner }
                 }
                 None => TakeResult::Missing,
@@ -4030,7 +4035,7 @@ mod timeline_state_store {
     /// the backend timeline endpoints.
     pub(super) fn mark_taken(_cx: &mut Cx, kind: &TimelineKind, owner: WidgetUid) {
         TIMELINE_STATES.with_borrow_mut(|states| {
-            match states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false }) {
+            match states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false, was_closed: false }) {
                 Some(StateEntry::Stored(_)) => {
                     error!("RoomScreen::show_timeline(): timeline {kind} unexpectedly had a stored state while creating a new state");
                 }
@@ -4047,15 +4052,18 @@ mod timeline_state_store {
     ///
     /// Note: this function gets called from drop handlers so it can't take `&mut Cx`,
     ///       but those drop handlers are only reachable from the main UI thread anyway.
-    pub(super) fn put_back(owner: WidgetUid, state: TimelineUiState) {
+    pub(super) fn put_back(owner: WidgetUid, mut state: TimelineUiState) {
         let kind = state.kind.clone();
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(&kind) {
-                Some(StateEntry::Taken { owner: current_owner, invalidated }) if current_owner == owner => {
+                Some(StateEntry::Taken { owner: current_owner, invalidated, was_closed }) if current_owner == owner => {
                     // If it was invalidated and we (the `owner`) was the RoomScreen currently showing it,
                     // just return here to keep it removed from the TIMELINE_STATES.
                     if invalidated {
                         return;
+                    }
+                    if was_closed {
+                        state.saved_state.room_panes.iter_mut().for_each(SavedRoomPane::drop_data);
                     }
                 }
                 Some(StateEntry::Taken { owner: current_owner, .. }) => {
@@ -4069,6 +4077,15 @@ mod timeline_state_store {
                 }
             }
             states.insert(kind, StateEntry::Stored(state));
+        });
+    }
+
+    /// Drops the loaded data of the given timeline's docked panes.
+    pub(super) fn drop_pane_data(_cx: &mut Cx, kind: &TimelineKind) {
+        TIMELINE_STATES.with_borrow_mut(|states| match states.get_mut(kind) {
+            Some(StateEntry::Stored(state)) => state.saved_state.room_panes.iter_mut().for_each(SavedRoomPane::drop_data),
+            Some(StateEntry::Taken { was_closed, .. }) => *was_closed = true,
+            None => {}
         });
     }
 
@@ -6486,6 +6503,14 @@ pub fn invalidate_single_timeline_state(cx: &mut Cx, kind: &TimelineKind) {
 /// and all of its thread timelines.
 pub fn invalidate_entire_room_timeline_states(cx: &mut Cx, room_id: &RoomId) {
     timeline_state_store::invalidate_entire_room(cx, room_id);
+}
+
+/// Drops the loaded data of the given timeline's docked panes once its screen is closed for good,
+/// which stops their data feeds, e.g., a threads pane's background worker.
+///
+/// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
+pub fn drop_docked_pane_data(cx: &mut Cx, kind: &TimelineKind) {
+    timeline_state_store::drop_pane_data(cx, kind);
 }
 
 /// A pending "Reply In Thread" request to focus a thread's input bar once its RoomScreen is

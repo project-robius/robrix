@@ -259,6 +259,7 @@ script_mod! {
 pub struct ProfileIcon {
     #[deref] inner: NavigationBarButton,
     #[rust] own_profile: Option<UserProfile>,
+    #[rust] has_prepared_settings: bool,
 }
 
 impl ScriptHook for ProfileIcon {
@@ -273,23 +274,24 @@ impl ScriptHook for ProfileIcon {
 
 impl Widget for ProfileIcon {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.own_profile.is_none() {
-            self.own_profile = get_own_profile(cx);
-            if self.own_profile.is_some() {
+        // A Signal means that our own profile or an avatar image might've been fetched.
+        if let Event::Signal = event {
+            if self.own_profile.is_none() {
+                self.own_profile = get_own_profile(cx);
+                if self.own_profile.is_some() {
+                    self.inner.redraw(cx);
+                }
+            }
+
+            if let Some(p) = self.own_profile.as_mut()
+                && p.avatar_state.uri().is_some()
+                && p.avatar_state.update_from_cache(cx).is_some()
+            {
+                user_profile_cache::enqueue_user_profile_update(
+                    UserProfileUpdate::UserProfileOnly(p.clone())
+                );
                 self.inner.redraw(cx);
             }
-        }
-
-        // A UI Signal may mean that the avatar image we're waiting for has been fetched.
-        if let Event::Signal = event
-            && let Some(p) = self.own_profile.as_mut()
-            && p.avatar_state.uri().is_some()
-            && p.avatar_state.update_from_cache(cx).is_some()
-        {
-            user_profile_cache::enqueue_user_profile_update(
-                UserProfileUpdate::UserProfileOnly(p.clone())
-            );
-            self.inner.redraw(cx);
         }
 
         // Handle actions related to the currently-logged-in user account,
@@ -364,7 +366,8 @@ impl Widget for ProfileIcon {
         // button's hit handling: calling `event.hits()` twice on the same area
         // is safe in Makepad — both calls return the same hit.
         let area = self.inner.view.area();
-        match event.hits(cx, area) {
+        let hit = event.hits(cx, area);
+        match hit {
             Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.inner.view
                     .verification_badge(cx, ids!(verification_badge))
@@ -394,6 +397,16 @@ impl Widget for ProfileIcon {
             }
             _ => { }
         };
+
+        // The settings page takes some time to instantiate, so we do it eagerly
+        // upon a hover or press, since that implies it will soon be selected.
+        if !self.has_prepared_settings && (
+            matches!(&hit, Hit::FingerHoverIn(_))
+            || matches!(&hit, Hit::FingerDown(fe) if fe.is_primary_hit())
+        ) {
+            self.has_prepared_settings = true;
+            cx.action(NavigationBarAction::PrepareSettings);
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -636,7 +649,7 @@ impl SelectedTab {
 ///    * This is what all other widgets should handle if they want/need to respond
 ///      to changes in the top-level app-wide navigation selection.
 /// 3. Other actions that aren't requests/responses to navigate to a different view.
-///    * This only includes the `ToggleSpacesBar` variant.
+///    * This only includes the `ToggleSpacesBar` and `PrepareSettings` variants.
 #[derive(Debug, PartialEq, Eq)]
 pub enum NavigationBarAction {
     /// Go to the main rooms content view.
@@ -659,6 +672,9 @@ pub enum NavigationBarAction {
     /// This is only applicable in the Mobile view mode, because the SpacesBar
     /// is always shown in Desktop view mode.
     ToggleSpacesBar,
+    /// The user is probably about to open the Settings view,
+    /// so instantiate the `SettingsScreen` eagerly, but don't actually show it.
+    PrepareSettings,
 }
 
 

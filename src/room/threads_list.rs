@@ -116,7 +116,15 @@ pub enum ThreadsListAction {
     },
 }
 
-#[derive(Script, Widget)]
+/// The state of a [`ThreadsList`] that is saved and restored.
+#[derive(Default)]
+pub struct SavedThreadsList {
+    pub(super) list: SavedMessageList,
+    pub(super) threads: Option<Arc<Vec<Arc<ThreadListItem>>>>,
+    was_end_reached: bool,
+}
+
+#[derive(Script, ScriptHook, Widget)]
 pub struct ThreadsList {
     #[deref] view: View,
 
@@ -127,12 +135,6 @@ pub struct ThreadsList {
     #[rust] error: Option<String>,
     /// Whether we've asked the worker for more threads and are waiting for them.
     #[rust] is_paginating: bool,
-}
-
-impl ScriptHook for ThreadsList {
-    fn on_after_new(&mut self, _vm: &mut ScriptVm) {
-        self.state.set_widget_uid(self.widget_uid());
-    }
 }
 
 impl Widget for ThreadsList {
@@ -151,17 +153,7 @@ impl Widget for ThreadsList {
             match action.downcast_ref() {
                 Some(ThreadsListAction::Updated { room_id, threads, end_reached }) if self.state.is_showing_room(room_id) => {
                     self.is_paginating = false;
-                    if self.threads.as_ref().is_some_and(|t| Arc::ptr_eq(t, threads))
-                        && self.end_reached == *end_reached
-                    {
-                        continue;
-                    }
-                    let old_threads = self.threads.replace(threads.clone());
-                    self.end_reached = *end_reached;
-                    self.error = None;
-                    self.update_threads_count(cx);
-                    self.state.handle_new_messages(cx, &list_ref, old_threads.as_deref(), threads, *end_reached);
-                    self.redraw(cx);
+                    self.set_threads(cx, threads, *end_reached);
                 }
                 Some(ThreadsListAction::Failed { room_id, error }) if self.state.is_showing_room(room_id) => {
                     error!("Failed to load the threads of room {room_id}: {error}");
@@ -178,7 +170,7 @@ impl Widget for ThreadsList {
                 && !matches!(state, SyncServiceState::Offline)
             {
                 self.error = None;
-                self.state.set_subscribed(true);
+                self.state.subscribe();
                 self.redraw(cx);
             }
         }
@@ -279,7 +271,7 @@ impl ThreadsList {
         self.is_paginating = true;
     }
 
-    /// Shows the threads of the given room.
+    /// Shows the threads for the given room.
     ///
     /// Call this again with the same room whenever its name changes.
     fn set_room(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
@@ -287,6 +279,21 @@ impl ThreadsList {
             self.reset(cx);
         }
         self.state.set_room(room_name_id);
+    }
+
+    fn set_threads(&mut self, cx: &mut Cx, threads: &Arc<Vec<Arc<ThreadListItem>>>, end_reached: bool) {
+        if self.threads.as_ref().is_some_and(|t| Arc::ptr_eq(t, threads))
+            && self.end_reached == end_reached
+        {
+            // don't do anything if nothing changed
+            return;
+        }
+        let old_threads = self.threads.replace(threads.clone());
+        self.end_reached = end_reached;
+        self.error = None;
+        self.update_threads_count(cx);
+        self.state.handle_new_messages(cx, &self.threads_list(), old_threads.as_deref(), threads, end_reached);
+        self.redraw(cx);
     }
 
     /// Clears this list and unsubscribes from its room's threads,
@@ -342,15 +349,27 @@ impl ThreadsListRef {
         }
     }
 
-    /// Returns this list's state, e.g., to be restored when its room's timeline is shown again.
-    pub fn save_state(&self) -> SavedMessageList {
-        self.borrow().map(|inner| inner.state.save_state(&inner.threads_list())).unwrap_or_default()
+    /// Saves and returns this list's state, e.g., to be restored if it's shown again later.
+    ///
+    /// This includes our subscription to this room's threads too,
+    /// so you should only call this right before this list is hidden or destroyed.
+    pub fn save_state(&self) -> SavedThreadsList {
+        let Some(mut inner) = self.borrow_mut() else { return SavedThreadsList::default() };
+        let list = inner.threads_list();
+        SavedThreadsList {
+            list: inner.state.save_state(&list),
+            threads: inner.threads.clone(),
+            was_end_reached: inner.end_reached,
+        }
     }
 
-    /// Shows the given room's threads, restoring the given saved state once they arrive.
-    pub fn restore_state(&self, cx: &mut Cx, room_name_id: &RoomNameId, saved: SavedMessageList) {
+    /// Restores the saved list of threads for the given room without loading them from scratch again.
+    pub fn restore_state(&self, cx: &mut Cx, room_name_id: &RoomNameId, saved: SavedThreadsList) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_room(cx, room_name_id);
-        inner.state.restore_state(saved);
+        inner.reset(cx);
+        inner.state.restore_state(room_name_id, saved.list);
+        if let Some(threads) = saved.threads {
+            inner.set_threads(cx, &threads, saved.was_end_reached);
+        }
     }
 }

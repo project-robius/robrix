@@ -143,11 +143,12 @@ fn role_text(member: &RoomMember) -> Cow<'static, str> {
     }
 }
 
-/// The state of a [`RoomMembersList`] that is saved and restored along with its room's timeline.
-#[derive(Clone, Default)]
+/// The state of a [`RoomMembersList`] that is saved and restored.
+#[derive(Default)]
 pub struct SavedRoomMembersList {
     filter_text: String,
     first_id_and_scroll: (usize, f64),
+    pub(super) members: Option<Arc<Vec<RoomMember>>>,
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -351,6 +352,7 @@ impl RoomMembersListRef {
             filter_text: inner.filter_text.clone(),
             // Members may not have arrived to apply the last restored position to.
             first_id_and_scroll: inner.pending_scroll.unwrap_or((list.first_id(), list.scroll_position())),
+            members: inner.members.clone(),
         }
     }
 
@@ -363,6 +365,7 @@ impl RoomMembersListRef {
         inner.view.child_by_path(ids!(member_filter_bar)).as_room_filter_input_bar().set_text(cx, &saved.filter_text);
         inner.filter_text = saved.filter_text;
         inner.pending_scroll = Some(saved.first_id_and_scroll);
+        inner.set_members(cx, room_name_id, saved.members);
     }
 
     /// See [`RoomMembersList::set_members()`].

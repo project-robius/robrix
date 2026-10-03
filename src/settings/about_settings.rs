@@ -3,7 +3,7 @@
 //! Shows the app version and a set of external links (e.g., privacy policy).
 
 use makepad_widgets::*;
-use crate::{app::PositiveConfirmationModalAction, shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::open_url};
+use crate::{app::PositiveConfirmationModalAction, settings::is_settings_screen_shown, shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::open_url};
 
 const HOMEPAGE_URL: &str = "https://robrix.app";
 const PRIVACY_POLICY_URL: &str = "https://robrix.app/privacy/";
@@ -198,6 +198,11 @@ impl ScriptHook for AboutSettings {
 
 impl Widget for AboutSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        if !is_settings_screen_shown(scope) {
+            return;
+        }
+
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
@@ -209,8 +214,10 @@ impl Widget for AboutSettings {
             self.handle_actions(cx, actions);
         }
 
-        // Long-press / hover tooltips per copy button, same pattern as
-        // the user-id copy button in account_settings.rs.
+        // Handle hovers/long-presses over various buttons, which can only happen on these events.
+        if !matches!(event, Event::MouseMove(_) | Event::MouseLeave(_) | Event::LongPress(_)) {
+            return;
+        }
         let robrix_btn = self.view.button(cx, ids!(copy_robrix_version_button));
         Self::handle_copy_tooltip(cx, event, &robrix_btn, "Copy Robrix version");
         if !TESTFLIGHT_BUILD_NUMBER.is_empty() {
@@ -219,8 +226,6 @@ impl Widget for AboutSettings {
         }
         let sdk_btn = self.view.button(cx, ids!(copy_sdk_version_button));
         Self::handle_copy_tooltip(cx, event, &sdk_btn, "Copy Matrix SDK version");
-
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

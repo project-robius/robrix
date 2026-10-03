@@ -19,11 +19,10 @@ use crate::{
 };
 use super::{
     room_action_bar::RoomActionTooltip,
-    message_list::SavedMessageList,
-    pinned_messages_list::PinnedMessagesListWidgetRefExt,
+    pinned_messages_list::{PinnedMessagesListWidgetRefExt, SavedPinnedMessagesList},
     room_members_list::{RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList},
     room_pane::{self, PaneLayout, PaneSide, RoomPaneKind, RoomPanesPending},
-    threads_list::ThreadsListWidgetRefExt,
+    threads_list::{SavedThreadsList, ThreadsListWidgetRefExt},
 };
 
 script_mod! {
@@ -299,8 +298,8 @@ const MIN_CENTER_SIZE: f64 = 150.0;
 /// A timeline's room members: `None` until they're fetched, or the error if that failed.
 type TimelineMembers = Option<Result<Arc<Vec<RoomMember>>, String>>;
 
-/// Shows the given room's info in the content of the given pane.
-fn populate_content(
+/// Shows the given room's info in the content of the given pane (or popped-out pane screen).
+pub fn populate_content(
     cx: &mut Cx,
     kind: &RoomPaneKind,
     frame: &WidgetRef,
@@ -333,14 +332,17 @@ fn show_members(cx: &mut Cx, list: &RoomMembersListRef, room_name_id: &RoomNameI
 }
 
 /// The saved state of a pane's content.
-#[derive(Clone)]
-enum SavedPaneContent {
+///
+/// This is saved and then restored when the pane is hidden and then shown,
+/// popped-out and then returned, or docked elsewhere, or its timeline is hidden/shown.
+pub enum SavedPaneContent {
     Members(SavedRoomMembersList),
-    PinnedMessages(SavedMessageList),
-    Threads(SavedMessageList),
+    PinnedMessages(SavedPinnedMessagesList),
+    Threads(SavedThreadsList),
 }
 
-fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
+/// Returns the state of the content in the given pane (or popped-out pane screen).
+pub fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
     match kind {
         RoomPaneKind::Members => SavedPaneContent::Members(
             frame.child_by_path(ids!(content.room_members)).as_room_members_list().save_state()
@@ -354,7 +356,10 @@ fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
     }
 }
 
-fn restore_content(
+/// Restores the given saved state into the content of the given pane (or popped-out pane screen).
+///
+/// The containing room's members list must also be provided since certain panes don't have that.
+pub fn restore_content(
     cx: &mut Cx,
     frame: &WidgetRef,
     room_name_id: &RoomNameId,
@@ -379,12 +384,28 @@ fn restore_content(
 }
 
 /// The state of a docked pane that is saved and restored along with its timeline.
-#[derive(Clone)]
 pub struct SavedRoomPane {
     kind: RoomPaneKind,
     layout: PaneLayout,
     weight: Option<f64>,
     content: SavedPaneContent,
+}
+
+impl SavedRoomPane {
+    /// Drops this pane's loaded data and stops its data subscription.
+    pub fn drop_data(&mut self) {
+        match &mut self.content {
+            SavedPaneContent::Members(saved) => saved.members = None,
+            SavedPaneContent::PinnedMessages(saved) => {
+                saved.messages = None;
+                saved.list.subscription = None;
+            }
+            SavedPaneContent::Threads(saved) => {
+                saved.threads = None;
+                saved.list.subscription = None;
+            }
+        }
+    }
 }
 
 /// Sets the icon and title of the given pane (or popped-out pane) based on the given `kind`.
@@ -592,9 +613,14 @@ impl Widget for RoomPaneDock {
                     self.place_panes(cx, true);
                 }
                 PaneButton::PopOut => {
+                    let saved = self.panes.iter()
+                        .find(|pane| pane.kind == kind)
+                        .map(|pane| save_content(&kind, &pane.frame));
                     self.remove_pane(cx, &kind, true);
-                    if let Some(timeline_kind) = self.timeline_kind.clone() {
-                        room_pane::pop_out(cx, self.widget_uid(), &room_name_id, kind, timeline_kind);
+                    if let Some(timeline_kind) = self.timeline_kind.clone()
+                        && let Some(saved) = saved
+                    {
+                        room_pane::pop_out(cx, self.widget_uid(), &room_name_id, kind, timeline_kind, saved);
                     }
                 }
             }
@@ -703,9 +729,9 @@ impl RoomPaneDock {
     /// Docks any panes waiting to be docked in our timeline.
     fn dock_pending(&mut self, cx: &mut Cx) {
         let Some(timeline_kind) = self.timeline_kind.as_ref() else { return };
-        for kind in room_pane::take_pending(timeline_kind) {
+        for (kind, saved) in room_pane::take_pending(timeline_kind) {
             if !self.has_pane(&kind) {
-                self.create_pane(cx, kind, room_pane::last_layout(), None, None);
+                self.create_pane(cx, kind, room_pane::last_layout(), None, saved);
             }
         }
         self.place_panes(cx, true);
@@ -722,6 +748,7 @@ impl RoomPaneDock {
     }
 
     /// Returns the state of our panes, to be restored when our timeline is shown again.
+    /// This takes their data subscriptions, so only call this right before clearing our panes.
     fn save_state(&self) -> Vec<SavedRoomPane> {
         self.panes.iter()
             .map(|pane| SavedRoomPane {

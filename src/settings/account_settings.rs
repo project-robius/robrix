@@ -4,7 +4,7 @@ use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::encryption::{identities::Device, VerificationState};
 use url::Url;
 
-use crate::{app::ConfirmDeleteAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
+use crate::{app::ConfirmDeleteAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::{PopulateMode, is_settings_screen_shown}, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -362,8 +362,23 @@ impl ScriptHook for AccountSettings {
 
 impl Widget for AccountSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.match_event(cx, event);
-
+        if let Event::Signal = event {
+            let avatar_arrived = self.own_profile.as_mut().is_some_and(|p|
+                // the avatar URI is only set while we're still waiting on the image to arrive.
+                p.avatar_state.uri().is_some() && p.avatar_state.update_from_cache(cx).is_some()
+            );
+            if avatar_arrived {
+                self.populate_avatar_views(cx);
+            }
+        }
+        self.widget_match_event(cx, event, scope);
+        self.view.handle_event(cx, event, scope);
+        // Handle hovers/long-presses over the copy button, which can only happen on these events.
+        if !matches!(event, Event::MouseMove(_) | Event::MouseLeave(_) | Event::LongPress(_))
+            || !is_settings_screen_shown(scope)
+        {
+            return;
+        }
         let copy_user_id_button = self.view.button(cx, ids!(copy_user_id_button));
         let copy_user_id_button_area = copy_user_id_button.area();
         match event.hits(cx, copy_user_id_button_area) {
@@ -388,8 +403,6 @@ impl Widget for AccountSettings {
             }
             _ => {}
         }
-
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -397,24 +410,8 @@ impl Widget for AccountSettings {
     }
 }
 
-impl MatchEvent for AccountSettings {
-    fn handle_signal(&mut self, cx: &mut Cx) {
-        let avatar_arrived = self.own_profile.as_mut().is_some_and(|p|
-            // the avatar URI is only set while we're still waiting on the image to arrive.
-            p.avatar_state.uri().is_some() && p.avatar_state.update_from_cache(cx).is_some()
-        );
-        if avatar_arrived {
-            self.populate_avatar_views(cx);
-        }
-    }
-
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let accept_display_name_button = self.view.button(cx, ids!(accept_display_name_button));
-        let cancel_display_name_button = self.view.button(cx, ids!(cancel_display_name_button));
-        let display_name_input = self.view.text_input(cx, ids!(display_name_input));
-        let delete_avatar_button = self.view.button(cx, ids!(delete_avatar_button));
-        let upload_avatar_button = self.view.button(cx, ids!(upload_avatar_button));
-
+impl WidgetMatchEvent for AccountSettings {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions {
             if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
                 self.verification_state = *state;
@@ -431,6 +428,7 @@ impl MatchEvent for AccountSettings {
                 self.view.widget(cx, ids!(upload_avatar_spinner)).set_visible(cx, false);
                 self.view.widget(cx, ids!(delete_avatar_spinner)).set_visible(cx, false);
                 self.view.widget(cx, ids!(save_name_spinner)).set_visible(cx, false);
+                let display_name_input = self.view.text_input(cx, ids!(display_name_input));
                 display_name_input.set_is_read_only(cx, false);
                 display_name_input.set_disabled(cx, false);
                 self.update_verification_banner(cx);
@@ -470,11 +468,11 @@ impl MatchEvent for AccountSettings {
                     self.view.widget(cx, ids!(upload_avatar_spinner)).set_visible(cx, false);
                     self.view.widget(cx, ids!(delete_avatar_spinner)).set_visible(cx, false);
                     // Re-enable the avatar buttons so user can try again
-                    Self::enable_upload_avatar_button(cx, true, &upload_avatar_button);
+                    Self::enable_upload_avatar_button(cx, true, &self.view.button(cx, ids!(upload_avatar_button)));
                     Self::enable_delete_avatar_button(
                         cx,
                         self.own_profile.as_ref().is_some_and(|p| p.avatar_state.has_avatar()),
-                        &delete_avatar_button
+                        &self.view.button(cx, ids!(delete_avatar_button))
                     );
                     enqueue_popup_notification(
                         err_msg.clone(),
@@ -491,20 +489,32 @@ impl MatchEvent for AccountSettings {
                     }
                     // Update the display name text input and disable buttons
                     let (text, len) = new_name.as_deref().map(|s| (s, s.len())).unwrap_or_default();
+                    let display_name_input = self.view.text_input(cx, ids!(display_name_input));
                     display_name_input.set_text(cx, text);
                     display_name_input.set_cursor(cx, Cursor { index: len, prefer_next_row: false }, false);
                     display_name_input.set_is_read_only(cx, false);
                     display_name_input.set_disabled(cx, false);
-                    Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
+                    Self::enable_display_name_buttons(
+                        cx,
+                        false,
+                        &self.view.button(cx, ids!(accept_display_name_button)),
+                        &self.view.button(cx, ids!(cancel_display_name_button)),
+                    );
                     // The result popup is enqueued by the worker task, so we only restore the UI here.
                     continue;
                 }
                 Some(AccountDataAction::DisplayNameChangeFailed(_)) => {
                     self.view.widget(cx, ids!(save_name_spinner)).set_visible(cx, false);
                     // Re-enable the buttons and text input so that the user can try again
+                    let display_name_input = self.view.text_input(cx, ids!(display_name_input));
                     display_name_input.set_is_read_only(cx, false);
                     display_name_input.set_disabled(cx, false);
-                    Self::enable_display_name_buttons(cx, true, &accept_display_name_button, &cancel_display_name_button);
+                    Self::enable_display_name_buttons(
+                        cx,
+                        true,
+                        &self.view.button(cx, ids!(accept_display_name_button)),
+                        &self.view.button(cx, ids!(cancel_display_name_button)),
+                    );
                     // The error popup is enqueued by the worker task, so we only restore the UI here.
                     continue;
                 }
@@ -538,21 +548,31 @@ impl MatchEvent for AccountSettings {
             match action.downcast_ref() {
                 Some(AccountSettingsAction::AvatarDeleteStarted) => {
                     self.view.widget(cx, ids!(delete_avatar_spinner)).set_visible(cx, true);
-                    Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
-                    Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
+                    Self::enable_upload_avatar_button(cx, false, &self.view.button(cx, ids!(upload_avatar_button)));
+                    Self::enable_delete_avatar_button(cx, false, &self.view.button(cx, ids!(delete_avatar_button)));
                     continue;
                 }
                 Some(AccountSettingsAction::AvatarUploadStarted) => {
                     self.view.widget(cx, ids!(upload_avatar_spinner)).set_visible(cx, true);
-                    Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
-                    Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
+                    Self::enable_upload_avatar_button(cx, false, &self.view.button(cx, ids!(upload_avatar_button)));
+                    Self::enable_delete_avatar_button(cx, false, &self.view.button(cx, ids!(delete_avatar_button)));
                     continue;
                 }
                 _ => {}
             }
         }
 
+        // Handle clicks and edits, which can only happen while the settings screen is shown.
+        if !is_settings_screen_shown(scope) {
+            return;
+        }
         let Some(own_profile) = &self.own_profile else { return };
+
+        let accept_display_name_button = self.view.button(cx, ids!(accept_display_name_button));
+        let cancel_display_name_button = self.view.button(cx, ids!(cancel_display_name_button));
+        let display_name_input = self.view.text_input(cx, ids!(display_name_input));
+        let delete_avatar_button = self.view.button(cx, ids!(delete_avatar_button));
+        let upload_avatar_button = self.view.button(cx, ids!(upload_avatar_button));
 
         if upload_avatar_button.clicked(actions) {
             // Don't disable the buttons yet; wait for the user to confirm the

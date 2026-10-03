@@ -10,6 +10,7 @@ use crate::{
     shared::password_input::PasswordTextInputWidgetExt,
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
+    settings::is_settings_screen_shown,
     shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}},
     sliding_sync::{submit_async_request, IdentityResetAuth, MatrixRequest, RecoveryAction},
     utils,
@@ -343,7 +344,7 @@ impl ScriptHook for EncryptionSettings {
 impl Widget for EncryptionSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-        self.match_event(cx, event);
+        self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -351,9 +352,10 @@ impl Widget for EncryptionSettings {
     }
 }
 
-impl MatchEvent for EncryptionSettings {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.view.button(cx, ids!(enable_recovery_button)).clicked(actions) {
+impl WidgetMatchEvent for EncryptionSettings {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let is_shown = is_settings_screen_shown(scope);
+        if is_shown && self.view.button(cx, ids!(enable_recovery_button)).clicked(actions) {
             self.pending_request = Some(PendingRecoveryRequest::EnableRecovery);
             submit_async_request(MatrixRequest::EnableRecovery);
             self.show_modal(cx, EncryptionModalState::Busy {
@@ -361,7 +363,7 @@ impl MatchEvent for EncryptionSettings {
                 body: "Creating your recovery key and backing up your encryption keys.",
             });
         }
-        if self.view.button(cx, ids!(change_key_button)).clicked(actions) {
+        if is_shown && self.view.button(cx, ids!(change_key_button)).clicked(actions) {
             cx.action(PositiveConfirmationModalAction::Show(RefCell::new(Some(ConfirmationModalContent {
                 title_text: "Change your recovery key?".into(),
                 body_text: "Your current recovery key will stop working right away, and you'll receive a new one that you should save and keep safe.".into(),
@@ -370,10 +372,10 @@ impl MatchEvent for EncryptionSettings {
                 ..Default::default()
             }))));
         }
-        if self.view.button(cx, ids!(recover_button)).clicked(actions) {
+        if is_shown && self.view.button(cx, ids!(recover_button)).clicked(actions) {
             self.show_modal(cx, EncryptionModalState::EnterRecoveryKey { error: None });
         }
-        if self.view.button(cx, ids!(reset_identity_button)).clicked(actions) {
+        if is_shown && self.view.button(cx, ids!(reset_identity_button)).clicked(actions) {
             cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(ConfirmationModalContent {
                 title_text: "Reset encryption identity?".into(),
                 body_text: "This creates a new encryption identity and deletes your key backup and recovery key right away. \
@@ -562,9 +564,11 @@ impl MatchEvent for EncryptionSettings {
 }
 
 impl EncryptionSettings {
-    /// Asks for the current recovery state; the section is created lazily, so it may
-    /// have missed the subscriber's earlier updates.
-    fn populate(&mut self, cx: &mut Cx) {
+    /// Shows the app's latest known recovery state and queries the current one.
+    fn populate(&mut self, cx: &mut Cx, recovery_state: RecoveryState) {
+        self.recovery_state = recovery_state;
+        // The encryption settings section gets created lazily, so we may have missed
+        // the subscriber's earlier updates, hence why we have to query it again.
         submit_async_request(MatrixRequest::GetRecoveryState);
         self.populate_inner(cx);
     }
@@ -621,9 +625,9 @@ impl EncryptionSettings {
 
 impl EncryptionSettingsRef {
     /// See [`EncryptionSettings::populate()`].
-    pub fn populate(&self, cx: &mut Cx) {
+    pub fn populate(&self, cx: &mut Cx, recovery_state: RecoveryState) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.populate(cx);
+        inner.populate(cx, recovery_state);
     }
 }
 

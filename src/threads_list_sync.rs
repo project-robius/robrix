@@ -1,5 +1,5 @@
 //! A background task that loads a room's threads and keeps them up to date
-//! while the UI shows its threads list.
+//! while the UI shows its threads list (or keeps that list's saved state).
 
 use std::{cmp::Reverse, sync::Arc};
 use eyeball_im::VectorDiff;
