@@ -990,49 +990,71 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-/// Converts a list of names into a human-readable string with a limit parameter.
-pub fn human_readable_list<S>(names: &[S], limit: usize) -> String
-where
-    S: AsRef<str>
-{
-    let mut result = String::new();
-    match names.len() {
-        0 => return result, // early return if no names provided
-        1 => {
-            result.push_str(names[0].as_ref());
-        },
-        2 => {
-            result.push_str(names[0].as_ref());
-            result.push_str(" and ");
-            result.push_str(names[1].as_ref());
-        },
-        _ => {
-            let display_count = names.len().min(limit);
-            for (i, name) in names.iter().take(display_count - 1).enumerate() {
-                if i > 0 {
-                    result.push_str(", ");
-                }
-                result.push_str(name.as_ref());
-            }
-            if names.len() > limit {
-                let remaining = names.len() - limit;
+/// Joins the given items into a comma-separated list.
+///
+/// Examples: "a", "a and b", or "a, b, and c".
+///
+/// Yes, this uses the oxford comma because I'm a grammar fan.
+pub fn join_with_and<S: AsRef<str>>(items: &[S]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.as_ref().to_owned(),
+        [a, b] => format!("{} and {}", a.as_ref(), b.as_ref()),
+        [rest @ .., last] => {
+            let mut result = String::new();
+            for item in rest {
+                result.push_str(item.as_ref());
                 result.push_str(", ");
-                result.push_str(names[display_count - 1].as_ref());
-                result.push_str(", and ");
-                if remaining == 1 {
-                    result.push_str("1 other");
-                } else {
-                    result.push_str(&format!("{} others", remaining));
-                }
-            } else {
-                result.push_str(" and ");
-                result.push_str(names[display_count - 1].as_ref());
             }
+            result.push_str("and ");
+            result.push_str(last.as_ref());
+            result
         }
-    };
-    result
+    }
 }
 
+/// Returns the given String, or `None` if it's empty or just whitespace.
+pub fn non_blank(name: Option<String>) -> Option<String> {
+    name.filter(|name| !name.trim().is_empty())
+}
+
+/// Returns a label for each of the given people (their user ID and display name, if any).
+///
+/// A label is their display name, or their user ID if the display name is missing or blank.
+/// An ambiguous display name (the same as someone else's name) will also include
+/// the user ID added in parentheses, in order to avoid confusing two different users as the same.
+pub fn distinct_user_labels(people: &[(&str, Option<&str>)]) -> Vec<String> {
+    let labels: Vec<&str> = people.iter()
+        .map(|&(user_id, name)| name.filter(|name| !name.trim().is_empty()).unwrap_or(user_id))
+        .collect();
+    people.iter().zip(&labels).map(|(&(user_id, _), &label)| {
+        let looks_like_a_user_id = label.starts_with('@') && label.contains(':');
+        let is_shared = labels.iter().filter(|&&other| other == label).count() > 1;
+        if label != user_id && (looks_like_a_user_id || is_shared) {
+            format!("{label} ({user_id})")
+        } else {
+            label.to_owned()
+        }
+    }).collect()
+}
+
+/// Combines the list of `names` into a comma-separated list.
+///
+/// Example: "Alice, Bob, and Carol". Or "Alice, Bob, and 4 others".
+///
+/// Only shows at most `max` names, after that it ends with "... and N others".
+/// There is no trailing punctuation or period at the end of the returned string.
+pub fn human_readable_list<S: AsRef<str>>(names: &[S], max: usize) -> String {
+    let shown = names.len().min(max.max(1));
+    let mut items: Vec<&str> = names[..shown].iter().map(AsRef::as_ref).collect();
+    let others = match names.len() - shown {
+        0 => None,
+        1 => Some(String::from("1 other")),
+        n => Some(format!("{n} others")),
+    };
+    items.extend(others.as_deref());
+    join_with_and(&items)
+}
 
 /// Returns the sender's display name if available.
 ///
@@ -1394,6 +1416,61 @@ mod tests_human_readable_list {
         let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny", "Gina", "Hiroshi", "Ivan", "James", "Karen", "Lisa", "Michael", "Nathan", "Oliver", "Peter", "Quentin", "Rachel", "Sally", "Tanya", "Ulysses", "Victor", "William", "Xenia", "Yuval", "Zachariah"];
         let result = human_readable_list(&names, 3);
         assert_eq!(result, "Alice, Bob, Charlie, and 23 others");
+    }
+
+    #[test]
+    fn test_human_readable_list_three_uses_the_oxford_comma() {
+        let names = ["Alice", "Bob", "Charlie"];
+        assert_eq!(human_readable_list(&names, 3), "Alice, Bob, and Charlie");
+    }
+
+    #[test]
+    fn test_human_readable_list_small_limits() {
+        let names = ["Alice", "Bob", "Charlie"];
+        assert_eq!(human_readable_list(&names, 1), "Alice and 2 others");
+        assert_eq!(human_readable_list(&names, 2), "Alice, Bob, and 1 other");
+        assert_eq!(human_readable_list(&names, 0), "Alice and 2 others");
+    }
+
+    #[test]
+    fn test_join_with_and() {
+        assert_eq!(join_with_and::<&str>(&[]), "");
+        assert_eq!(join_with_and(&["a"]), "a");
+        assert_eq!(join_with_and(&["a", "b"]), "a and b");
+        assert_eq!(join_with_and(&["a", "b", "c", "d"]), "a, b, c, and d");
+    }
+}
+
+#[cfg(test)]
+mod tests_user_labels {
+    use super::*;
+
+    #[test]
+    fn test_non_blank() {
+        assert_eq!(non_blank(Some("Alice".into())), Some("Alice".into()));
+        assert_eq!(non_blank(Some("  ".into())), None);
+        assert_eq!(non_blank(None), None);
+    }
+
+    #[test]
+    fn test_distinct_user_labels() {
+        let labels = distinct_user_labels(&[
+            ("@alice:a.org", Some("Alice")),
+            ("@alice:b.org", Some("Alice")),
+            ("@bob:x.org", None),
+            ("@carol:x.org", Some(" ")),
+            // Someone posing as Bob by name, and someone whose name is their own ID.
+            ("@mallory:x.org", Some("@bob:x.org")),
+            ("@dave:x.org", Some("@dave:x.org")),
+        ]);
+        assert_eq!(labels, vec![
+            "Alice (@alice:a.org)",
+            "Alice (@alice:b.org)",
+            "@bob:x.org",
+            "@carol:x.org",
+            "@bob:x.org (@mallory:x.org)",
+            "@dave:x.org",
+        ]);
     }
 }
 

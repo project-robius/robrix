@@ -32,6 +32,11 @@ pub mod room_context_menu;
 pub mod link_preview;
 pub mod room_image_viewer;
 pub mod upload_progress;
+pub mod small_state_event;
+pub mod timeline_items;
+pub mod state_event_group;
+pub mod state_event_summary;
+pub mod scroll_anchors;
 
 pub fn script_mod(vm: &mut ScriptVm) {
     search_messages::script_mod(vm);
@@ -56,6 +61,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     tombstone_footer::script_mod(vm);
     failed_send_banner::script_mod(vm);
     room_pane_screen::script_mod(vm);
+    state_event_group::script_mod(vm);
     room_screen::script_mod(vm);
     rooms_sidebar::script_mod(vm);
     welcome_screen::script_mod(vm);

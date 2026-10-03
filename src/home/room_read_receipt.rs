@@ -3,7 +3,7 @@ use crate::profile::user_profile_cache::get_user_display_name_for_room;
 use crate::settings::app_preferences::AppPreferencesGlobal;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::sliding_sync::TimelineKind;
-use crate::utils::human_readable_list;
+use crate::utils::{distinct_user_labels, human_readable_list};
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use crate::{LivePtr, widget_ref_from_live_ptr};
@@ -50,9 +50,8 @@ script_mod! {
     }
 }
 /// The widget that displays a list of read receipts.
-#[derive(Script, Widget, ScriptHook)]
+#[derive(Script, ScriptHook, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct AvatarRow {
-    #[redraw]
     #[live]
     draw_text: DrawText,
     #[deref]
@@ -75,8 +74,6 @@ pub struct AvatarRow {
     #[rust]
     label: Option<LabelRef>,
     /// The area of the widget
-    #[redraw]
-    #[area]
     #[rust]
     area: Area,
     /// The read receipts for this row, keyed by user id.
@@ -87,10 +84,52 @@ pub struct AvatarRow {
     timeline_kind: Option<TimelineKind>,
 }
 
+impl WidgetNode for AvatarRow {
+    fn widget_uid(&self) -> WidgetUid { self.deref.widget_uid() }
+    fn walk(&mut self, _cx: &mut Cx) -> Walk { self.walk }
+    fn area(&self) -> Area { self.area }
+    fn redraw(&mut self, cx: &mut Cx) {
+        self.draw_text.redraw(cx);
+        self.area.redraw(cx);
+    }
+    fn layer_areas(&self) -> Vec<(&'static str, Area)> { vec![("draw_text", self.draw_text.area())] }
+    fn visible(&self) -> bool { self.deref.visible() }
+    fn set_visible(&mut self, cx: &mut Cx, visible: bool) { self.deref.set_visible(cx, visible) }
+    fn set_scroll_pos(&mut self, cx: &mut Cx, v: Vec2d) { self.deref.set_scroll_pos(cx, v) }
+
+    /// Visits the view's children plus the avatars and the "+N" label.
+    ///
+    /// The avatars and label come from templates, so the view doesn't know about them.
+    /// Listing them here lets Makepad's widget tree track them and drop them when needed.
+    fn children(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) {
+        self.deref.children(visit);
+        for (i, (avatar, _)) in self.buttons.iter().enumerate() {
+            visit(live_id_num!(avatar, i as u64), WidgetRef::clone(avatar));
+        }
+        if let Some(label) = &self.label {
+            visit(id!(plus_label), WidgetRef::clone(label));
+        }
+    }
+    fn skip_widget_tree_search(&self) -> bool { true }
+    fn cancel_children_impl(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) -> bool {
+        self.visible() && self.deref.visit_cancel(visit)
+    }
+    fn find_widgets_from_point(&self, cx: &Cx, point: DVec2, found: &mut dyn FnMut(&WidgetRef)) {
+        self.deref.find_widgets_from_point(cx, point, found)
+    }
+    fn selection_text_len(&self) -> usize { self.deref.selection_text_len() }
+    fn selection_point_to_char_index(&self, cx: &Cx, abs: DVec2) -> Option<usize> { self.deref.selection_point_to_char_index(cx, abs) }
+    fn selection_set(&mut self, anchor: usize, cursor: usize) { self.deref.selection_set(anchor, cursor) }
+    fn selection_clear(&mut self) { self.deref.selection_clear() }
+    fn selection_select_all(&mut self) { self.deref.selection_select_all() }
+    fn selection_get_text_for_range(&self, start: usize, end: usize) -> String { self.deref.selection_get_text_for_range(start, end) }
+    fn selection_get_full_text(&self) -> String { self.deref.selection_get_full_text() }
+}
+
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // The avatars aren't children of this widget (they're created from a template),
-        // so we have to manually forward events to them (mostly async image loads).
+        // The avatars come from a template, so nothing else passes events to them;
+        // we forward actions to them directly, since they need those for async image loads.
         if let Event::Actions(_) = event {
             for (avatar_ref, _) in self.buttons.iter() {
                 avatar_ref.handle_event(cx, event, scope);
@@ -194,6 +233,8 @@ impl AvatarRow {
             }
             self.label = Some(label);
             self.read_receipts = Some(receipts_map.clone());
+            // Tell the widget tree to pick up the list of new avatars
+            cx.widget_tree_mark_dirty(self.widget_uid());
         }
         self.timeline_kind = Some(timeline_kind.clone());
         self.update_undrawn_avatars(cx);
@@ -285,22 +326,32 @@ pub fn populate_tooltip(
     read_receipts: IndexMap<OwnedUserId, Receipt>,
     room_id: &OwnedRoomId,
 ) -> String {
-    let mut display_names: Vec<String> = read_receipts
-        .iter()
-        .rev()
-        .take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
-        .map(|(user_id, _)| {
-            get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), true)
-                .into_option()
-                .unwrap_or_else(|| user_id.to_string())
-        })
-        .collect();
-    for _ in display_names.len()..read_receipts.len() {
-        display_names.push(String::from(""));
-    }
     format!(
         "Seen by {}:\n{}",
         read_receipts.len(),
-        human_readable_list(&display_names, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
+        tooltip_list_of_users(cx, read_receipts.keys().rev(), room_id),
     )
+}
+
+/// Returns a string list of the given users for display in a tooltip.
+pub fn tooltip_list_of_users<'a>(
+    cx: &mut Cx,
+    user_ids: impl ExactSizeIterator<Item = &'a OwnedUserId>,
+    room_id: &OwnedRoomId,
+) -> String {
+    let count = user_ids.len();
+    let ids_and_names: Vec<(&OwnedUserId, Option<String>)> = user_ids
+        .take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
+        .map(|user_id| (
+            user_id,
+            get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), true).into_option(),
+        ))
+        .collect();
+    let people: Vec<(&str, Option<&str>)> = ids_and_names.iter()
+        .map(|(user_id, name)| (user_id.as_str(), name.as_deref()))
+        .collect();
+    let mut labels = distinct_user_labels(&people);
+    // Everyone else just gets counted.
+    labels.resize(count, String::new());
+    human_readable_list(&labels, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
 }

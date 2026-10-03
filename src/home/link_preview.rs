@@ -208,14 +208,17 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, ScriptHook, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct LinkPreview {
     #[deref]
     view: View,
     #[live]
     preview_template: Option<LivePtr>,
+    /// The list of all previews, one preview card per link.
+    ///
+    /// Each card is a widget instantiated from the above `preview_template`.
     #[rust]
-    children: Vec<ViewRef>,
+    cards: Vec<ViewRef>,
     #[layout]
     layout: Layout,
     #[rust]
@@ -227,21 +230,62 @@ pub struct LinkPreview {
     last_populated_links: Vec<Url>,
 }
 
+impl WidgetNode for LinkPreview {
+    fn widget_uid(&self) -> WidgetUid { self.view.widget_uid() }
+    fn walk(&mut self, cx: &mut Cx) -> Walk { self.view.walk(cx) }
+    fn area(&self) -> Area { self.view.area() }
+    fn redraw(&mut self, cx: &mut Cx) { self.view.redraw(cx) }
+    fn visible(&self) -> bool { self.view.visible() }
+    fn set_visible(&mut self, cx: &mut Cx, visible: bool) { self.view.set_visible(cx, visible) }
+    fn set_scroll_pos(&mut self, cx: &mut Cx, v: Vec2d) { self.view.set_scroll_pos(cx, v) }
+
+    /// Visits the deref view's children, plus each preview card that we manage ourselves.
+    ///
+    /// The cards come from a template, so the deref view doesn't know about them.
+    /// Listing them here lets the widget tree track them and drop them along with
+    /// this LinkPreview widget (e.g., when its parent `Message` gets dropped).
+    ///
+    /// Lookups must go through `self`, not `self.view`: a lookup re-lists this widget's children,
+    /// and `self.view` doesn't list the cards, so the widget tree would lose track of them.
+    fn children(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) {
+        self.view.children(visit);
+        for (i, card) in self.cards.iter().enumerate() {
+            visit(live_id_num!(preview, i as u64), WidgetRef::clone(card));
+        }
+    }
+    /// Returns true, so searches from outside this widget don't find what's in it, like a card's title.
+    fn skip_widget_tree_search(&self) -> bool { true }
+
+    fn cancel_children_impl(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) -> bool {
+        self.visible() && self.view.visit_cancel(visit)
+    }
+    fn find_widgets_from_point(&self, cx: &Cx, point: DVec2, found: &mut dyn FnMut(&WidgetRef)) {
+        self.view.find_widgets_from_point(cx, point, found)
+    }
+    fn selection_text_len(&self) -> usize { self.view.selection_text_len() }
+    fn selection_point_to_char_index(&self, cx: &Cx, abs: DVec2) -> Option<usize> { self.view.selection_point_to_char_index(cx, abs) }
+    fn selection_set(&mut self, anchor: usize, cursor: usize) { self.view.selection_set(anchor, cursor) }
+    fn selection_clear(&mut self) { self.view.selection_clear() }
+    fn selection_select_all(&mut self) { self.view.selection_select_all() }
+    fn selection_get_text_for_range(&self, start: usize, end: usize) -> String { self.view.selection_get_text_for_range(start, end) }
+    fn selection_get_full_text(&self) -> String { self.view.selection_get_full_text() }
+}
+
 impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // clear hovers on every link preview card and the show more/fewer buttons
         if let Event::ClearHover = event {
-            for item in self.children.iter() {
+            for item in self.cards.iter() {
                 reset_hover(cx, item);
             }
-            self.view.button(cx, ids!(collapsible_buttons.expand_button)).reset_hover(cx);
-            self.view.button(cx, ids!(collapsible_buttons.collapse_button)).reset_hover(cx);
+            self.button(cx, ids!(collapsible_buttons.expand_button)).reset_hover(cx);
+            self.button(cx, ids!(collapsible_buttons.collapse_button)).reset_hover(cx);
         }
 
         // Handle collapsible button clicks
         if let Event::Actions(actions) = event {
-            let expand_btn = self.view.button(cx, ids!(collapsible_buttons.expand_button));
-            let collapse_btn = self.view.button(cx, ids!(collapsible_buttons.collapse_button));
+            let expand_btn = self.button(cx, ids!(collapsible_buttons.expand_button));
+            let collapse_btn = self.button(cx, ids!(collapsible_buttons.collapse_button));
             if expand_btn.clicked(actions) || collapse_btn.clicked(actions) {
                 self.is_expanded = !self.is_expanded;
                 self.update_button_and_visibility(cx);
@@ -249,7 +293,7 @@ impl Widget for LinkPreview {
             }
         }
 
-        for view in self.children.iter() {
+        for view in self.cards.iter() {
             match event.hits(cx, view.area()) {
                 Hit::FingerHoverIn(_) | Hit::FingerDown(_) => {
                     let mut view = view.clone();
@@ -285,10 +329,10 @@ impl Widget for LinkPreview {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // First, draw as many children as should be visible.
-        let num_visible = if self.is_expanded { self.children.len() } else { MAX_DEFAULT_VISIBLE_PREVIEWS };
-        for child in self.children.iter_mut().take(num_visible) {
-            let _ = child.draw(cx, scope);
+        // First, draw as many cards as should be visible.
+        let num_visible = if self.is_expanded { self.cards.len() } else { MAX_DEFAULT_VISIBLE_PREVIEWS };
+        for card in self.cards.iter_mut().take(num_visible) {
+            let _ = card.draw(cx, scope);
         }
         // Then, draw the rest of the main view, e.g., the collapsible button.
         let _ = self.view.draw_walk(cx, scope, walk);
@@ -299,9 +343,9 @@ impl Widget for LinkPreview {
 impl LinkPreview {
     fn update_button_and_visibility(&mut self, cx: &mut Cx) {
         if self.num_hidden_links > 0 {
-            self.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
-            let expand_btn = self.view.button(cx, ids!(collapsible_buttons.expand_button));
-            let collapse_btn = self.view.button(cx, ids!(collapsible_buttons.collapse_button));
+            self.view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
+            let expand_btn = self.button(cx, ids!(collapsible_buttons.expand_button));
+            let collapse_btn = self.button(cx, ids!(collapsible_buttons.collapse_button));
             if self.is_expanded {
                 expand_btn.set_visible(cx, false);
                 collapse_btn.set_visible(cx, true);
@@ -313,7 +357,7 @@ impl LinkPreview {
             expand_btn.reset_hover(cx);
             collapse_btn.reset_hover(cx);
         } else {
-            self.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, false);
+            self.view(cx, ids!(collapsible_buttons)).set_visible(cx, false);
         }
     }
 }
@@ -324,7 +368,8 @@ impl LinkPreviewRef {
     /// Needed for messages that never show link previews (e.g. redacted messages).
     pub fn clear(&mut self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.children.clear();
+            inner.cards.clear();
+            cx.widget_tree_mark_dirty(inner.widget_uid());
             inner.last_populated_links.clear();
             inner.is_expanded = false;
             inner.num_hidden_links = 0;
@@ -369,15 +414,17 @@ impl LinkPreviewRef {
         if did_links_change {
             if let Some(mut inner) = self.borrow_mut() {
                 let num_links = accepted_links.len();
-                // Reuse as many old link preview child instances as we can.
-                inner.children.truncate(num_links);
-                while inner.children.len() < num_links {
-                    let child = widget_ref_from_live_ptr(cx, inner.preview_template).as_view();
-                    inner.children.push(child);
+                // Reuse as many old link preview cards as we can.
+                inner.cards.truncate(num_links);
+                while inner.cards.len() < num_links {
+                    let card = widget_ref_from_live_ptr(cx, inner.preview_template).as_view();
+                    inner.cards.push(card);
                 }
+                // Tell the widget tree to pick up the list of new cards
+                cx.widget_tree_mark_dirty(inner.widget_uid());
                 // Reset each preview's per-link visual state: a reused one keeps its old
                 // hover color and image, and a new one shows TextOrImage's default view.
-                for item in inner.children.iter() {
+                for item in inner.cards.iter() {
                     reset_hover(cx, item);
                     item.text_or_image(cx, ids!(image)).clear(cx);
                 }
@@ -390,7 +437,7 @@ impl LinkPreviewRef {
 
         let Some(inner) = self.borrow() else { return true };
         let mut all_drawn = true;
-        for (view, link) in inner.children.iter().zip(inner.last_populated_links.iter()) {
+        for (view, link) in inner.cards.iter().zip(inner.last_populated_links.iter()) {
             let entry = link_preview_cache.get_or_fetch_link_preview(link.as_str());
             all_drawn &= populate_preview_item(cx, view, entry, link, media_cache, populate_image_fn);
         }

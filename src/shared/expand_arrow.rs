@@ -71,15 +71,34 @@ pub struct ExpandArrow {
 }
 
 impl ExpandArrow {
-    /// Animate open/close (use in event handlers only, not during draw).
+    /// Sets the arrow to open/close with or without animation.
+    ///
+    /// This should only be used in event handlers, not during a draw function.
     pub fn set_is_open(&mut self, cx: &mut Cx, is_open: bool, animate: Animate) {
+        if matches!(animate, Animate::Yes) && !self.animator.is_track_animating(id!(expand)) {
+            let drawn_open = self.opened_value > 0.5;
+            self.animator_cut(cx, if drawn_open { ids!(expand.expanded) } else { ids!(expand.collapsed) });
+        }
         self.opened_value = if is_open { 1.0 } else { 0.0 };
         self.animator_toggle(cx, is_open, animate, ids!(expand.expanded), ids!(expand.collapsed))
     }
 
-    /// Set open/close state without animation (safe to call anytime).
+    /// Sets the open/close state without animating.
+    ///
+    /// This is okay to call at any point in any context.
     pub fn set_is_open_no_animate(&mut self, is_open: bool) {
         self.opened_value = if is_open { 1.0 } else { 0.0 };
+    }
+
+    pub fn set_color(&mut self, cx: &mut Cx, color: Vec4) {
+        self.draw_bg.set_dyn_instance(cx, id!(color), &[color.x, color.y, color.z, color.w]);
+        self.draw_bg.redraw(cx);
+    }
+
+    /// Sets the arrow to point up without animating it.
+    pub fn set_pointing_up_no_animate(&mut self) {
+        // The shader draws the triangle pointing up at zero rotation, which is one step before "closed".
+        self.opened_value = -1.0;
     }
 }
 

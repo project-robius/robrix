@@ -26,14 +26,15 @@ script_mod! {
     }
 }
 
-/// A text input (with a search icon and cancel button) used to filter the rooms list.
+/// A brief timestamp that shows the complete date on hover.
 ///
 /// See the module-level docs for more detail.
 #[derive(Script, ScriptHook, Widget)]
 pub struct Timestamp {
     #[deref] view: View,
-
     #[rust] dt: DateTime<Local>,
+    /// If this timestamp represents a time *span*, this is the ending time.
+    #[rust] end: Option<DateTime<Local>>,
 }
 
 impl Widget for Timestamp {
@@ -54,10 +55,15 @@ impl Widget for Timestamp {
         if should_hover_in {
             // TODO: use pure_rust_locales crate to format the time based on the chosen Locale.
             let locale_extended_fmt_en_us= "%a %b %-d, %Y, %r";
+            let start = self.dt.format(locale_extended_fmt_en_us);
+            let text = match self.end {
+                Some(end) => format!("{start}\nto {}", end.format(locale_extended_fmt_en_us)),
+                None => start.to_string(),
+            };
             cx.widget_action(
                 self.widget_uid(), 
                 TooltipAction::HoverIn {
-                    text: self.dt.format(locale_extended_fmt_en_us).to_string(),
+                    text,
                     widget_rect: area.rect(cx),
                     options: CalloutTooltipOptions {
                         position: TooltipPosition::Right,
@@ -82,6 +88,15 @@ impl Timestamp {
             &dt.format(locale_fmt_en_us).to_string()
         );
         self.dt = dt;
+        self.end = None;
+    }
+
+    /// Sets this timestamp to a span of time from `start` until `end`, if given.
+    ///
+    /// It still only shows the start time; its hover tooltip shows the end time too.
+    pub fn set_date_time_span(&mut self, cx: &mut Cx, start: DateTime<Local>, end: Option<DateTime<Local>>) {
+        self.set_date_time(cx, start);
+        self.end = end;
     }
 }
 
@@ -89,6 +104,13 @@ impl TimestampRef {
     pub fn set_date_time(&self, cx: &mut Cx, dt: DateTime<Local>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_date_time(cx, dt);
+        }
+    }
+
+    /// See [`Timestamp::set_date_time_span()`].
+    pub fn set_date_time_span(&self, cx: &mut Cx, start: DateTime<Local>, end: Option<DateTime<Local>>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_date_time_span(cx, start, end);
         }
     }
 }
