@@ -564,7 +564,7 @@ pub(super) enum SmallStateContent<'a> {
     Membership(&'a RoomMembershipChange, Option<TimelineHistory<'a>>),
     Profile(&'a MemberProfileChange),
     OtherState(&'a timeline::OtherState),
-    /// Anything else (calls, unparseable events, ...), shown as its plaintext body.
+    /// Anything else (calls, unparsable events, ...), shown as its plaintext body.
     Unhandled,
 }
 
@@ -572,7 +572,7 @@ impl SmallStateContent<'_> {
     /// Returns whether this event can go in a group.
     ///
     /// Only membership, profile and other state changes can, since the user shouldn't lose sight of
-    /// the rest, like undecryptable messages or unparseable events. But a knock still waiting on an
+    /// the rest, like undecryptable messages or unparsable events. But a knock still waiting on an
     /// answer can't, since a collapsed group would hide its invite button. And changes to who can join
     /// or read history only get grouped with the room's setup (see [`changes_who_can_join_or_read()`]).
     fn is_groupable(&self, event_tl_item: &EventTimelineItem, pending_knocks: &PendingKnocks) -> bool {

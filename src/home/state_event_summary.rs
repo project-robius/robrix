@@ -486,15 +486,15 @@ fn collect_people(entries: &[SummaryEntry]) -> Vec<Person<'_>> {
 /// A user without a name shows their user ID, and users who'd show the same name get their user IDs
 /// added to tell them apart (see `distinct_user_labels()`). Someone invited by email shows whatever
 /// name their invitation has, if any.
-fn names_to_show(whos: &[&Who], names: &[Option<String>]) -> Vec<Option<String>> {
-    let users: Vec<(&str, Option<&str>)> = whos.iter().zip(names)
+fn names_to_show(subjects: &[&Who], names: &[Option<String>]) -> Vec<Option<String>> {
+    let users: Vec<(&str, Option<&str>)> = subjects.iter().zip(names)
         .filter_map(|(who, name)| match who {
             Who::User(user_id) => Some((user_id.as_str(), name.as_deref())),
             Who::EmailInvitee(_) => None,
         })
         .collect();
     let mut user_labels = distinct_user_labels(&users).into_iter();
-    whos.iter().zip(names)
+    subjects.iter().zip(names)
         .map(|(who, name)| match who {
             Who::User(_) => user_labels.next(),
             Who::EmailInvitee(_) => name.clone(),
@@ -538,8 +538,8 @@ pub fn summarize(entries: &[SummaryEntry], mut name_of: impl FnMut(&Who) -> Opti
     let names: Vec<Option<String>> = named_people.iter()
         .map(|person| person.name.map(ToOwned::to_owned).or_else(|| name_of(person.who)))
         .collect();
-    let whos: Vec<&Who> = named_people.iter().map(|person| person.who).collect();
-    let mut shown_names = names_to_show(&whos, &names).into_iter();
+    let subjects: Vec<&Who> = named_people.iter().map(|person| person.who).collect();
+    let mut shown_names = names_to_show(&subjects, &names).into_iter();
 
     sentences.iter()
         .map(|sentence| {
