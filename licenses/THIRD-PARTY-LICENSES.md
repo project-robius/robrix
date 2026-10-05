@@ -12,10 +12,10 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 559 | MIT License | `MIT` |
+| 558 | MIT License | `MIT` |
 | 24 | Apache License 2.0 | `Apache-2.0` |
 | 21 | Unicode License v3 | `Unicode-3.0` |
-| 12 | Mozilla Public License 2.0 | `MPL-2.0` |
+| 11 | Mozilla Public License 2.0 | `MPL-2.0` |
 | 6 | BSD 3-Clause "New" or "Revised" License | `BSD-3-Clause` |
 | 6 | ISC License | `ISC` |
 | 5 | zlib License | `Zlib` |
@@ -43,7 +43,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `anstyle-query` | 1.1.5 | MIT OR Apache-2.0 |
 | `anstyle-wincon` | 3.0.11 | MIT OR Apache-2.0 |
 | `anyhow` | 1.0.100 | MIT OR Apache-2.0 |
-| `anymap2` | 0.13.0 | MIT OR Apache-2.0 |
+| `anymap3` | 1.1.0 | BlueOak-1.0.0 OR MIT OR Apache-2.0 |
 | `archery` | 1.2.1 | MPL-2.0 |
 | `arrayvec` | 0.7.6 | MIT OR Apache-2.0 |
 | `arrayvec` | 0.7.8 | MIT OR Apache-2.0 |
@@ -80,8 +80,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `bit-set` | 0.8.0 | Apache-2.0 OR MIT |
 | `bit-vec` | 0.8.0 | Apache-2.0 OR MIT |
 | `bitflags` | 2.10.0 | MIT OR Apache-2.0 |
-| `bitflags` | 2.13.1 | MIT OR Apache-2.0 |
-| `bitmaps` | 3.2.1 | MPL-2.0+ |
+| `bitflags` | 2.13.2 | MIT OR Apache-2.0 |
 | `blake3` | 1.8.7 | CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception |
 | `block-buffer` | 0.10.4 | MIT OR Apache-2.0 |
 | `block-buffer` | 0.12.1 | MIT OR Apache-2.0 |
@@ -167,7 +166,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `event-listener` | 5.4.2 | Apache-2.0 OR MIT |
 | `event-listener-strategy` | 0.5.4 | Apache-2.0 OR MIT |
 | `eyeball` | 0.8.8 | MPL-2.0 |
-| `eyeball-im` | 0.9.0 | MPL-2.0 |
+| `eyeball-im` | 0.9.1 | MPL-2.0 |
 | `eyeball-im-util` | 0.11.0 | MPL-2.0 |
 | `fallible-iterator` | 0.3.0 | MIT OR Apache-2.0 |
 | `fallible-streaming-iterator` | 0.1.9 | MIT OR Apache-2.0 |
@@ -236,8 +235,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `icu_provider` | 2.0.0 | Unicode-3.0 |
 | `idna` | 1.1.0 | MIT OR Apache-2.0 |
 | `idna_adapter` | 1.2.1 | Apache-2.0 OR MIT |
-| `imbl` | 7.0.1 | MPL-2.0+ |
-| `imbl-sized-chunks` | 0.1.3 | MPL-2.0+ |
+| `imbl` | 7.0.2 | MPL-2.0+ |
+| `imbl-sized-chunks` | 0.2.0 | MPL-2.0+ |
 | `indexmap` | 2.13.0 | Apache-2.0 OR MIT |
 | `indexmap` | 2.14.2 | Apache-2.0 OR MIT |
 | `inout` | 0.2.2 | MIT OR Apache-2.0 |
@@ -322,13 +321,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `matchit` | 0.8.4 | MIT AND BSD-3-Clause |
 | `matrix-pickle` | 0.2.3 | Apache-2.0 |
 | `matrix-pickle-derive` | 0.2.3 | Apache-2.0 |
-| `matrix-sdk` | 0.18.0 | Apache-2.0 |
-| `matrix-sdk-base` | 0.18.0 | Apache-2.0 |
-| `matrix-sdk-common` | 0.18.0 | Apache-2.0 |
-| `matrix-sdk-crypto` | 0.18.0 | Apache-2.0 |
-| `matrix-sdk-sqlite` | 0.18.0 | Apache-2.0 |
-| `matrix-sdk-store-encryption` | 0.18.0 | Apache-2.0 |
-| `matrix-sdk-ui` | 0.18.0 | Apache-2.0 |
+| `matrix-sdk` | 0.19.1 | Apache-2.0 |
+| `matrix-sdk-base` | 0.19.1 | Apache-2.0 |
+| `matrix-sdk-common` | 0.19.1 | Apache-2.0 |
+| `matrix-sdk-crypto` | 0.19.1 | Apache-2.0 |
+| `matrix-sdk-sqlite` | 0.19.1 | Apache-2.0 |
+| `matrix-sdk-store-encryption` | 0.19.1 | Apache-2.0 |
+| `matrix-sdk-ui` | 0.19.1 | Apache-2.0 |
 | `memchr` | 2.7.6 | Unlicense OR MIT |
 | `memchr` | 2.7.6 | Unlicense OR MIT |
 | `memoffset` | 0.9.1 | MIT |
@@ -420,7 +419,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `regex` | 1.13.1 | MIT OR Apache-2.0 |
 | `regex-automata` | 0.4.18 | MIT OR Apache-2.0 |
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
-| `reqwest` | 0.13.2 | MIT OR Apache-2.0 |
+| `reqwest` | 0.13.5 | MIT OR Apache-2.0 |
 | `rfd` | 0.17.2 | MIT |
 | `rmp` | 0.8.14 | MIT |
 | `rmp-serde` | 1.3.1 | MIT |
@@ -435,13 +434,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `robius-use-makepad` | 0.1.1 | MIT |
 | `robius-web-auth-session` | 0.3.1 | MIT |
 | `robrix` | 1.0.0-beta.1 | MIT |
-| `ruma` | 0.16.0 | MIT |
-| `ruma-client-api` | 0.24.0 | MIT |
-| `ruma-common` | 0.19.0 | MIT |
-| `ruma-events` | 0.34.0 | MIT |
-| `ruma-html` | 0.8.0 | MIT |
+| `ruma` | 0.17.0 | MIT |
+| `ruma-client-api` | 0.25.0 | MIT |
+| `ruma-common` | 0.20.0 | MIT |
+| `ruma-events` | 0.35.0 | MIT |
+| `ruma-html` | 0.9.0 | MIT |
 | `ruma-identifiers-validation` | 0.12.1 | MIT |
-| `ruma-macros` | 0.19.0 | MIT |
+| `ruma-macros` | 0.20.0 | MIT |
 | `rusqlite` | 0.40.2 | MIT |
 | `rustc-hash` | 1.1.0 | Apache-2.0 OR MIT |
 | `rustc-hash` | 2.1.1 | Apache-2.0 OR MIT |
@@ -555,14 +554,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `universal-hash` | 0.6.1 | MIT OR Apache-2.0 |
 | `untrusted` | 0.9.0 | ISC |
 | `url` | 2.5.8 | MIT OR Apache-2.0 |
-| `urlencoding` | 2.1.3 | MIT |
 | `utf-8` | 0.7.6 | MIT OR Apache-2.0 |
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT |
 | `utf8parse` | 0.2.2 | Apache-2.0 OR MIT |
-| `uuid` | 1.26.0 | Apache-2.0 OR MIT |
+| `uuid` | 1.27.0 | Apache-2.0 OR MIT |
 | `vcpkg` | 0.2.15 | MIT OR Apache-2.0 |
 | `version_check` | 0.9.5 | MIT OR Apache-2.0 |
-| `vodozemac` | 0.10.0 | Apache-2.0 |
+| `vodozemac` | 0.11.1 | Apache-2.0 |
 | `walkdir` | 2.5.0 | Unlicense OR MIT |
 | `want` | 0.3.1 | MIT |
 | `wasi` | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
