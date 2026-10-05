@@ -178,10 +178,11 @@ ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
 ## Our PR <https://github.com/matrix-org/matrix-rust-sdk/pull/7198> plus a few more thread fixes on top.
 ## Remove this once they're all merged upstream.
+## Local pagination-completion fix atop the pinned SDK revision, pending review/publication.
 [patch."https://github.com/matrix-org/matrix-rust-sdk"]
-matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk.git", branch = "robrix_thread_fixes" }
-matrix-sdk-base = { git = "https://github.com/project-robius/matrix-rust-sdk.git", branch = "robrix_thread_fixes" }
-matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk.git", branch = "robrix_thread_fixes" }
+matrix-sdk = { path = "../matrix-rust-sdk-pagination-completion/crates/matrix-sdk" }
+matrix-sdk-base = { path = "../matrix-rust-sdk-pagination-completion/crates/matrix-sdk-base" }
+matrix-sdk-ui = { path = "../matrix-rust-sdk-pagination-completion/crates/matrix-sdk-ui" }
 
 [build-dependencies]
 toml = "1"

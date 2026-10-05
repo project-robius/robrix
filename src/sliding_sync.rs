@@ -32,7 +32,7 @@ use tokio::{
     sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::{Instant, error::Elapsed},
 };
 use url::Url;
-use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime}};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, SystemTime}};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
@@ -1047,50 +1047,17 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::PaginateTimeline {timeline_kind, num_events, direction} => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                let Some(details) = get_per_timeline_details(&mut all_joined_rooms, &timeline_kind) else {
                     log!("Skipping pagination request for unknown {timeline_kind}");
                     continue;
                 };
-
-                // Spawn a new async task that will make the actual pagination request.
-                let _paginate_task = Handle::current().spawn(async move {
-                    log!("Starting {direction} pagination request for {timeline_kind}...");
-                    if sender.send(TimelineUpdate::PaginationRunning(direction)).is_err() {
-                        error!("Failed to send pagination status to UI for {timeline_kind}");
-                    }
-                    SignalToUI::set_ui_signal();
-
-                    let res = if direction == PaginationDirection::Forwards {
-                        timeline.paginate_forwards(num_events).await
-                    } else {
-                        timeline.paginate_backwards(num_events).await
-                    };
-
-                    match res {
-                        Ok(fully_paginated) => {
-                            log!("Completed {direction} pagination request for {timeline_kind}, hit {} of timeline? {}",
-                                if direction == PaginationDirection::Forwards { "end" } else { "start" },
-                                if fully_paginated { "yes" } else { "no" },
-                            );
-                            if sender.send(TimelineUpdate::PaginationIdle {
-                                fully_paginated,
-                                direction,
-                            }).is_err() {
-                                error!("Failed to send pagination result to UI for {timeline_kind}");
-                            }
-                            SignalToUI::set_ui_signal();
-                        }
-                        Err(error) => {
-                            error!("Error sending {direction} pagination request for {timeline_kind}: {error:?}");
-                            if sender.send(TimelineUpdate::PaginationError {
-                                error,
-                                direction,
-                            }).is_err() {
-                                error!("Failed to send pagination error to UI for {timeline_kind}");
-                            }
-                            SignalToUI::set_ui_signal();
-                        }
-                    }
+                details.ensure_subscriber_started();
+                details.timeline_request_sender.send_modify(|request| {
+                    enqueue_pagination(&mut request.pending_pagination, TimelinePaginationRequest {
+                        num_events,
+                        direction,
+                    });
                 });
             }
 
@@ -1247,11 +1214,13 @@ async fn matrix_worker_task(
                             let (request_sender, request_receiver) = watch::channel(TimelineRequest {
                                 backwards_paginate: Vec::new(),
                                 is_timeline_open: true,
+                                pending_pagination: Vec::new(),
                             });
                             let timeline_subscriber_handler_task = Handle::current().spawn(
                                 timeline_subscriber_handler(
                                     thread_timeline.clone(),
                                     timeline_update_sender.clone(),
+                                    request_sender.clone(),
                                     request_receiver,
                                     Some(thread_root_event_id.clone()),
                                 )
@@ -1261,6 +1230,7 @@ async fn matrix_worker_task(
                                 PerTimelineDetails {
                                     timeline: thread_timeline,
                                     timeline_update_sender,
+                                    timeline_request_sender: request_sender.clone(),
                                     timeline_singleton_endpoints: Some((
                                         timeline_update_receiver,
                                         request_sender,
@@ -3207,9 +3177,99 @@ pub struct TimelineRequest {
     pub backwards_paginate: Vec<BackwardsPaginateUntilEventRequest>,
     /// Whether this timeline is currently open in the UI.
     ///
-    /// The timeline subscriber stops sending updates while it's closed,
-    /// and when it gets re-opened, it sends one catch-up update.
+    /// Ordinary item updates are saved while it's closed and sent as one catch-up update
+    /// when it reopens. Pagination still sends its item snapshot and result while closed.
     pub is_timeline_open: bool,
+    /// Page requests waiting for the subscriber, combined by direction and largest page size.
+    ///
+    /// A watch channel can combine several notifications into one. Keeping the requests
+    /// in its value lets the subscriber take them all when it next wakes up.
+    pending_pagination: Vec<TimelinePaginationRequest>,
+}
+
+/// The direction and size of a page requested from a timeline.
+#[derive(Clone, Copy, Debug)]
+struct TimelinePaginationRequest {
+    /// The event limit passed to the SDK; filtering may leave fewer visible items.
+    num_events: u16,
+    /// Whether to load older or newer events relative to the timeline's current history.
+    direction: PaginationDirection,
+}
+
+/// Queues a page request, combining requests in the same direction using the largest size.
+///
+/// Requests in different directions stay separate and keep their queue order.
+fn enqueue_pagination(pending: &mut Vec<TimelinePaginationRequest>, request: TimelinePaginationRequest) {
+    if let Some(existing) = pending.iter_mut().find(|existing| existing.direction == request.direction) {
+        existing.num_events = existing.num_events.max(request.num_events);
+    } else {
+        pending.push(request);
+    }
+}
+
+/// Batched changes to timeline items, from either the initial or a replacement SDK subscription.
+type TimelineItemsStream = std::pin::Pin<Box<dyn futures_util::Stream<Item = Vec<VectorDiff<Arc<TimelineItem>>>> + Send>>;
+
+/// A page result paired with the SDK's current items and their next updates.
+///
+/// The items include the changes the SDK has applied so far. The new subscription starts
+/// after those items, so we replace the old subscription when we install this snapshot.
+struct TimelinePaginationPage {
+    /// Whether pagination reached the requested end of the history, or why it failed.
+    result: Result<bool, matrix_sdk_ui::timeline::Error>,
+    /// The complete current item list, including any changes applied before a pagination error.
+    items: Vector<Arc<TimelineItem>>,
+    /// Changes after `items`; applying the old stream here could replay changes twice.
+    subscription: TimelineItemsStream,
+}
+
+/// A pagination call that returns its result, item snapshot, and replacement subscription together.
+type TimelinePaginationFuture = std::pin::Pin<Box<dyn Future<Output = TimelinePaginationPage> + Send>>;
+
+/// The one page currently being loaded by a timeline's subscriber.
+///
+/// Keeping the future here lets the subscriber handle item updates and new requests
+/// while the SDK loads the page.
+struct TimelinePaginationOperation {
+    /// The direction and page size, used to check whether this page covers a later request.
+    request: TimelinePaginationRequest,
+    /// The SDK call being polled by the subscriber until the page and its items are ready.
+    future: TimelinePaginationFuture,
+}
+
+impl TimelinePaginationOperation {
+    /// Builds a page operation using the SDK API that also returns the items and subscription.
+    ///
+    /// The SDK call starts when the subscriber polls the stored future.
+    fn new(timeline: Arc<Timeline>, request: TimelinePaginationRequest) -> Self {
+        Self {
+            request,
+            future: Box::pin(async move {
+                match request.direction {
+                    PaginationDirection::Backwards => {
+                        let (result, items, subscription) = timeline.paginate_backwards_with_subscription(request.num_events).await;
+                        TimelinePaginationPage { result, items, subscription: Box::pin(subscription) }
+                    }
+                    PaginationDirection::Forwards => {
+                        let (result, items, subscription) = timeline.paginate_forwards_with_subscription(request.num_events).await;
+                        TimelinePaginationPage { result, items, subscription: Box::pin(subscription) }
+                    }
+                }
+            }),
+        }
+    }
+
+    /// Whether this active page can also satisfy a request received before it is delivered.
+    ///
+    /// The direction must match, and the active page must request at least as many events.
+    fn covers(&self, request: TimelinePaginationRequest) -> bool {
+        does_pagination_request_cover(self.request, request)
+    }
+}
+
+/// Whether `active` has the same direction and at least the event limit requested by `request`.
+fn does_pagination_request_cover(active: TimelinePaginationRequest, request: TimelinePaginationRequest) -> bool {
+    active.direction == request.direction && active.num_events >= request.num_events
 }
 
 /// The return type for [`take_timeline_endpoints()`].
@@ -3227,13 +3287,13 @@ pub struct TimelineEndpoints {
 
 /// The state of a timeline's background subscriber task.
 ///
-/// For efficiency's sake, tasks aren't spawned until the timeline is opened.
+/// For efficiency's sake, tasks aren't spawned until the timeline is opened or paginated.
 enum TimelineSubscriber {
-    /// The timeline (room or thread) hasn't been opened yet, so its background subscriber task isn't running.
+    /// The timeline hasn't been opened or paginated yet, so its subscriber task isn't running.
     NotStarted {
         request_receiver: watch::Receiver<TimelineRequest>,
     },
-    /// The timeline's background subscriber task is running, meaning the room has been opened at least once.
+    /// The timeline's background subscriber task is running.
     Running(JoinHandle<()>),
 }
 
@@ -3243,6 +3303,10 @@ struct PerTimelineDetails {
     timeline: Arc<Timeline>,
     /// A clone-able sender for updates to this timeline.
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    /// Sends page requests to the subscriber through the same watch channel used by the UI.
+    ///
+    /// Keeping a clone here lets the backend request pages before the UI takes its endpoints.
+    timeline_request_sender: TimelineRequestSender,
     /// A tuple of two separate channel endpoints that can only be taken *once* by the main UI thread:
     /// 1. The single receiver that can receive updates from this timeline.
     ///    * When a new room is joined (or a thread is opened), an unbounded crossbeam channel will be created
@@ -3270,6 +3334,7 @@ impl PerTimelineDetails {
         let task = get_or_create_tokio_runtime().spawn(timeline_subscriber_handler(
             self.timeline.clone(),
             self.timeline_update_sender.clone(),
+            self.timeline_request_sender.clone(),
             request_receiver,
             // a thread timeline will already have spawned its subscriber task at creation,
             // so we can only reach this point for a main room timeline.
@@ -4717,11 +4782,12 @@ async fn add_new_room(
     );
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
-    // The `timeline_subscriber_handler` async task is spawned lazily when the room/thread is first opened.
+    // The subscriber starts lazily when the room is first opened or pre-paginated.
     // All we do here is set up a channel between the UI and backend, for future use.
     let (request_sender, request_receiver) = watch::channel(TimelineRequest {
         backwards_paginate: Vec::new(),
-        is_timeline_open: true,
+        is_timeline_open: false,
+        pending_pagination: Vec::new(),
     });
 
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
@@ -4734,9 +4800,12 @@ async fn add_new_room(
             room_id: new_room.room_id.clone(),
             main_timeline: PerTimelineDetails {
                 timeline,
-                timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
+                timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender.clone())),
                 timeline_update_sender,
-                timeline_subscriber: TimelineSubscriber::NotStarted { request_receiver },
+                timeline_request_sender: request_sender.clone(),
+                timeline_subscriber: TimelineSubscriber::NotStarted {
+                    request_receiver,
+                },
             },
             thread_timelines: HashMap::new(),
             pending_thread_timelines: HashSet::new(),
@@ -5550,7 +5619,13 @@ async fn rank_matching_rooms(client: &Client, query: &str) -> Vec<MentionItem> {
 
 /// A request to search backwards for a specific event in a room's timeline.
 pub struct BackwardsPaginateUntilEventRequest {
+    /// Identifies this search, so retrying the same event still counts as a new request.
+    ///
+    /// The subscriber checks this even when the watch channel combines several notifications.
+    request_id: u64,
+    /// The room whose timeline should be searched.
     pub room_id: OwnedRoomId,
+    /// The event the user wants to find and jump to.
     pub target_event_id: OwnedEventId,
     /// The index in the timeline where a backwards search should begin.
     pub starting_index: usize,
@@ -5558,6 +5633,28 @@ pub struct BackwardsPaginateUntilEventRequest {
     /// which is used to detect if the timeline has changed since the request was made,
     /// meaning that the `starting_index` can no longer be relied upon.
     pub current_tl_len: usize,
+}
+
+impl BackwardsPaginateUntilEventRequest {
+    /// Creates a search request with a fresh ID, even when retrying the same event.
+    ///
+    /// `starting_index` and `current_tl_len` describe the items already searched by the UI.
+    /// If the length has changed, the subscriber searches the whole current list instead.
+    pub fn new(
+        room_id: OwnedRoomId,
+        target_event_id: OwnedEventId,
+        starting_index: usize,
+        current_tl_len: usize,
+    ) -> Self {
+        static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
+        Self {
+            request_id: NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed),
+            room_id,
+            target_event_id,
+            starting_index,
+            current_tl_len,
+        }
+    }
 }
 
 /// Watches the given room's pinned messages by creating a new timeline instance
@@ -5723,12 +5820,102 @@ const LOG_TIMELINE_DIFFS: bool = cfg!(feature = "log_timeline_diffs");
 /// Whether to enable verbose logging of all room list service diff updates.
 const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
 
-/// A per-timeline async task that listens for timeline updates and sends them to the UI thread.
+/// Sends one catch-up item list if updates arrived while the timeline was closed.
 ///
-/// One instance of this async task is spawned for each room or thread that is opened by the user.
+/// On success, clears `has_unsent_changes` and `has_unsent_reset`. If the UI receiver is
+/// gone, returns `false` and leaves both flags set. Returns `true` when nothing needs sending.
+fn send_pending_timeline_items_to_ui(
+    sender: &crossbeam_channel::Sender<TimelineUpdate>,
+    items: &Vector<Arc<TimelineItem>>,
+    has_unsent_changes: &mut bool,
+    has_unsent_reset: &mut bool,
+) -> bool {
+    if !*has_unsent_changes {
+        return true;
+    }
+    if sender.send(TimelineUpdate::NewItems {
+        new_items: items.clone(),
+        changed_indices: 0..items.len(),
+        clear_cache: true,
+        was_timeline_reset: *has_unsent_reset,
+        is_append: false,
+        num_unchanged_at_end: 0,
+    }).is_err() {
+        return false;
+    }
+    *has_unsent_changes = false;
+    *has_unsent_reset = false;
+    true
+}
+
+/// Sends the current index of a found event so the UI can jump to it.
+///
+/// Consumes `found_target` and checks its index against `items`, searching again if it moved.
+/// Returns `false` only if sending fails; a missing target or an event that disappeared
+/// needs no update and returns `true`.
+fn send_found_event_to_ui(
+    sender: &crossbeam_channel::Sender<TimelineUpdate>,
+    items: &Vector<Arc<TimelineItem>>,
+    found_target: &mut Option<(usize, OwnedEventId)>,
+) -> bool {
+    let Some((previous_index, target_event_id)) = found_target.take() else { return true };
+    let index = if items.get(previous_index)
+        .and_then(|item| item.as_event())
+        .is_some_and(|event| event.event_id() == Some(target_event_id.as_ref()))
+    {
+        Some(previous_index)
+    } else {
+        index_of_event(items, &target_event_id, items.len(), usize::MAX)
+    };
+    let Some(index) = index else {
+        return true;
+    };
+    sender.send(TimelineUpdate::TargetEventFound { target_event_id, index }).is_ok()
+}
+
+/// Sends a page's items, any found event, and then its success or error, in that order.
+///
+/// Sending the items first lets the UI finish processing them before it decides whether
+/// to hide the loader or ask for another page. This also sends any items obtained before
+/// an error. `is_append` and `num_unchanged_at_end` preserve scroll and redraw behavior.
+/// Returns `false` if the UI receiver is gone.
+fn send_pagination_result_to_ui(
+    sender: &crossbeam_channel::Sender<TimelineUpdate>,
+    items: &Vector<Arc<TimelineItem>>,
+    found_target: &mut Option<(usize, OwnedEventId)>,
+    direction: PaginationDirection,
+    result: Result<bool, matrix_sdk_ui::timeline::Error>,
+    is_append: bool,
+    num_unchanged_at_end: usize,
+) -> bool {
+    if sender.send(TimelineUpdate::NewItems {
+        new_items: items.clone(),
+        changed_indices: 0..items.len(),
+        clear_cache: true,
+        // The old stream may contain a timeline reset we haven't read yet.
+        // The result below tells the UI whether these items reach the start.
+        was_timeline_reset: direction == PaginationDirection::Backwards,
+        is_append,
+        num_unchanged_at_end,
+    }).is_err() || !send_found_event_to_ui(sender, items, found_target) {
+        return false;
+    }
+    let update = match result {
+        Ok(is_fully_paginated) => TimelineUpdate::PaginationCompleted { is_fully_paginated, direction },
+        Err(error) => TimelineUpdate::PaginationError { error, direction },
+    };
+    sender.send(update).is_ok()
+}
+
+/// Handles a timeline's item updates, page requests, and event searches on one async task.
+///
+/// Starts when a room or thread is first opened or paginated. Only one page runs at a time,
+/// and its items are sent to the UI before its result. While the view is closed, ordinary
+/// item updates are saved for a catch-up update when it reopens.
 async fn timeline_subscriber_handler(
     timeline: Arc<Timeline>,
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    request_sender: TimelineRequestSender,
     mut request_receiver: watch::Receiver<TimelineRequest>,
     thread_root_event_id: Option<OwnedEventId>,
 ) {
@@ -5759,7 +5946,8 @@ async fn timeline_subscriber_handler(
 
     let room_id = timeline.room().room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}, thread {thread_root_event_id:?}...");
-    let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
+    let (mut timeline_items, initial_subscriber) = timeline.subscribe().await;
+    let mut subscriber: TimelineItemsStream = Box::pin(initial_subscriber);
     log!("Received initial timeline update of {} items for room {room_id}, thread {thread_root_event_id:?}.", timeline_items.len());
 
     if timeline_update_sender.send(TimelineUpdate::FirstUpdate {
@@ -5773,58 +5961,82 @@ async fn timeline_subscriber_handler(
 
     // the event ID to search for while loading previous items into the timeline.
     let mut target_event_id = None;
+    // Keep the UI's selected target separate from the pending search, which is
+    // consumed when found. Unrelated watch changes must not restart a found search.
+    let mut requested_target_request = None;
     // the timeline index and event ID of the target event, if it has been found.
     let mut found_target_event_id: Option<(usize, OwnedEventId)> = None;
 
     // Whether this timeline is currently open in the UI.
-    // This starts as true because we only spawn this subscriber task lazily upon open.
-    let mut is_timeline_open = true;
+    // Room-list prepagination can start this task before the timeline is opened.
+    let mut is_timeline_open = request_receiver.borrow().is_timeline_open;
     // Whether any update changes have arrived since this timeline was last closed,
     // meaning that we need to send an cumulative update when the timeline gets re-opened.
     let mut has_unsent_changes = false;
+    let mut has_unsent_reset = false;
+    let mut pending_pagination = Vec::new();
+    let mut pagination: Option<TimelinePaginationOperation> = None;
     // The latest upload progress that was sent to the UI: `(item index, percent)`.
     let mut latest_progress_update: Option<(usize, usize)> = None;
 
-    loop { tokio::select! {
+    loop {
+        if pagination.is_none() && !pending_pagination.is_empty() {
+            let request = pending_pagination.remove(0);
+            pagination = Some(TimelinePaginationOperation::new(timeline.clone(), request));
+            if timeline_update_sender.send(TimelineUpdate::PaginationRunning(request.direction)).is_err() {
+                return;
+            }
+            SignalToUI::set_ui_signal();
+        }
+        let poll_pagination = pagination.is_some();
+        tokio::select! {
         // we should check for new requests before handling new timeline updates,
         // because the request might influence how we handle a timeline update.
         biased;
 
         // Handle updates to the current backwards pagination requests.
         Ok(()) = request_receiver.changed() => {
-            let prev_target_event_id = target_event_id.clone();
+            let prev_target_request = requested_target_request.clone();
             let (now_open, new_request_details) = {
                 let req = request_receiver.borrow_and_update();
                 let details = req.backwards_paginate.iter()
                     .find_map(|r| r.room_id
                         .eq(&room_id)
-                        .then(|| (r.target_event_id.clone(), r.starting_index, r.current_tl_len))
+                        .then(|| (r.request_id, r.target_event_id.clone(), r.starting_index, r.current_tl_len))
                     );
                 (req.is_timeline_open, details)
             };
-
-            // On reopen, send one catch-up snapshot, but only if something actually
-            // changed while closed (otherwise the UI already has the current items).
-            if now_open && !is_timeline_open && has_unsent_changes {
-                let len = timeline_items.len();
-                if timeline_update_sender.send(TimelineUpdate::NewItems {
-                    new_items: timeline_items.clone(),
-                    changed_indices: 0..len,
-                    clear_cache: true,
-                    is_append: false,
-                    num_unchanged_at_end: 0,
-                }).is_ok() {
-                    SignalToUI::set_ui_signal();
+            let mut new_pagination = Vec::new();
+            request_sender.send_if_modified(|request| {
+                new_pagination = std::mem::take(&mut request.pending_pagination);
+                false
+            });
+            for request in new_pagination {
+                if !pagination.as_ref().is_some_and(|operation| operation.covers(request)) {
+                    enqueue_pagination(&mut pending_pagination, request);
                 }
-                has_unsent_changes = false;
+            }
+            requested_target_request = new_request_details.as_ref().map(|(request_id, ev, ..)| (*request_id, ev.clone()));
+            if requested_target_request != prev_target_request {
+                target_event_id = requested_target_request.as_ref().map(|(_, ev)| ev.clone());
+                found_target_event_id = None;
+            }
+
+            // When the room is shown again, send the current items if they
+            // changed while it was closed.
+            if now_open && !is_timeline_open && has_unsent_changes {
+                if !send_pending_timeline_items_to_ui(&timeline_update_sender, &timeline_items, &mut has_unsent_changes, &mut has_unsent_reset)
+                    || !send_found_event_to_ui(&timeline_update_sender, &timeline_items, &mut found_target_event_id)
+                {
+                    return;
+                }
+                SignalToUI::set_ui_signal();
             }
             is_timeline_open = now_open;
 
-            target_event_id = new_request_details.as_ref().map(|(ev, ..)| ev.clone());
-
             // If we received a new request, start searching backwards for the target event.
-            if let Some((new_target_event_id, starting_index, current_tl_len)) = new_request_details {
-                if prev_target_event_id.as_ref() != Some(&new_target_event_id) {
+            if let Some((request_id, new_target_event_id, starting_index, current_tl_len)) = new_request_details {
+                if prev_target_request.as_ref() != Some(&(request_id, new_target_event_id.clone())) {
                     let starting_index = if current_tl_len == timeline_items.len() {
                         starting_index
                     } else {
@@ -5842,6 +6054,9 @@ async fn timeline_subscriber_handler(
                         // thus, we can clear the locally-tracked target event ID.
                         target_event_id = None;
                         found_target_event_id = None;
+                        if !send_pending_timeline_items_to_ui(&timeline_update_sender, &timeline_items, &mut has_unsent_changes, &mut has_unsent_reset) {
+                            return;
+                        }
                         if timeline_update_sender.send(
                             TimelineUpdate::TargetEventFound {
                                 target_event_id: new_target_event_id.clone(),
@@ -5862,33 +6077,58 @@ async fn timeline_subscriber_handler(
                         );
                         // If we didn't find the target event in the current timeline items,
                         // we need to start loading previous items into the timeline.
-                        submit_async_request(MatrixRequest::PaginateTimeline {
-                            timeline_kind: if let Some(thread_root_event_id) = thread_root_event_id.clone() {
-                                TimelineKind::Thread {
-                                    room_id: room_id.clone(),
-                                    thread_root_event_id,
-                                }
-                            } else {
-                                TimelineKind::MainRoom {
-                                    room_id: room_id.clone(),
-                                }
-                            },
-                            num_events: 50,
-                            direction: PaginationDirection::Backwards,
-                        });
+                        let request = TimelinePaginationRequest { num_events: 50, direction: PaginationDirection::Backwards };
+                        if !pagination.as_ref().is_some_and(|operation| operation.covers(request)) {
+                            enqueue_pagination(&mut pending_pagination, request);
+                        }
                     }
                 }
             }
         }
 
-        // Handle updates to the actual timeline content.
-        batch_opt = subscriber.next() => {
-            let Some(batch) = batch_opt else { break };
+        // Keep polling pagination alongside timeline updates; awaiting it inside the
+        // request branch would prevent live messages from arriving.
+        page = async {
+            pagination.as_mut().unwrap().future.as_mut().await
+        }, if poll_pagination => {
+            let operation = pagination.take().unwrap();
+            // The SDK returns the current items and their new update stream together.
+            // Replace the old stream so we don't apply its queued changes to this list.
+            // New messages may also have arrived while we loaded older ones.
+            // Keep the usual scroll-to-bottom and unread-badge behavior for them.
+            let is_append = is_timeline_open && timeline_items.back().is_some_and(|tail| {
+                page.items.iter().position(|item| item.unique_id() == tail.unique_id())
+                    .is_some_and(|index| index + 1 < page.items.len())
+            });
+            let num_unchanged_at_end = if has_unsent_changes { 0 } else {
+                timeline_items.iter().rev().zip(page.items.iter().rev())
+                    .take_while(|(old, new)| Arc::ptr_eq(old, new)).count()
+            };
+            timeline_items = page.items;
+            subscriber = page.subscription;
+            if let Some((_, event_id)) = found_target_event_id.take() {
+                target_event_id = Some(event_id);
+            }
+            found_target_event_id = find_target_event(&mut target_event_id, timeline_items.iter());
+            if !send_pagination_result_to_ui(&timeline_update_sender, &timeline_items,
+                &mut found_target_event_id, operation.request.direction, page.result, is_append, num_unchanged_at_end)
+            {
+                return;
+            }
+            has_unsent_changes = false;
+            has_unsent_reset = false;
+            SignalToUI::set_ui_signal();
+        }
+
+        // Handle item updates while pagination is running, and between requests.
+        batch = subscriber.next() => {
+            let Some(batch) = batch else { break };
             let mut num_updates = 0;
             let mut index_of_first_change = usize::MAX;
             let mut index_of_last_change = usize::MIN;
             // whether to clear the entire cache of drawn items
             let mut clear_cache = false;
+            let mut was_timeline_reset = false;
             // whether the changes include items being appended to the end of the timeline
             let mut is_append = false;
             // the (index, percent) of the last upload progress tick in this batch
@@ -5913,6 +6153,7 @@ async fn timeline_subscriber_handler(
                         if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id}, thread {thread_root_event_id:?} diff Clear"); }
                         num_unchanged_at_end = 0;
                         clear_cache = true;
+                        was_timeline_reset = true;
                         timeline_items.clear();
                     }
                     VectorDiff::PushFront { value } => {
@@ -6035,9 +6276,26 @@ async fn timeline_subscriber_handler(
                         found_target_event_id = find_target_event(&mut target_event_id, values.iter());
                         num_unchanged_at_end = 0;
                         clear_cache = true; // we must assume all items have changed.
+                        was_timeline_reset = true;
                         timeline_items = values;
                     }
                 }
+            }
+            // A reset, removal, append or replacement can invalidate an earlier
+            // match, or reveal the target without a prepend. Check the final batch
+            // snapshot before reporting a result or a terminal pagination state.
+            if let Some((index, event_id)) = found_target_event_id.as_mut() {
+                if let Some(current_index) = timeline_items.iter().position(|item| {
+                    item.as_event().is_some_and(|event| event.event_id() == Some(event_id.as_ref()))
+                }) {
+                    *index = current_index;
+                } else {
+                    target_event_id = Some(event_id.clone());
+                    found_target_event_id = None;
+                }
+            }
+            if found_target_event_id.is_none() {
+                found_target_event_id = find_target_event(&mut target_event_id, timeline_items.iter());
             }
             let is_progress_only = num_progress_updates == num_updates;
 
@@ -6071,6 +6329,7 @@ async fn timeline_subscriber_handler(
                                 new_items: timeline_items.clone(),
                                 changed_indices,
                                 clear_cache,
+                                was_timeline_reset,
                                 is_append,
                                 num_unchanged_at_end,
                             }
@@ -6101,6 +6360,7 @@ async fn timeline_subscriber_handler(
                 } else {
                     // Closed: our local items are updated above; remember to catch the UI up on reopen.
                     has_unsent_changes = true;
+                    has_unsent_reset |= was_timeline_reset;
                 }
             }
         }
@@ -6112,7 +6372,6 @@ async fn timeline_subscriber_handler(
 
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}, thread {thread_root_event_id:?}.");
 }
-
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {

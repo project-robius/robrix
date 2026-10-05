@@ -1,6 +1,7 @@
 use makepad_widgets::ScriptVm;
 
 pub mod add_room;
+mod backwards_pagination;
 pub mod edited_indicator;
 pub mod editing_pane;
 pub mod event_source_modal;
