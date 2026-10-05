@@ -9,14 +9,13 @@ use imbl::Vector;
 use makepad_widgets::{error, image_cache::image_size_by_data, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, recovery::{IdentityResetHandle, RecoveryError, RecoveryState}, secret_storage::SecretStorageError, CrossSigningResetAuthType, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
-        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
+    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, recovery::{IdentityResetHandle, RecoveryError, RecoveryState}, secret_storage::SecretStorageError, CrossSigningResetAuthType, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, Receipts}, ruma::{
+        api::{client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
-            relation::RelationType,
             room::{
                 encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
-        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw, uint
+        }, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw
     }, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk::Error;
@@ -44,7 +43,7 @@ use crate::{
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, threads_list_sync::threads_list_subscriber_handler, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
+    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Default)]
@@ -1161,12 +1160,17 @@ async fn matrix_worker_task(
                 };
 
                 let _fetch_task = Handle::current().spawn(async move {
-                    let (num_replies, latest_reply_event) = fetch_thread_summary_details(
-                        timeline.room(),
-                        &thread_root_event_id,
-                    ).await;
+                    let room = timeline.room();
+                    // The server's copy of the root bundles the thread's current reply count and latest reply.
+                    let (num_replies, latest_reply_event) = match room.event(&thread_root_event_id, None).await {
+                        Ok(root) => match get_bundled_thread_summary(room, &root).await {
+                            Some((num_replies, latest_reply)) => (Some(num_replies), latest_reply),
+                            None => (Some(0), None),
+                        },
+                        Err(_) => (None, None),
+                    };
                     let latest_reply_preview_text = match latest_reply_event.as_ref() {
-                        Some(event) => text_preview_of_latest_thread_reply(timeline.room(), event).await,
+                        Some(event) => text_preview_of_latest_thread_reply(room, event).await,
                         None => None,
                     };
 
@@ -1221,7 +1225,7 @@ async fn matrix_worker_task(
                     let build_result = main_room_timeline.room()
                         .timeline_builder()
                         .with_focus(TimelineFocus::Thread {
-                            root_event_id: thread_root_event_id.clone(),
+                            thread_id: thread_root_event_id.clone(),
                         })
                         .track_read_marker_and_receipts(TimelineReadReceiptTracking::AllEvents)
                         .build()
@@ -3823,6 +3827,18 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             warning!("Couldn't cache the homeserver's supported versions: {e:?}");
         }
 
+        // Event caches written by builds from before the thread fixes hold stale thread data,
+        // so we clear them once, before any room uses them.
+        let event_cache_cleared_file = persistence::persistent_state_dir(&logged_in_user_id).join("event_cache_cleared_for_thread_fixes");
+        if !tokio::fs::try_exists(&event_cache_cleared_file).await.unwrap_or(false) {
+            match client.event_cache().clear_all_rooms().await {
+                Ok(()) => if let Err(e) = tokio::fs::write(&event_cache_cleared_file, []).await {
+                    warning!("Failed to remember that the event cache was cleared: {e}");
+                },
+                Err(e) => error!("Failed to clear the event cache: {e}"),
+            }
+        }
+
         // Track all async tasks so we can nicely clean them up with abort+await.
         // Generally anything that holds a reference to `Client` should be here.
         e2ee_ready_sender.send_replace(false);
@@ -4806,7 +4822,6 @@ fn handle_blocked_user_list_subscriber(client: Client) -> JoinHandle<()> {
             log!("Received an updated blocked-user list: {blocked_list:?}");
             let blocked_users_new = blocked_list
                 .into_iter()
-                .filter_map(|u| OwnedUserId::try_from(u).ok())
                 .collect::<HashSet<_, ConstHasher>>();
             set_blocked_users(blocked_users_new);
         }
@@ -4963,8 +4978,8 @@ enum LocalSendKind {
 /// Watches the send queue for any failures and handles them appropriately.
 ///
 /// Recoverable errors will re-enable the send queue after a delay so messages
-/// can be auto-retried. Unrecoverable errors show a popup and re-enable the
-/// room's queue, though the failed request still blocks anything queued after it.
+/// can be auto-retried. Unrecoverable errors show a popup, and the failed request
+/// blocks anything queued after it until it's retried or cancelled.
 fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
     let mut updates = client.send_queue().subscribe();
     Handle::current().spawn(async move {
@@ -5031,8 +5046,6 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                                     Ok((echoes, _)) => cancel_hidden_failed_sends(echoes).await,
                                     Err(e) => warning!("Couldn't check for failed send requests in room {room_id}: {e}"),
                                 }
-                                // The SDK disabled the whole room's queue, so we have to re-enable it.
-                                room.send_queue().set_enabled(true);
                             }
                             let room_name = match &room {
                                 Some(room) => RoomNameId::from_room(room).await,
@@ -5319,103 +5332,6 @@ async fn resolve_receipt_target(
         log!("Resolved read receipt target {original} to displayable event {event_id}");
     }
     event_id
-}
-
-/// Fetches key details about the given thread root event.
-///
-/// Returns a tuple of:
-/// 1. the number of replies in the thread (excluding the root event itself),
-/// 2. the latest reply event, if it could be fetched.
-async fn fetch_thread_summary_details(
-    room: &Room,
-    thread_root_event_id: &EventId,
-) -> (u32, Option<matrix_sdk::deserialized_responses::TimelineEvent>) {
-    let mut num_replies = 0;
-    let mut latest_reply_event = None;
-
-    if let Ok(thread_root_event) = room.load_or_fetch_event(thread_root_event_id, None).await
-        && let Some(thread_summary) = thread_root_event.thread_summary.summary()
-    {
-        num_replies = thread_summary.num_replies;
-        if let Some(latest_reply_event_id) = thread_summary.latest_reply.as_ref()
-            && let Ok(latest_reply) = room.load_or_fetch_event(latest_reply_event_id, None).await
-        {
-            latest_reply_event = Some(latest_reply);
-        }
-    }
-
-    // Always compute the reply count directly from the fetched thread relations,
-    // for some reason we can't rely on the SDK-provided thread_summary to be accurate
-    // (it's almost always totally wrong or out-of-date...).
-    let count_replies_future = count_thread_replies(room, thread_root_event_id);
-
-    // Fetch the latest reply event and count the thread replies in parallel.
-    let (fetched_latest_reply_opt, reply_count_opt) = if latest_reply_event.is_none() {
-        tokio::join!(
-            fetch_latest_thread_reply_event(room, thread_root_event_id),
-            count_replies_future,
-        )
-    } else {
-        (None, count_replies_future.await)
-    };
-
-    if let Some(event) = fetched_latest_reply_opt {
-        latest_reply_event = Some(event);
-    }
-    if let Some(count) = reply_count_opt {
-        num_replies = count;
-    }
-    (num_replies, latest_reply_event)
-}
-
-/// Fetches the latest reply event in the thread rooted at `thread_root_event_id`.
-async fn fetch_latest_thread_reply_event(
-    room: &Room,
-    thread_root_event_id: &EventId,
-) -> Option<matrix_sdk::deserialized_responses::TimelineEvent> {
-    let options = RelationsOptions {
-        dir: Direction::Backward,
-        limit: Some(uint!(1)),
-        include_relations: IncludeRelations::RelationsOfType(RelationType::Thread),
-        ..Default::default()
-    };
-
-    room.relations(thread_root_event_id.to_owned(), options)
-        .await
-        .ok()
-        .and_then(|relations| relations.chunk.into_iter().next())
-}
-
-/// Counts all replies in the given thread by paginating `/relations` in batches.
-async fn count_thread_replies(
-    room: &Room,
-    thread_root_event_id: &EventId,
-) -> Option<u32> {
-    let mut total_replies: u32 = 0;
-    let mut next_batch_token = None;
-
-    loop {
-        let options = RelationsOptions {
-            from: next_batch_token.clone(),
-            dir: Direction::Backward,
-            limit: Some(uint!(100)),
-            include_relations: IncludeRelations::RelationsOfType(RelationType::Thread),
-            ..Default::default()
-        };
-
-        let relations = room.relations(thread_root_event_id.to_owned(), options).await.ok()?;
-        if relations.chunk.is_empty() {
-            break;
-        }
-        total_replies = total_replies.saturating_add(relations.chunk.len() as u32);
-
-        next_batch_token = relations.next_batch_token;
-        if next_batch_token.is_none() {
-            break;
-        }
-    }
-
-    Some(total_replies)
 }
 
 /// Returns an HTML-formatted text preview of the given latest thread reply event.

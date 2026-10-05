@@ -7,7 +7,7 @@ use super::room_pane::RoomPaneKind;
 
 // currently there's a fixed number of action buttons,
 // but later we'll do that dynamically once we have more features implemented.
-const ACTION_COUNT: usize = 5;
+const ACTION_COUNT: usize = 4;
 const HEADER_HEIGHT: f64 = 45.0;
 const BUTTON_SIZE: f64 = 40.0;
 const HEADER_BUTTON_GAP: f64 = 2.0;
@@ -144,7 +144,7 @@ script_mod! {
             color: #0000
         }
 
-        room_info_button            := mod.widgets.RoomActionButton {draw_icon.svg: ICON_INFO}
+        // room_info_button            := mod.widgets.RoomActionButton {draw_icon.svg: ICON_INFO}
         room_threads_button         := mod.widgets.RoomActionButton {draw_icon.svg: ICON_REPLY_IN_THREAD}
         room_pinned_messages_button := mod.widgets.RoomActionButton {draw_icon.svg: ICON_PIN}
         room_members_button         := mod.widgets.RoomActionButton {draw_icon.svg: ICON_MEMBERS}
@@ -169,7 +169,7 @@ script_mod! {
                 spacing: 8
                 wrap_spacing: 8
                 padding: 8
-                room_info_button := RoomActionTextButton {draw_icon.svg: ICON_INFO}
+                // room_info_button := RoomActionTextButton {draw_icon.svg: ICON_INFO}
                 // room_settings_button := RoomActionTextButton {draw_icon.svg: ICON_SETTINGS}
                 room_threads_button := RoomActionTextButton {draw_icon.svg: ICON_REPLY_IN_THREAD}
                 room_members_button := RoomActionTextButton {draw_icon.svg: ICON_MEMBERS}
@@ -254,7 +254,7 @@ script_mod! {
 /// This also defines the ordering of the buttons, from right to left
 /// so that buttons don't move around when the bar's width changes.
 const ACTIONS: [(LiveId, &str, RoomActionBarAction); ACTION_COUNT] = [
-    (id!(room_info_button), "Room info", RoomActionBarAction::None),
+    // (id!(room_info_button), "Room info", RoomActionBarAction::None),
     // (id!(room_settings_button), "Room settings", RoomActionBarAction::None),
     (id!(room_threads_button), "Threads", RoomActionBarAction::TogglePane(RoomPaneKind::Threads)),
     (id!(room_members_button), "Members", RoomActionBarAction::TogglePane(RoomPaneKind::Members)),

@@ -295,27 +295,14 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                         // This rebuilds the space graph from scratch, so it works for any space,
                         // even those that aren't in `all_joined_spaces` yet.
                         let top_level_spaces = space_service.top_level_joined_spaces().await;
-                        let mut dock_space = None;
-                        let mut current_id = space_name_id.room_id().clone();
-                        let mut visited = HashSet::new();
-                        while visited.insert(current_id.clone()) {
-                            if let Some(ancestor) = top_level_spaces.iter().find(|s| s.room_id == current_id) {
-                                dock_space = Some(RoomNameId::new(
-                                    matrix_sdk::RoomDisplayName::Named(ancestor.display_name.clone()),
-                                    ancestor.room_id.clone(),
-                                ));
-                                break;
-                            }
-                            // A space can have multiple parents, so we just pick the first one.
-                            let Some(parent) = space_service.joined_parents_of_child(&current_id)
-                                .await
-                                .into_iter()
-                                .next()
-                            else {
-                                break;
-                            };
-                            current_id = parent.room_id;
-                        }
+                        let ancestors = space_service.top_level_ancestors_of(space_name_id.room_id()).await;
+                        // A space can sit under several top-level spaces, so we use the first one in the spaces bar.
+                        let dock_space = top_level_spaces.iter()
+                            .find(|s| ancestors.contains(&s.room_id))
+                            .map(|ancestor| RoomNameId::new(
+                                matrix_sdk::RoomDisplayName::Named(ancestor.display_name.clone()),
+                                ancestor.room_id.clone(),
+                            ));
                         Cx::post_action(SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space });
                     });
                 }

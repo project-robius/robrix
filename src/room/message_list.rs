@@ -352,7 +352,7 @@ impl MessageListState {
     }
 
     /// Refreshes the rows' relative timestamps once a minute, e.g., from "Just now" to "1 min ago",
-    /// and subscribes again when the worker rebuilds the room's state, e.g., after a sync gap.
+    /// and subscribes again when the worker rebuilds the room's state, e.g., after a sync that skipped some events.
     ///
     /// Returns whether the list must be redrawn.
     pub fn handle_event(&mut self, cx: &mut Cx, event: &Event, list: &PortalListRef) -> bool {

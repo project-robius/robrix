@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ab_glyph_rasterizer"
 version = "0.1.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "accessory"
@@ -171,10 +171,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
-name = "anymap2"
-version = "0.13.0"
+name = "anymap3"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d301b3b94cb4b2f23d7917810addbbaff90738e0ca2be692bd027e70d7e0330c"
+checksum = "fb5dfbc6d8d2675589ccbe4d0fd61df2419075625f8c1a62325e718e2b0049f9"
 
 [[package]]
 name = "arc-swap"
@@ -219,7 +219,7 @@ dependencies = [
 [[package]]
 name = "arrayvec"
 version = "0.7.6"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "arrayvec"
@@ -239,7 +239,7 @@ checksum = "9dbc3a507a82b17ba0d98f6ce8fd6954ea0c8152e98009d36a40d8dcc8ce078a"
 [[package]]
 name = "ash"
 version = "0.38.0+1.3.281"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "libloading 0.8.9",
 ]
@@ -675,7 +675,7 @@ version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "cexpr",
  "clang-sys",
  "itertools 0.13.0",
@@ -692,7 +692,7 @@ dependencies = [
 [[package]]
 name = "bit-set"
 version = "0.8.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "bit-vec",
 ]
@@ -700,27 +700,21 @@ dependencies = [
 [[package]]
 name = "bit-vec"
 version = "0.8.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "bitflags"
 version = "2.10.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "bitflags"
-version = "2.13.1"
+version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
+checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 dependencies = [
  "serde_core",
 ]
-
-[[package]]
-name = "bitmaps"
-version = "3.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1d084b0137aaa901caf9f1e8b21daa6aa24d41cd806e111335541eff9683bd6"
 
 [[package]]
 name = "blake2"
@@ -854,7 +848,7 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 [[package]]
 name = "bytemuck"
 version = "1.25.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "bytemuck"
@@ -871,7 +865,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 [[package]]
 name = "byteorder"
 version = "1.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "bytes"
@@ -939,7 +933,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "cfg-if"
 version = "1.0.4"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "cfg_aliases"
@@ -950,7 +944,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 [[package]]
 name = "cfg_aliases"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "chacha20"
@@ -1323,7 +1317,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "crunchy"
 version = "0.2.4"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "crypto-bigint"
@@ -1702,7 +1696,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "block2",
  "libc",
  "objc2",
@@ -1728,7 +1722,7 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 [[package]]
 name = "downcast-rs"
 version = "1.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "dunce"
@@ -1888,7 +1882,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "equivalent"
 version = "1.0.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "errno"
@@ -1897,7 +1891,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -1947,9 +1941,9 @@ dependencies = [
 
 [[package]]
 name = "eyeball-im"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cf0c52231b6a6c3e262e5d69cbb425506abcce15bdd4c235fbb0d2a62ff64a2"
+checksum = "4a565cc1ccb357945f66fb4c611de621c3b4cfe8ad58adcd53936f5501312f36"
 dependencies = [
  "futures-core",
  "imbl",
@@ -2071,7 +2065,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "foldhash"
 version = "0.2.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "foreign-types"
@@ -2227,7 +2221,7 @@ dependencies = [
 [[package]]
 name = "fxhash"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "byteorder 1.5.0 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
 ]
@@ -2435,7 +2429,7 @@ dependencies = [
 [[package]]
 name = "hashbrown"
 version = "0.16.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "foldhash 0.2.0 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
 ]
@@ -2488,7 +2482,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hexf-parse"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "hilog-sys"
@@ -2751,7 +2745,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.56.0",
 ]
 
 [[package]]
@@ -2878,12 +2872,11 @@ dependencies = [
 
 [[package]]
 name = "imbl"
-version = "7.0.1"
+version = "7.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43ea8d4c37ee560727e824d62804183624d371e632019b0e9e3532bce64a33e5"
+checksum = "46bad832b9b463ed9398b8506488cc2e3b897a9d44f13af115f382aac71f4fec"
 dependencies = [
  "archery",
- "bitmaps",
  "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "imbl-sized-chunks",
  "rand_core 0.9.3",
@@ -2895,12 +2888,9 @@ dependencies = [
 
 [[package]]
 name = "imbl-sized-chunks"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f4241005618a62f8d57b2febd02510fb96e0137304728543dfc5fd6f052c22d"
-dependencies = [
- "bitmaps",
-]
+checksum = "2a0813be332553f857953298749fa19549e8b61b80589757c29b4e2a804fa9c6"
 
 [[package]]
 name = "impartial-ord"
@@ -2927,7 +2917,7 @@ dependencies = [
 [[package]]
 name = "indexmap"
 version = "2.13.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "equivalent 1.0.2 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
  "hashbrown 0.16.1 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
@@ -3131,13 +3121,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
 name = "libloading"
 version = "0.8.9"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
  "windows-link 0.2.1",
@@ -3155,7 +3145,7 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "416f7e718bdb06000964960ffa43b4335ad4012ae8b99060261aa4a8088d5ccb"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "libc",
  "redox_syscall",
 ]
@@ -3287,7 +3277,7 @@ dependencies = [
 [[package]]
 name = "makepad-apple-sys"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-objc-sys",
 ]
@@ -3295,12 +3285,12 @@ dependencies = [
 [[package]]
 name = "makepad-byteorder-lite"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-code-editor"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-code-language",
  "makepad-widgets",
@@ -3309,7 +3299,7 @@ dependencies = [
 [[package]]
 name = "makepad-code-language"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "pulldown-cmark 0.12.2",
 ]
@@ -3317,7 +3307,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3325,7 +3315,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -3334,7 +3324,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -3360,7 +3350,7 @@ dependencies = [
 [[package]]
 name = "makepad-error-log"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -3368,12 +3358,12 @@ dependencies = [
 [[package]]
 name = "makepad-fast-inflate"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-filesystem-watcher"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-git",
 ]
@@ -3381,17 +3371,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-gif"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "weezl",
 ]
@@ -3399,7 +3389,7 @@ dependencies = [
 [[package]]
 name = "makepad-git"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-fast-inflate",
 ]
@@ -3407,7 +3397,7 @@ dependencies = [
 [[package]]
 name = "makepad-half"
 version = "2.7.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
  "crunchy 0.2.4 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
@@ -3418,7 +3408,7 @@ dependencies = [
 [[package]]
 name = "makepad-html"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-live-id",
 ]
@@ -3432,7 +3422,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-latex-math"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "ttf-parser",
 ]
@@ -3440,7 +3430,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-live-id-macros",
  "serde",
@@ -3449,7 +3439,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3457,7 +3447,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-reload-core"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-filesystem-watcher",
 ]
@@ -3465,7 +3455,7 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -3473,12 +3463,12 @@ dependencies = [
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -3487,7 +3477,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3495,7 +3485,7 @@ dependencies = [
 [[package]]
 name = "makepad-network"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-apple-sys",
  "makepad-error-log",
@@ -3509,12 +3499,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-platform"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "ash",
  "bitflags 2.10.0",
@@ -3552,7 +3542,7 @@ dependencies = [
 [[package]]
 name = "makepad-platform-video"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-apple-sys",
  "makepad-objc-sys",
@@ -3562,12 +3552,12 @@ dependencies = [
 [[package]]
 name = "makepad-regex"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-script"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-error-log",
  "makepad-html",
@@ -3582,7 +3572,7 @@ dependencies = [
 [[package]]
 name = "makepad-script-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3590,7 +3580,7 @@ dependencies = [
 [[package]]
 name = "makepad-script-std"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-network",
  "makepad-script",
@@ -3599,17 +3589,17 @@ dependencies = [
 [[package]]
 name = "makepad-shared-bytes"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-stitch"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-studio-protocol"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "bitflags 2.10.0",
  "makepad-error-log",
@@ -3621,7 +3611,7 @@ dependencies = [
 [[package]]
 name = "makepad-svg"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-html",
  "makepad-live-id",
@@ -3630,7 +3620,7 @@ dependencies = [
 [[package]]
 name = "makepad-tsdf"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-math",
  "makepad-micro-serde",
@@ -3639,7 +3629,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -3648,7 +3638,7 @@ dependencies = [
 [[package]]
 name = "makepad-webp"
 version = "0.2.4"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-byteorder-lite",
 ]
@@ -3656,7 +3646,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -3671,7 +3661,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-bmp"
 version = "0.5.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-error-log",
  "makepad-zune-core",
@@ -3680,12 +3670,12 @@ dependencies = [
 [[package]]
 name = "makepad-zune-core"
 version = "0.5.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "makepad-zune-inflate"
 version = "0.2.54"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "simd-adler32",
 ]
@@ -3693,7 +3683,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.5.15"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -3701,7 +3691,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.5.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-fast-inflate",
  "makepad-zune-core",
@@ -3711,7 +3701,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-qoi"
 version = "0.5.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -3772,12 +3762,11 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
- "anymap2",
+ "anymap3",
  "as_variant",
- "async-channel",
  "async-stream",
  "async-trait",
  "axum",
@@ -3809,7 +3798,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rand 0.10.2",
- "reqwest 0.13.2",
+ "reqwest 0.13.5",
  "ruma",
  "serde",
  "serde_html_form",
@@ -3823,19 +3812,18 @@ dependencies = [
  "tower",
  "tracing",
  "url",
- "urlencoding",
  "vodozemac",
  "zeroize",
 ]
 
 [[package]]
 name = "matrix-sdk-base"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
  "as_variant",
  "async-trait",
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "decancer",
  "eyeball",
  "eyeball-im",
@@ -3857,8 +3845,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-common"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
  "eyeball-im",
  "futures-core",
@@ -3880,8 +3868,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-crypto"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
  "aes 0.9.3",
  "as_variant",
@@ -3919,8 +3907,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-indexeddb"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -3951,11 +3939,12 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-sqlite"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
  "as_variant",
  "async-trait",
+ "base64 0.23.1",
  "deadpool",
  "deadpool-sync",
  "itertools 0.15.0",
@@ -3978,8 +3967,8 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-store-encryption"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
  "base64 0.23.1",
  "blake3",
@@ -4000,14 +3989,14 @@ dependencies = [
 
 [[package]]
 name = "matrix-sdk-ui"
-version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+version = "0.19.1"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=robrix_thread_fixes#36e1970ff477932f9550c44bd891c8686735ac28"
 dependencies = [
  "as_variant",
  "async-rx",
  "async-stream",
  "async_cell",
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "chrono",
  "emojis",
  "eyeball",
@@ -4094,7 +4083,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 [[package]]
 name = "memchr"
 version = "2.7.6"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "memoffset"
@@ -4166,7 +4155,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "27.0.3"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "arrayvec 0.7.6",
  "bit-set",
@@ -4220,7 +4209,7 @@ version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad5a3bbb2ae61f345b8c11776f2e79fc2bb71d1901af9a5f81f03c9238a05d86"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "ctor",
  "napi-sys-ohos",
  "once_cell 1.21.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4338,7 +4327,7 @@ dependencies = [
 [[package]]
 name = "num-traits"
 version = "0.2.20"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "num_cpus"
@@ -4376,7 +4365,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234fb5c965bbce983ee5de636a7a51d6a3223da8067ea02f9ab2d2d78ac08be2"
 dependencies = [
  "oauth2",
- "reqwest 0.13.2",
+ "reqwest 0.13.5",
 ]
 
 [[package]]
@@ -4394,7 +4383,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "block2",
  "objc2",
  "objc2-core-foundation",
@@ -4419,7 +4408,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "dispatch2",
  "objc2",
 ]
@@ -4446,7 +4435,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "block2",
  "objc2",
  "objc2-core-foundation",
@@ -4458,7 +4447,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdddde9dfb986546746e3115021a85c4a83e1c5e9037b3c865a688fe9bf94ebb"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "objc2",
  "objc2-foundation",
 ]
@@ -4469,7 +4458,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d87d638e33c06f577498cbcc50491496a3ed4246998a7fbba7ccb98b1e7eab22"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "block2",
  "objc2",
  "objc2-core-foundation",
@@ -4502,7 +4491,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 [[package]]
 name = "once_cell"
 version = "1.21.3"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "once_cell_polyfill"
@@ -4522,7 +4511,7 @@ version = "0.10.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08838db121398ad17ab8531ce9de97b244589089e290a384c900cb9ff7434328"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "foreign-types",
  "libc",
@@ -4774,7 +4763,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "pkg-config"
 version = "0.3.32"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "polling"
@@ -4922,7 +4911,7 @@ dependencies = [
 [[package]]
 name = "pulldown-cmark"
 version = "0.12.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "bitflags 2.10.0",
  "memchr 2.7.6 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
@@ -4935,7 +4924,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e8bbe1a966bd2f362681a44f6edce3c2310ac21e4d5067a6e7ec396297a6ea0"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "memchr 2.7.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "pulldown-cmark-escape",
  "unicase 2.8.1",
@@ -5000,7 +4989,7 @@ dependencies = [
  "once_cell 1.21.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5142,7 +5131,7 @@ version = "0.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5407465600fb0548f1442edf71dd20683c6ed326200ace4b1ef0763521bb3b77"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
 ]
 
 [[package]]
@@ -5254,11 +5243,11 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.13.2"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
+checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "futures-core",
  "futures-util",
@@ -5499,7 +5488,7 @@ version = "1.0.0-beta.1"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "blurhash",
  "bytesize",
  "chrono",
@@ -5574,8 +5563,8 @@ dependencies = [
 
 [[package]]
 name = "ruma"
-version = "0.16.0"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#7a912c8579871e72468ee5a4deecc16615e73099"
+version = "0.17.0"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#8c4aed1ffcecf0434923b465b45fdf30781a0ea0"
 dependencies = [
  "assign",
  "js_int",
@@ -5589,8 +5578,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-client-api"
-version = "0.24.0"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#7a912c8579871e72468ee5a4deecc16615e73099"
+version = "0.25.0"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#8c4aed1ffcecf0434923b465b45fdf30781a0ea0"
 dependencies = [
  "as_variant",
  "assign",
@@ -5611,11 +5600,11 @@ dependencies = [
 
 [[package]]
 name = "ruma-common"
-version = "0.19.0"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#7a912c8579871e72468ee5a4deecc16615e73099"
+version = "0.20.0"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#8c4aed1ffcecf0434923b465b45fdf30781a0ea0"
 dependencies = [
  "as_variant",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "date_header",
  "form_urlencoded",
@@ -5644,8 +5633,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-events"
-version = "0.34.0"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#7a912c8579871e72468ee5a4deecc16615e73099"
+version = "0.35.0"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#8c4aed1ffcecf0434923b465b45fdf30781a0ea0"
 dependencies = [
  "as_variant",
  "indexmap 2.14.2",
@@ -5666,8 +5655,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-html"
-version = "0.8.0"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#7a912c8579871e72468ee5a4deecc16615e73099"
+version = "0.9.0"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#8c4aed1ffcecf0434923b465b45fdf30781a0ea0"
 dependencies = [
  "as_variant",
  "html5ever",
@@ -5678,7 +5667,7 @@ dependencies = [
 [[package]]
 name = "ruma-identifiers-validation"
 version = "0.12.1"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#7a912c8579871e72468ee5a4deecc16615e73099"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#8c4aed1ffcecf0434923b465b45fdf30781a0ea0"
 dependencies = [
  "js_int",
  "thiserror 2.0.20",
@@ -5686,8 +5675,8 @@ dependencies = [
 
 [[package]]
 name = "ruma-macros"
-version = "0.19.0"
-source = "git+https://github.com/project-robius/ruma.git?branch=tsp#7a912c8579871e72468ee5a4deecc16615e73099"
+version = "0.20.0"
+source = "git+https://github.com/project-robius/ruma.git?branch=tsp#8c4aed1ffcecf0434923b465b45fdf30781a0ea0"
 dependencies = [
  "as_variant",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -5706,7 +5695,7 @@ version = "0.40.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "fallible-iterator",
  "fallible-streaming-iterator",
  "hashlink 0.12.2",
@@ -5717,7 +5706,7 @@ dependencies = [
 [[package]]
 name = "rustc-hash"
 version = "1.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "rustc-hash"
@@ -5740,11 +5729,11 @@ version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5812,7 +5801,7 @@ dependencies = [
  "security-framework 3.5.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -5842,7 +5831,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "rustybuzz"
 version = "0.18.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck 1.25.0",
@@ -5945,7 +5934,7 @@ checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 [[package]]
 name = "scoped-tls"
 version = "1.0.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "scopeguard"
@@ -5956,7 +5945,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdfer"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "sealed"
@@ -5988,7 +5977,7 @@ version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "core-foundation 0.9.4",
  "core-foundation-sys",
  "libc",
@@ -6001,7 +5990,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc198e42d9b7510827939c9a15f5062a0c913f3371d765977e586d2fe6c16f4a"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "libc",
@@ -6286,7 +6275,7 @@ dependencies = [
 [[package]]
 name = "simd-adler32"
 version = "0.3.9"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "siphasher"
@@ -6312,7 +6301,7 @@ dependencies = [
 [[package]]
 name = "smallvec"
 version = "1.15.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "socket2"
@@ -6336,7 +6325,7 @@ dependencies = [
 [[package]]
 name = "spirv"
 version = "0.3.0+sdk-1.3.268.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "bitflags 2.10.0",
 ]
@@ -6440,7 +6429,7 @@ source = "git+https://github.com/project-robius/sqlx.git?branch=update_libsqlite
 dependencies = [
  "atoi",
  "base64 0.22.1",
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "byteorder 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes",
  "chrono",
@@ -6482,7 +6471,7 @@ source = "git+https://github.com/project-robius/sqlx.git?branch=update_libsqlite
 dependencies = [
  "atoi",
  "base64 0.22.1",
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "byteorder 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono",
  "crc",
@@ -6648,7 +6637,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c879d448e9d986b661742763247d3693ed13609438cf3d006f51f5368a5ba6b"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "core-foundation 0.9.4",
  "system-configuration-sys",
 ]
@@ -6673,7 +6662,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell 1.21.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -6698,7 +6687,7 @@ dependencies = [
 [[package]]
 name = "thiserror"
 version = "2.0.18"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "thiserror-impl 2.0.18",
 ]
@@ -6726,7 +6715,7 @@ dependencies = [
 [[package]]
 name = "thiserror-impl"
 version = "2.0.18"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -6969,7 +6958,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4e6559d53cc268e5031cd8429d05415bc4cb4aefc4aa5d6cc35fbf5b924a1f8"
 dependencies = [
  "async-compression",
- "bitflags 2.13.1",
+ "bitflags 2.13.2",
  "bytes",
  "futures-core",
  "futures-util",
@@ -7110,7 +7099,7 @@ dependencies = [
 [[package]]
 name = "ttf-parser"
 version = "0.24.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "tungstenite"
@@ -7173,7 +7162,7 @@ checksum = "75b844d17643ee918803943289730bec8aac480150456169e647ed0b576ba539"
 [[package]]
 name = "unicase"
 version = "2.9.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-bidi"
@@ -7184,17 +7173,17 @@ checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 [[package]]
 name = "unicode-bidi"
 version = "0.3.18"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-bidi-mirroring"
 version = "0.3.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-ccc"
 version = "0.3.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-ident"
@@ -7205,12 +7194,12 @@ checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
 [[package]]
 name = "unicode-ident"
 version = "1.0.22"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-linebreak"
 version = "0.1.5"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-normalization"
@@ -7230,17 +7219,17 @@ checksum = "e70f2a8b45122e719eb623c01822704c4e0907e7e426a05927e1a1cfff5b75d0"
 [[package]]
 name = "unicode-properties"
 version = "0.1.4"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-script"
 version = "0.5.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-segmentation"
 version = "1.12.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "unicode-segmentation"
@@ -7306,12 +7295,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "urlencoding"
-version = "2.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
-
-[[package]]
 name = "utf-8"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7331,9 +7314,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.26.0"
+version = "1.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812"
+checksum = "97277d36b9c3ace13e58fa6e753f8b0bbbf302a18dd193240d70f9e29681059a"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -7361,12 +7344,13 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vodozemac"
-version = "0.10.0"
-source = "git+https://github.com/matrix-org/vodozemac/?rev=cfc4eee#cfc4eeebdf0953314144a6b709449b0434019ca2"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e322119358132f5fa8e529de9ed9af4cd67ae71ffc6f12c133f75d5c4ec9637"
 dependencies = [
  "aes 0.9.3",
  "arrayvec 0.7.8",
- "base64 0.22.1",
+ "base64 0.23.1",
  "base64ct",
  "cbc 0.2.1",
  "chacha20poly1305 0.11.0",
@@ -7541,7 +7525,7 @@ dependencies = [
 [[package]]
 name = "wayland-backend"
 version = "0.3.12"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "downcast-rs",
  "scoped-tls 1.0.1 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
@@ -7552,7 +7536,7 @@ dependencies = [
 [[package]]
 name = "wayland-client"
 version = "0.31.12"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "bitflags 2.10.0",
  "wayland-backend",
@@ -7562,7 +7546,7 @@ dependencies = [
 [[package]]
 name = "wayland-egl"
 version = "0.32.9"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "wayland-backend",
  "wayland-sys",
@@ -7571,7 +7555,7 @@ dependencies = [
 [[package]]
 name = "wayland-protocols"
 version = "0.32.10"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "bitflags 2.10.0",
  "wayland-backend",
@@ -7581,7 +7565,7 @@ dependencies = [
 [[package]]
 name = "wayland-sys"
 version = "0.31.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "makepad-error-log",
  "pkg-config 0.3.32 (git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix)",
@@ -7632,7 +7616,7 @@ dependencies = [
 [[package]]
 name = "weezl"
 version = "0.1.12"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "whoami"
@@ -7695,7 +7679,7 @@ dependencies = [
 [[package]]
 name = "windows"
 version = "0.62.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "windows-collections 0.3.2",
  "windows-core 0.62.2",
@@ -7714,7 +7698,7 @@ dependencies = [
 [[package]]
 name = "windows-collections"
 version = "0.3.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "windows-core 0.62.2",
 ]
@@ -7747,7 +7731,7 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.62.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "windows-link 0.2.1",
  "windows-result 0.4.1",
@@ -7768,7 +7752,7 @@ dependencies = [
 [[package]]
 name = "windows-future"
 version = "0.3.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "windows-core 0.62.2",
 ]
@@ -7832,7 +7816,7 @@ checksum = "45e46c0661abb7180e7b9c281db115305d49ca1709ab8242adf09666d2173c65"
 [[package]]
 name = "windows-link"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "windows-numerics"
@@ -7876,7 +7860,7 @@ dependencies = [
 [[package]]
 name = "windows-result"
 version = "0.4.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "windows-link 0.2.1",
 ]
@@ -7893,7 +7877,7 @@ dependencies = [
 [[package]]
 name = "windows-strings"
 version = "0.5.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 dependencies = [
  "windows-link 0.2.1",
 ]
@@ -8287,7 +8271,7 @@ dependencies = [
 [[package]]
 name = "zerocopy"
 version = "0.8.39"
-source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#b0f6ba2041ee20b310e46ffd0870ad18278a72e0"
+source = "git+https://github.com/kevinaboos/makepad?branch=stack_navigation_animation_robrix#20dd7f485e9fc0da910910b61466cce354bf1214"
 
 [[package]]
 name = "zerocopy-derive"
