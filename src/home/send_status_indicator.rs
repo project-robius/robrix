@@ -528,6 +528,7 @@ pub fn stringify_send_error(error: &matrix_sdk::Error) -> &'static str {
                 QueueWedgeError::InsecureDevices { .. } => UNVERIFIED_DEVICES_TEXT,
                 QueueWedgeError::IdentityViolations { .. } => IDENTITY_CHANGED_TEXT,
                 QueueWedgeError::CrossVerificationRequired => OWN_VERIFICATION_TEXT,
+                QueueWedgeError::ExpiredAccessToken => "your session has expired.",
                 QueueWedgeError::MissingMediaContent => "the attached file is missing.",
                 QueueWedgeError::InvalidMimeType { .. } => "that file type isn't supported.",
                 QueueWedgeError::GenericApiError { .. } => SERVER_REJECTED_TEXT,

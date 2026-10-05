@@ -9,7 +9,7 @@ use makepad_widgets::{error, warning, Cx};
 use matrix_sdk_base::apply_redaction;
 use matrix_sdk::{
     check_validity_of_replacement_events, deserialized_responses::{EncryptionInfo, TimelineEvent, TimelineEventKind, UnsignedDecryptionResult, UnsignedEventLocation}, event_cache::{EventsOrigin, RoomEventCacheUpdate, TimelineVectorDiffs}, room::ListThreadsOptions, ruma::{
-        events::{relation::RelationType, AnySyncTimelineEvent}, serde::Raw, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedUserId
+        events::{relation::RelationType, AnySyncTimelineEvent}, serde::Raw, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedUserId, UInt
     }, serde_helpers::{extract_redaction_target, extract_relation}, Error, Room
 };
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails, TimelineItemContent};
@@ -56,6 +56,11 @@ pub async fn threads_list_subscriber_handler(
     let mut was_end_reached = false;
     let mut next_page_token = None;
     let mut next_page_future: Fuse<BoxFuture<'static, Result<ThreadsPage, Error>>> = Fuse::terminated();
+    // Whether to reload the list once the page that's loading now is done, since we missed events meanwhile.
+    let mut is_reload_pending = false;
+    // Whether the latest sync redacted an event we couldn't place in a thread, like an older reply.
+    // If it was in a loaded thread, the SDK's next summary update for that thread tells us which one.
+    let mut has_redaction_in_unknown_thread = false;
 
     // The threads we're in the midst of fetching from the server.
     let mut fetch_states: HashMap<OwnedEventId, FetchState> = HashMap::new();
@@ -82,26 +87,33 @@ pub async fn threads_list_subscriber_handler(
         }
 
         should_post = tokio::select! {
-            page = &mut next_page_future => match page {
-                Ok(ThreadsPage { from, threads_chunk, token_next_page }) => {
-                    let list = Arc::make_mut(&mut threads);
-                    for thread in threads_chunk {
-                        merge_thread(list, thread, false);
+            page = &mut next_page_future => {
+                let is_changed = match page {
+                    Ok(ThreadsPage { from, threads_chunk, token_next_page }) => {
+                        let list = Arc::make_mut(&mut threads);
+                        for thread in threads_chunk {
+                            merge_thread(list, thread, false);
+                        }
+                        list.sort_by_key(|t| Reverse(get_latest_activity(t)));
+                        // A first page we reloaded after missing events doesn't move us on to the next page.
+                        if !was_end_reached && from == next_page_token {
+                            was_end_reached = token_next_page.is_none();
+                            next_page_token = token_next_page;
+                        }
+                        true
                     }
-                    list.sort_by_key(|t| Reverse(get_latest_activity(t)));
-                    // A first page reloaded after a sync gap doesn't move us on to the next page.
-                    if !was_end_reached && from == next_page_token {
-                        was_end_reached = token_next_page.is_none();
-                        next_page_token = token_next_page;
+                    Err(error) => {
+                        error!("Failed to load the threads of room {room_id}: {error}");
+                        Cx::post_action(ThreadsListAction::Failed { room_id: room_id.clone(), error: error.to_string() });
+                        false
                     }
-                    true
+                };
+                if is_reload_pending {
+                    is_reload_pending = false;
+                    next_page_future = load_threads_page(&room, None, Some(threads.len()));
                 }
-                Err(error) => {
-                    error!("Failed to load the threads of room {room_id}: {error}");
-                    Cx::post_action(ThreadsListAction::Failed { room_id: room_id.clone(), error: error.to_string() });
-                    false
-                }
-            },
+                is_changed
+            }
 
             Some(fetched) = root_fetches.next(), if !root_fetches.is_empty() => {
                 let index = threads.iter().position(|t| t.root_event.event_id == fetched.root_id);
@@ -131,12 +143,21 @@ pub async fn threads_list_subscriber_handler(
             },
 
             update = room_event_updates.recv() => {
-                let (diffs, is_from_sync, is_gap) = match update {
+                let (diffs, is_from_sync, missed_events) = match update {
                     Ok(RoomEventCacheUpdate::UpdateTimelineEvents(TimelineVectorDiffs { diffs, origin })) => {
+                        has_redaction_in_unknown_thread = false;
                         let is_from_sync = matches!(origin, EventsOrigin::Sync);
-                        // A sync with a gap clears the cache, and only the newest events after the gap reach us.
-                        let is_gap = is_from_sync && diffs.iter().any(|diff| matches!(diff, VectorDiff::Clear));
-                        (diffs, is_from_sync, is_gap)
+                        // A sync that skipped some events (a "limited" sync) clears the cache,
+                        // so only the newest events reach us.
+                        let missed_events = is_from_sync && diffs.iter().any(|diff| matches!(diff, VectorDiff::Clear));
+                        (diffs, is_from_sync, missed_events)
+                    }
+                    // A redacted event we couldn't place still changes its thread's summary, which tells us the thread.
+                    Ok(RoomEventCacheUpdate::UpdateThreadSummary { thread_root, .. }) => {
+                        if has_redaction_in_unknown_thread && threads.iter().any(|t| t.root_event.event_id == thread_root) {
+                            request_thread_fetch(&room, thread_root, &mut fetch_states, &mut root_fetches);
+                        }
+                        (Vec::new(), false, false)
                     }
                     Ok(_) => (Vec::new(), false, false),
                     Err(broadcast::error::RecvError::Lagged(num_missed)) => {
@@ -217,6 +238,8 @@ pub async fn threads_list_subscriber_handler(
                             roots_to_fetch.insert(threads[index].root_event.event_id.clone());
                         } else if let Some(root_id) = counted_replies.remove(&target_id) {
                             roots_to_fetch.insert(root_id);
+                        } else {
+                            has_redaction_in_unknown_thread = true;
                         }
                         continue;
                     }
@@ -251,6 +274,11 @@ pub async fn threads_list_subscriber_handler(
                             let is_new = !is_latest && timestamp > thread.summary_timestamp && !counted_replies.contains_key(event_id);
                             let is_newer = is_latest || timestamp > get_latest_activity(thread);
                             if !is_new && !is_newer { continue }
+                            // Timestamps can't always tell a new reply from one the server already counted,
+                            // so the server confirms our count.
+                            if is_new {
+                                roots_to_fetch.insert(root_id.clone());
+                            }
                             let edit = extract_bundled_edit(&room, &event).await;
                             let Some(reply) = build_thread_list_item_event(&room, event, edit, None).await else { continue };
                             modify_thread(&mut threads, index, &mut fetch_states, |thread| {
@@ -275,9 +303,14 @@ pub async fn threads_list_subscriber_handler(
                 for root_id in roots_to_fetch {
                     request_thread_fetch(&room, root_id, &mut fetch_states, &mut root_fetches);
                 }
-                // The threads active during a gap are back on the first page, with fresh summaries.
-                if is_gap && next_page_future.is_terminated() {
-                    next_page_future = load_threads_page(&room, None);
+                // The threads that changed in the events we missed are back on the first page, with fresh summaries.
+                // We reload as many threads as we had loaded, once any page that's loading now is done.
+                if missed_events {
+                    if next_page_future.is_terminated() {
+                        next_page_future = load_threads_page(&room, None, Some(threads.len()));
+                    } else {
+                        is_reload_pending = true;
+                    }
                 }
                 if is_changed {
                     Arc::make_mut(&mut threads).sort_by_key(|t| Reverse(get_latest_activity(t)));
@@ -287,7 +320,7 @@ pub async fn threads_list_subscriber_handler(
 
             _ = load_more_notifier.notified() => {
                 if next_page_future.is_terminated() && !was_end_reached {
-                    next_page_future = load_threads_page(&room, next_page_token.clone());
+                    next_page_future = load_threads_page(&room, next_page_token.clone(), None);
                 }
                 false
             }
@@ -457,15 +490,17 @@ fn merge_thread(list: &mut Vec<Arc<ThreadListItem>>, thread: ThreadListItem, is_
     }
 }
 
-/// Loads the page of the room's threads at the given token, or its first page if `None`.
-fn load_threads_page(room: &Room, from: Option<String>) -> Fuse<BoxFuture<'static, Result<ThreadsPage, Error>>> {
+/// Loads the page of the room's threads at the given token, or its first page if `None`,
+/// with up to `limit` threads, or the server's default number of them.
+fn load_threads_page(room: &Room, from: Option<String>, limit: Option<usize>) -> Fuse<BoxFuture<'static, Result<ThreadsPage, Error>>> {
     let room = room.clone();
+    let limit = limit.filter(|limit| *limit > 0).map(|limit| UInt::try_from(limit).unwrap_or(UInt::MAX));
     async move {
-        let thread_roots = room.list_threads(ListThreadsOptions { from: from.clone(), ..Default::default() }).await?;
+        let thread_roots = room.list_threads(ListThreadsOptions { from: from.clone(), limit, ..Default::default() }).await?;
         // The same few people start most threads, so we load each sender's profile once per page.
         let room = &room;
         let senders: HashSet<OwnedUserId> = thread_roots.chunk.iter()
-            .flat_map(|root| [root.sender(), root.bundled_latest_thread_event.as_ref().and_then(|latest| latest.sender())])
+            .flat_map(|root| [root.sender(), root.bundled_latest_thread_event().and_then(|latest| latest.sender())])
             .flatten()
             .collect();
         let profiles: HashMap<OwnedUserId, TimelineDetails<Profile>> = join_all(senders.into_iter().map(|sender| async move {
@@ -481,25 +516,34 @@ fn load_threads_page(room: &Room, from: Option<String>) -> Fuse<BoxFuture<'stati
     }.boxed().fuse()
 }
 
+/// Returns the reply count and latest reply that the server bundled with the given thread root,
+/// or `None` if it has no bundled thread, e.g., because all of its replies were redacted.
+pub async fn get_bundled_thread_summary(room: &Room, root: &TimelineEvent) -> Option<(u32, Option<TimelineEvent>)> {
+    let num_replies = root.thread_summary()?.num_replies;
+    let mut latest_reply = root.bundled_latest_thread_event();
+    // The SDK doesn't decrypt the latest reply bundled with a root it couldn't decrypt.
+    if let Some(latest) = &latest_reply
+        && matches!(latest.kind, TimelineEventKind::UnableToDecrypt { .. })
+        && let Ok(decrypted) = room.decrypt_event(latest.raw().cast_ref_unchecked(), None).await
+    {
+        latest_reply = Some(decrypted);
+    }
+    Some((num_replies, latest_reply))
+}
+
 /// Builds a list item from the given thread root event and its bundled summary, or returns `None` if it isn't
 /// a thread or couldn't be parsed. Senders' profiles are loaded unless given in `profiles`.
 async fn build_thread_list_item(
     room: &Room,
-    mut root: TimelineEvent,
+    root: TimelineEvent,
     profiles: &HashMap<OwnedUserId, TimelineDetails<Profile>>,
 ) -> Option<ThreadListItem> {
-    let num_replies = root.thread_summary.summary()?.num_replies;
-    let latest_event = match root.bundled_latest_thread_event.take() {
-        Some(mut latest) => {
-            // The SDK doesn't decrypt the latest reply bundled with a root it couldn't decrypt.
-            if matches!(latest.kind, TimelineEventKind::UnableToDecrypt { .. })
-                && let Ok(decrypted) = room.decrypt_event(latest.raw().cast_ref_unchecked(), None).await
-            {
-                *latest = decrypted;
-            }
+    let (num_replies, latest_reply) = get_bundled_thread_summary(room, &root).await?;
+    let latest_event = match latest_reply {
+        Some(latest) => {
             let edit = extract_bundled_edit(room, &latest).await;
             let profile = latest.sender().and_then(|sender| profiles.get(&sender));
-            build_thread_list_item_event(room, *latest, edit, profile).await
+            build_thread_list_item_event(room, latest, edit, profile).await
         }
         None => None,
     };

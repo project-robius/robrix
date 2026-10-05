@@ -1853,13 +1853,13 @@ impl Widget for RoomsList {
                                 .get(space_name_id.room_id())
                                 .map(|smv| (smv.pagination, smv.parent_chain.clone()))
                                 .unwrap_or_default();
-                            // These requests are a fresh new attempt, so clear any previous failures to load a space's children.
-                            if let Some(smv) = self.space_map.get_mut(space_name_id.room_id()) {
-                                smv.pagination = SpacePaginationState::InProgress;
-                            }
                             if pagination != SpacePaginationState::Complete
                                 && let Some(sender) = self.space_request_sender.as_ref()
                             {
+                                // These requests are a fresh new attempt, so clear any previous failures to load a space's children.
+                                if let Some(smv) = self.space_map.get_mut(space_name_id.room_id()) {
+                                    smv.pagination = SpacePaginationState::InProgress;
+                                }
                                 if sender.send(SpaceRequest::SubscribeToSpaceRoomList {
                                     space_name_id: space_name_id.clone(),
                                     parent_chain: parent_chain.clone(),

@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, makepad_platform::event::finger::TouchState, *};
 use matrix_sdk::reqwest::StatusCode;
 use matrix_sdk::{
-    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::{RoomMember, reply::{EnforceThread, Reply}}, ruma::{
+    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::{RoomMember, reply::{EnforceThread, Reply}}, serde_helpers::extract_bundled_thread, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, RoomId, UserId, events::{
             receipt::Receipt,
             room::{
@@ -2059,18 +2059,25 @@ impl RoomScreen {
                     latest_reply_preview_text,
                 } => {
                     tl.pending_thread_summary_fetches.remove(&thread_root_event_id);
-                    tl.fetched_thread_summaries.insert(
-                        thread_root_event_id.clone(),
-                        FetchedThreadSummary {
-                            num_replies,
-                            latest_reply_preview_text,
-                        },
-                    );
                     let event_id_matches_at_index = tl.items
                         .get(timeline_item_index)
                         .and_then(|item| item.as_event())
                         .and_then(|ev| ev.event_id())
                         .is_some_and(|id| id == thread_root_event_id);
+                    let sdk_num_replies = tl.items
+                        .get(timeline_item_index)
+                        .filter(|_| event_id_matches_at_index)
+                        .or_else(|| tl.items.iter().find(|item| item.as_event().and_then(|ev| ev.event_id()) == Some(&*thread_root_event_id)))
+                        .and_then(|item| item.as_event()?.content().thread_summary())
+                        .map_or(0, |summary| summary.num_replies);
+                    tl.fetched_thread_summaries.insert(
+                        thread_root_event_id.clone(),
+                        FetchedThreadSummary {
+                            num_replies,
+                            latest_reply_preview_text,
+                            sdk_num_replies_at_fetch: sdk_num_replies,
+                        },
+                    );
                     if event_id_matches_at_index {
                         tl.content_drawn_since_last_update
                             .remove(timeline_item_index .. timeline_item_index + 1);
@@ -3868,7 +3875,7 @@ pub enum TimelineUpdate {
     ThreadSummaryDetailsFetched {
         thread_root_event_id: OwnedEventId,
         timeline_item_index: usize,
-        num_replies: u32,
+        num_replies: Option<u32>,
         latest_reply_preview_text: Option<String>,
     },
     /// The result of a request to edit a message in this timeline.
@@ -4461,8 +4468,11 @@ pub(super) struct ItemDrawnStatus {
 
 #[derive(Clone, Debug)]
 struct FetchedThreadSummary {
-    num_replies: u32,
+    /// The server's reply count (0 if the root had no thread summary), or `None` if we couldn't fetch the root.
+    num_replies: Option<u32>,
     latest_reply_preview_text: Option<String>,
+    /// The SDK's own reply count when this was fetched, so its later changes apply on top.
+    sdk_num_replies_at_fetch: u32,
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
@@ -5029,8 +5039,7 @@ fn populate_message_view(
     if !used_cached_item {
         // Redacted messages must never show reactions, even if the SDK still reports some.
         let reactions = (!matches!(msg_like_content.kind, MsgLikeKind::Redacted))
-            .then(|| event_tl_item.content().reactions())
-            .flatten();
+            .then(|| event_tl_item.reactions());
         item.reaction_list(cx, ids!(content.reaction_list)).set_list(
             cx,
             reactions,
@@ -5840,19 +5849,53 @@ fn populate_thread_root_summary(
         return fully_drawn;
     };
 
+    let sdk_num_replies = thread_summary.num_replies;
+    // The SDK only counts the replies it has seen itself, and the count the server sent with the root can be stale.
+    let bundled_num_replies = event_tl_item.original_json()
+        .and_then(extract_bundled_thread)
+        .map_or(0, |bundled| u32::try_from(bundled.count).unwrap_or(u32::MAX));
+    // Only synced data decides whether to show this, since a fetch must not change the item's height.
+    if sdk_num_replies == 0 && bundled_num_replies == 0 {
+        fully_drawn = true;
+        return fully_drawn;
+    }
+
     // Here, we actually need to show the thread summary.
     thread_summary_view.set_visible(cx, true);
-    let local_num_replies = thread_summary.num_replies;
     let thread_root_event_id = event_tl_item.event_id().map(|id| id.to_owned());
+    // A fetched summary goes stale once the SDK switches between showing the server's count and its own.
     let fetched_summary = thread_root_event_id
         .as_ref()
-        .and_then(|root_id| fetched_thread_summaries.get(root_id));
-    let replies_count = fetched_summary
-        .map(|f| f.num_replies)
-        .unwrap_or(local_num_replies);
+        .and_then(|root_id| fetched_thread_summaries.get(root_id))
+        .filter(|fetched| (fetched.sdk_num_replies_at_fetch == bundled_num_replies) == (sdk_num_replies == bundled_num_replies));
+    // Replies the SDK added or removed since the fetch change the fetched count by as much.
+    let replies_count = match fetched_summary {
+        // A fetched 0 means the root had no thread summary, which only proves it has no replies
+        // if the server bundles them at all, as the synced root shows.
+        Some(FetchedThreadSummary { num_replies: Some(fetched_num_replies), sdk_num_replies_at_fetch, .. })
+            if *fetched_num_replies > 0 || bundled_num_replies > 0 =>
+            (fetched_num_replies + sdk_num_replies).saturating_sub(*sdk_num_replies_at_fetch),
+        _ => sdk_num_replies.max(bundled_num_replies),
+    };
 
-    let latest_preview: Cow<str> = match &thread_summary.latest_event {
-        TimelineDetails::Ready(embedded_event) => {
+    // Fetch the real count and latest reply if we can't tell them locally.
+    if fetched_summary.is_none()
+        && (thread_summary.latest_event.is_unavailable() || sdk_num_replies != bundled_num_replies)
+        && let Some(thread_root_event_id) = thread_root_event_id
+        && pending_thread_summary_fetches.insert(thread_root_event_id.clone())
+    {
+        submit_async_request(MatrixRequest::FetchThreadSummaryDetails {
+            timeline_kind: timeline_kind.clone(),
+            thread_root_event_id,
+            timeline_item_index,
+        });
+    }
+
+    // The SDK's latest reply is more current than the fetched one once its count has changed.
+    let sdk_latest_is_newer = fetched_summary.is_none_or(|fetched| fetched.sdk_num_replies_at_fetch != sdk_num_replies);
+    let fetched_preview = fetched_summary.and_then(|fetched| fetched.latest_reply_preview_text.as_deref());
+    let latest_preview: Cow<str> = match (&thread_summary.latest_event, fetched_preview) {
+        (TimelineDetails::Ready(embedded_event), _) if sdk_latest_is_newer || fetched_preview.is_none() => {
             fully_drawn = true;
             let sender_name = match &embedded_event.sender_profile {
                 TimelineDetails::Ready(profile) => profile.display_name.as_deref().unwrap_or(embedded_event.sender.as_str()),
@@ -5860,28 +5903,25 @@ fn populate_thread_root_summary(
             };
             text_preview_of_thread_reply(&embedded_event.sender, sender_name, Some(&embedded_event.content)).into()
         }
-        td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
+        (_, Some(preview)) => {
             fully_drawn = true;
-            if td.is_unavailable()
-                && let Some(thread_root_event_id) = thread_root_event_id.clone()
-            {
-                if fetched_summary.is_none()
-                    && pending_thread_summary_fetches.insert(thread_root_event_id.clone())
-                {
-                    submit_async_request(MatrixRequest::FetchThreadSummaryDetails {
-                        timeline_kind: timeline_kind.clone(),
-                        thread_root_event_id,
-                        timeline_item_index,
-                    });
-                }
-            }
-            fetched_summary.and_then(|fs| fs.latest_reply_preview_text.as_deref())
-                .unwrap_or("<i>Loading latest reply...</i>")
-                .into()
+            preview.into()
         }
-        TimelineDetails::Error(_) => {
+        _ if replies_count == 0 => {
+            fully_drawn = true;
+            "".into()
+        }
+        (TimelineDetails::Error(_), None) => {
             fully_drawn = true; // consider this fully drawn since there's no point retrying.
             "<i>Unable to load latest reply</i>".into()
+        }
+        _ => {
+            fully_drawn = true;
+            let preview = match fetched_summary {
+                Some(_) => "<i>Unable to load latest reply</i>",
+                None => "<i>Loading latest reply...</i>",
+            };
+            preview.into()
         }
     };
 
