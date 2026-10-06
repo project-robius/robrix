@@ -10,6 +10,7 @@ script_mod! {
     mod.widgets.WelcomeScreen = SolidView {
         width: Fill, height: Fill
         align: Align{x: 0.0, y: 0.5}
+        cursor: MouseCursor.Default
 
         show_bg: true,
         draw_bg.color: (COLOR_PRIMARY)
