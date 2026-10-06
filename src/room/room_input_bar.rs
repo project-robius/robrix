@@ -117,7 +117,10 @@ script_mod! {
                     },
 
                     speech_text_input +: {
-                        text_input +: { empty_text: "Write a message (in Markdown) ..." }
+                        text_input +: {
+                            empty_text: "Write a message (in Markdown) ..."
+                            keep_focus_on_submit: true
+                        }
                     }
                 }
 
