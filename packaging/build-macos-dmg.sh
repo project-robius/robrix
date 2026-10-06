@@ -262,15 +262,32 @@ codesign_with_retry "$DMG_FILE" dmg
 
 # --- Step 7: Notarize ---------------------------------------------------------
 #
-# notarytool exits non-zero if the submission ends in any state other
-# than "Accepted", so set -e catches a rejection.
+# Apple sometimes takes hours to process a submission, and notarytool quits waiting at
+# its first network error, so we keep waiting on the same submission until Apple's done.
 
-echo "==> Submitting DMG for notarization (this can take several minutes)..."
-xcrun notarytool submit "$DMG_FILE" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_PASSWORD" \
-    --team-id "$APPLE_TEAM_ID" \
-    --wait
+NOTARY_AUTH=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
+
+echo "==> Submitting DMG for notarization..."
+SUBMISSION=$(xcrun notarytool submit "$DMG_FILE" "${NOTARY_AUTH[@]}" --output-format json)
+SUBMISSION_ID=$(plutil -extract id raw -o - - <<< "$SUBMISSION")
+
+echo "==> Waiting for Apple to process submission $SUBMISSION_ID (usually minutes, sometimes hours)..."
+while true; do
+    xcrun notarytool wait "$SUBMISSION_ID" "${NOTARY_AUTH[@]}" || true
+    STATUS=$(xcrun notarytool info "$SUBMISSION_ID" "${NOTARY_AUTH[@]}" --output-format json | plutil -extract status raw -o - - 2>/dev/null || true)
+    case "$STATUS" in
+        Accepted) break ;;
+        Invalid|Rejected)
+            xcrun notarytool log "$SUBMISSION_ID" "${NOTARY_AUTH[@]}" >&2 || true
+            echo "Error: Apple's notary service marked submission $SUBMISSION_ID as $STATUS." >&2
+            exit 1
+            ;;
+        *)
+            echo "  -> Lost contact with Apple's notary service; waiting on the submission again in 30s..." >&2
+            sleep 30
+            ;;
+    esac
+done
 
 # --- Step 8: Staple and verify ------------------------------------------------
 
