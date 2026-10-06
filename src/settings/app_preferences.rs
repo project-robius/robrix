@@ -358,7 +358,7 @@ impl UiZoom {
     pub const DEFAULT: f32 = 1.00;
 
     /// Step size for keyboard shortcuts.
-    pub const STEP: f32 = 0.02;
+    pub const STEP: f32 = 0.01;
     /// Step size for the app settings +/- buttons.
     pub const BUTTON_STEP: f32 = 0.05;
 
@@ -372,9 +372,9 @@ impl UiZoom {
         self.0 as f64
     }
 
-    /// Returns whether this zoom value is within 0.01 of the default 100%.
+    /// Returns whether this zoom value is within 0.001 of the default 100%.
     pub fn is_default(self) -> bool {
-        (self.0 - Self::DEFAULT).abs() < 0.01
+        (self.0 - Self::DEFAULT).abs() < 0.001
     }
 
     pub fn zoom_in_by(self, delta: f32) -> Self {
