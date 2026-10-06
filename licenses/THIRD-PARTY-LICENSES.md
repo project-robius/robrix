@@ -433,7 +433,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `robius-speech` | 0.3.1 | MIT |
 | `robius-use-makepad` | 0.1.1 | MIT |
 | `robius-web-auth-session` | 0.3.1 | MIT |
-| `robrix` | 1.0.0-beta.1 | MIT |
+| `robrix` | 1.0.0-beta.2 | MIT |
 | `ruma` | 0.17.0 | MIT |
 | `ruma-client-api` | 0.25.0 | MIT |
 | `ruma-common` | 0.20.0 | MIT |
