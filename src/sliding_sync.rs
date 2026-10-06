@@ -4947,6 +4947,7 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
 
 /// Subscribes to changes in the device's recovery state, and sends updates to the UI.
 fn handle_recovery_state_subscriber(client: Client, e2ee_ready: watch::Sender<bool>) -> JoinHandle<()> {
+    use matrix_sdk::encryption::VerificationState;
     use matrix_sdk::ruma::events::secret_storage::default_key::SecretStorageDefaultKeyEventContent;
     Handle::current().spawn(async move {
         // The SDK lets only one caller wait on its e2ee setup, so we tell everyone else when it's done.
@@ -4960,21 +4961,40 @@ fn handle_recovery_state_subscriber(client: Client, e2ee_ready: watch::Sender<bo
             .await
             .is_ok_and(|event| event.is_none());
         let mut states = client.encryption().recovery().state_stream();
+        let mut verification_states = client.encryption().verification_state();
+        let mut state = RecoveryState::Unknown;
         let mut should_remind = true;
-        while let Some(state) = states.next().await {
-            log!("Recovery state: {state:?}");
-            let is_confirmed = match state {
-                RecoveryState::Unknown => false,
-                RecoveryState::Disabled => is_recovery_really_unset,
-                RecoveryState::Enabled | RecoveryState::Incomplete => true,
+        loop {
+            tokio::select! {
+                Some(new_state) = states.next() => {
+                    state = new_state;
+                    log!("Recovery state: {state:?}");
+                    Cx::post_action(RecoveryAction::StateChanged(state));
+                }
+                // Verification can become known after the initial recovery update.
+                Some(_) = verification_states.next(), if should_remind => {}
+                else => break,
+            }
+            let verification_state = verification_states.get();
+            let is_confirmed = match verification_state {
+                VerificationState::Unknown => false,
+                VerificationState::Unverified => true,
+                VerificationState::Verified => match state {
+                    RecoveryState::Unknown => false,
+                    RecoveryState::Disabled => is_recovery_really_unset,
+                    RecoveryState::Enabled | RecoveryState::Incomplete => true,
+                },
             };
             if should_remind && is_confirmed {
                 should_remind = false;
-                let reminder = match state {
-                    RecoveryState::Disabled => Some(
+                let reminder = match (verification_state, state) {
+                    (VerificationState::Unverified, _) => Some(
+                        "This device is not verified, so you won't be able to access encrypted messages. Go to settings to verify it."
+                    ),
+                    (VerificationState::Verified, RecoveryState::Disabled) => Some(
                         "A recovery key hasn't been set up. Go to Settings to set one up so you can restore your encrypted messages on a new device."
                     ),
-                    RecoveryState::Incomplete => Some(
+                    (VerificationState::Verified, RecoveryState::Incomplete) => Some(
                         "This device can't read your full encrypted history yet. Enter your recovery key in Encryption Settings."
                     ),
                     _ => None,
@@ -4983,7 +5003,6 @@ fn handle_recovery_state_subscriber(client: Client, e2ee_ready: watch::Sender<bo
                     enqueue_popup_notification(reminder, PopupKind::Warning, Some(15.0));
                 }
             }
-            Cx::post_action(RecoveryAction::StateChanged(state));
         }
     })
 }
