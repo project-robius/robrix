@@ -22,7 +22,7 @@ use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
 use ruma::events::tag::TagName;
 use tokio::sync::mpsc::UnboundedSender;
-use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId}};
+use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId, RoomAliasId}};
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
@@ -2167,6 +2167,21 @@ impl RoomsListRef {
             .or_else(||
                 inner.invited_rooms.borrow()
                     .get(room_id)
+                    .map(|ir| ir.room_name_id.clone())
+            )
+    }
+
+    /// Returns the name of the joined or invited room with the given alias, if it is known and loaded.
+    pub fn get_room_name_by_alias(&self, alias: &RoomAliasId) -> Option<RoomNameId> {
+        let inner = self.borrow()?;
+        let has_alias = |canonical_alias: &Option<OwnedRoomAliasId>, alt_aliases: &[OwnedRoomAliasId]|
+            canonical_alias.as_deref() == Some(alias) || alt_aliases.iter().any(|a| &**a == alias);
+        inner.all_joined_rooms.values()
+            .find(|jr| has_alias(&jr.canonical_alias, &jr.alt_aliases))
+            .map(|jr| jr.room_name_id.clone())
+            .or_else(||
+                inner.invited_rooms.borrow().values()
+                    .find(|ir| has_alias(&ir.canonical_alias, &ir.alt_aliases))
                     .map(|ir| ir.room_name_id.clone())
             )
     }

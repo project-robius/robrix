@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use makepad_widgets::ScriptVm;
 use matrix_sdk::{RoomDisplayName, RoomHeroWithProfile, RoomState, SuccessorRoom, room_preview::RoomPreview};
-use ruma::{OwnedRoomAliasId, OwnedRoomId, room::{JoinRuleSummary, RoomType}};
+use ruma::{OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, room::{JoinRuleSummary, RoomType}};
 
 use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
@@ -104,13 +104,25 @@ impl BasicRoomDetails {
             Self::FetchedRoomPreview(frp) => &frp.room_avatar,
         }
     }
+
+    /// Returns the servers to ask about this room when joining it, if any are known.
+    pub fn via(&self) -> &[OwnedServerName] {
+        match self {
+            Self::FetchedRoomPreview(frp) => &frp.via,
+            _ => &[],
+        }
+    }
 }
 
 
 /// Actions related to room previews being fetched.
 #[derive(Debug)]
 pub enum RoomPreviewAction {
-    Fetched(Result<FetchedRoomPreview, matrix_sdk::Error>),
+    Fetched {
+        /// The room alias/ID that was originally sent with the preview request.
+        room_or_alias_id: OwnedRoomOrAliasId,
+        result: Result<FetchedRoomPreview, matrix_sdk::Error>,
+    },
 }
 
 /// A modified [`RoomPreview`], augmented with the room's fetched avatar.
@@ -120,6 +132,8 @@ pub struct FetchedRoomPreview {
     pub room_name_id: RoomNameId,
     /// The room's fetched avatar, ready to be displayed.
     pub room_avatar: FetchedRoomAvatar,
+    /// The servers this preview was fetched through, which can also be asked when joining the room.
+    pub via: Vec<OwnedServerName>,
 
     // Below: copied from the `RoomPreview` struct.
 
@@ -148,7 +162,7 @@ pub struct FetchedRoomPreview {
     pub heroes: Option<Vec<RoomHeroWithProfile>>,
 }
 impl FetchedRoomPreview {
-    pub fn from(room_preview: RoomPreview, room_avatar: FetchedRoomAvatar) -> Self {
+    pub fn from(room_preview: RoomPreview, room_avatar: FetchedRoomAvatar, via: Vec<OwnedServerName>) -> Self {
         let display_name = room_preview.name.map_or(
             RoomDisplayName::Empty,
             RoomDisplayName::Named,
@@ -156,6 +170,7 @@ impl FetchedRoomPreview {
         Self {
             room_name_id: RoomNameId::new(display_name, room_preview.room_id),
             room_avatar,
+            via,
             canonical_alias: room_preview.canonical_alias,
             topic: room_preview.topic,
             num_joined_members: room_preview.num_joined_members,

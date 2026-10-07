@@ -122,8 +122,8 @@ script_mod! {
                 default: @off
                 off: AnimatorState{
                     redraw: true,
-                    from: { all: Forward {duration: 2.0} }
-                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    from: { all: Forward {duration: 4.5} }
+                    ease: InQuart
                     apply: { draw_bg: {highlight: 0.0} }
                 }
                 on: AnimatorState{
@@ -1272,6 +1272,10 @@ impl Widget for SmallStateEvent {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Resume a highlight that got stuck mid-way while its RoomScreen was hidden (see `Message::draw_walk`).
+        if self.animator.is_animating() {
+            self.animator.next_frame = cx.new_next_frame();
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -1287,6 +1291,7 @@ impl SmallStateEventRef {
     /// Flashes this event's highlight, like a message's after a jump to it.
     pub fn highlight(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
+            inner.animator_cut(cx, ids!(highlight.off));
             inner.animator_play(cx, ids!(highlight.on));
             inner.redraw(cx);
         }

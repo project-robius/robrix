@@ -1,12 +1,14 @@
 use makepad_widgets::*;
+use matrix_sdk::ruma::OwnedEventId;
 
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
+        add_room::AddRoomScreenWidgetRefExt,
         invite_screen::InviteScreenWidgetRefExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
         room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt},
-        room_screen::RoomScreenWidgetRefExt,
+        room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt},
         rooms_list::{AcceptedInviteKind, RoomsListAction},
         space_lobby::SpaceLobbyScreenWidgetRefExt,
         spaces_bar::SpacesBarAction,
@@ -18,6 +20,7 @@ use crate::{
     },
     shared::mention_popup::MentionablePopupRef,
     shared::speech_text_input::cancel_all_dictation,
+    sliding_sync::TimelineKind,
     utils::{self, RoomNameId},
 };
 
@@ -510,8 +513,40 @@ impl Widget for HomeScreen {
                     Some(NavigationBarAction::GoToHome) => {
                         self.switch_to_tab(cx, app_state, SelectedTab::Home);
                     }
-                    Some(NavigationBarAction::GoToAddRoom) => {
+                    Some(NavigationBarAction::GoToAddRoom { search_for }) => {
+                        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                        // Skip searching for a clicked link (room/space) if the user has already left
+                        // the screen they initially clicked it in. On desktop, that's the Home or Space tab's dock.
+                        if search_for.is_some() && (
+                            stack_navigation.is_transitioning()
+                            || (
+                                effective_is_desktop(cx)
+                                && !matches!(app_state.selected_tab, SelectedTab::Home | SelectedTab::Space { .. })
+                            )
+                        ) {
+                            continue;
+                        }
+                        // On mobile, the AddRoom page is at the root view ( eneath any screens pushed onto the stack),
+                        // so we have to pop all of them off to show it.
+                        // TODO: we should probably change this to allow the AddRoom page to be pushed onto the stack
+                        //       in addition to also being accessible from the root.
+                        if !effective_is_desktop(cx)
+                            && stack_navigation.current_view().is_some()
+                            && !stack_navigation.is_transitioning()
+                        {
+                            cancel_all_dictation();
+                            for screen in app_state.selected_room.take().into_iter().chain(self.mobile_screen_history.drain(..)) {
+                                screen.drop_resources(cx);
+                            }
+                            stack_navigation.pop_to_root(cx);
+                        }
                         self.switch_to_tab(cx, app_state, SelectedTab::AddRoom);
+                        if let Some(address) = search_for
+                            && let Some(page) = self.view.page_flip(cx, ids!(home_screen_page_flip))
+                                .page(cx, page_for_tab(&SelectedTab::AddRoom))
+                        {
+                            page.add_room_screen(cx, ids!(add_room_screen)).search_for_room(cx, address);
+                        }
                     }
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
                         self.switch_to_tab(cx, app_state, SelectedTab::Space { space_name_id: space_name_id.clone() });
@@ -664,16 +699,25 @@ impl Widget for HomeScreen {
                 // so show the timeline that contains it, and then jump to it there.
                 if !effective_is_desktop(cx)
                     && let PinnedMessagesListAction::MessageClicked { room_name_id, timeline_kind, event_id, description } = action.as_widget_action().cast()
-                    && self.navigate_to_screen(cx, app_state, room_pane::timeline_screen(&room_name_id, &timeline_kind))
+                    && self.show_timeline_and_jump_to_event(cx, app_state, &room_name_id, &timeline_kind, event_id, description)
                 {
                     // Navigating away hid the pinned messages pane, so we show it again here.
                     let saved = self.save_pane_screen_state(cx);
-                    room_pane::dock_when_shown(cx, timeline_kind.clone(), RoomPaneKind::PinnedMessages, saved);
-                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
-                    if let Some(view_id) = stack_navigation.destination_view() {
-                        stack_navigation.view_by_id(cx, view_id)
-                            .room_screen(cx, ids!(room_screen))
-                            .jump_to_event_when_shown(cx, &timeline_kind, event_id, description);
+                    room_pane::dock_when_shown(cx, timeline_kind, RoomPaneKind::PinnedMessages, saved);
+                }
+
+                // A clicked room/space link leads to another screen, so show that screen
+                // and then jump to the linked event in it.
+                // If that screen is already open somewhere, we just go to it directly.
+                if !effective_is_desktop(cx) {
+                    match action.downcast_ref() {
+                        Some(NavigateToLinkAction::Screen(screen)) => {
+                            self.navigate_to_screen(cx, app_state, screen.clone());
+                        }
+                        Some(NavigateToLinkAction::Event { room_name_id, timeline_kind, event_id, description }) => {
+                            self.show_timeline_and_jump_to_event(cx, app_state, room_name_id, timeline_kind, event_id.clone(), description.clone());
+                        }
+                        None => {}
                     }
                 }
 
@@ -1091,6 +1135,30 @@ impl HomeScreen {
             }
         }
         app_state.selected_room.as_ref().is_some_and(is_screen)
+    }
+
+    /// Shows the given timeline screen and then jumps to the given event in it.
+    ///
+    /// Returns whether that screen is now shown (or being transitioned to).
+    fn show_timeline_and_jump_to_event(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+        room_name_id: &RoomNameId,
+        timeline_kind: &TimelineKind,
+        event_id: OwnedEventId,
+        description: String,
+    ) -> bool {
+        if !self.navigate_to_screen(cx, app_state, room_pane::timeline_screen(room_name_id, timeline_kind)) {
+            return false;
+        }
+        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+        if let Some(view_id) = stack_navigation.destination_view() {
+            stack_navigation.view_by_id(cx, view_id)
+                .room_screen(cx, ids!(room_screen))
+                .jump_to_event_when_shown(cx, timeline_kind, event_id, description);
+        }
+        true
     }
 
     /// Pops the current mobile screen, revealing the previous screen or the room list root.

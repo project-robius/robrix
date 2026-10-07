@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::ruma::{OwnedRoomId, OwnedServerName};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, rooms_list::{InviteState, set_invite_state}}, room::BasicRoomDetails, shared::{popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_negative_button_style, apply_neutral_button_style, apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
@@ -89,6 +89,8 @@ pub enum JoinLeaveModalKind {
     JoinRoom {
         details: BasicRoomDetails,
         is_space: bool,
+        /// Servers to ask about the room, which are needed if our homeserver isn't in it yet.
+        via: Vec<OwnedServerName>,
     },
     /// The user wants to leave an already-joined room.
     LeaveRoom(BasicRoomDetails),
@@ -214,6 +216,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
                             room_id: invite.room_id().clone(),
+                            via: Vec::new(),
                         });
                         set_invite_state(cx, invite.room_id(), InviteState::WaitingForJoinResult);
                     }
@@ -230,7 +233,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         });
                         set_invite_state(cx, invite.room_id(), InviteState::WaitingForLeaveResult);
                     }
-                    JoinLeaveModalKind::JoinRoom { details, is_space } => {
+                    JoinLeaveModalKind::JoinRoom { details, is_space, via } => {
                         title = format!("Joining this {}...", if *is_space { "space" } else { "room" }).into();
                         description = format!(
                             "Joining \"{}\".\n\n\
@@ -240,6 +243,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
                             room_id: details.room_id().clone(),
+                            via: via.clone(),
                         });
                     }
                     JoinLeaveModalKind::LeaveRoom(room) => {
@@ -420,7 +424,7 @@ impl JoinLeaveRoomModal {
                 );
                 tip_button = "Reject";
             }
-            JoinLeaveModalKind::JoinRoom { details, is_space } => {
+            JoinLeaveModalKind::JoinRoom { details, is_space, .. } => {
                 title = if *is_space {
                     "Join this space?"
                 } else {

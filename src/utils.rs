@@ -5,7 +5,7 @@ use url::Url;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, log, Align, Cx, DrawText, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId}, RoomDisplayName};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, matrix_uri::MatrixId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{
@@ -28,6 +28,14 @@ pub fn open_url(url: &str) {
             Some(6.0),
         );
     }
+}
+
+/// Parses a `https://matrix.to/#/...` or `matrix:` link into its Matrix ID and `via` servers.
+pub fn parse_matrix_link(url: &str) -> Option<(MatrixId, Vec<OwnedServerName>)> {
+    MatrixToUri::parse(url)
+        .map(|uri| (uri.id().clone(), uri.via().to_owned()))
+        .or_else(|_| MatrixUri::parse(url).map(|uri| (uri.id().clone(), uri.via().to_owned())))
+        .ok()
 }
 
 

@@ -1058,6 +1058,7 @@ impl App {
                     kind: JoinLeaveModalKind::JoinRoom {
                         details: destination_room.clone(),
                         is_space: false,
+                        via: destination_room.via().to_vec(),
                     },
                     show_tip: false,
                 });
