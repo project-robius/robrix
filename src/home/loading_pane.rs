@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::{EventId, OwnedEventId};
 
-use crate::sliding_sync::TimelineRequestSender;
+use crate::{home::room_screen::RoomLink, sliding_sync::TimelineRequestSender};
 
 
 script_mod! {
@@ -114,6 +114,8 @@ enum LoadingPaneState {
         /// cancelled the request, so that it can stop looking for the target event.
         request_sender: TimelineRequestSender,
     },
+    /// We're resolving a link to a room (or space); see [`RoomLink`] for more.
+    ResolvingLink(RoomLink),
     /// The loading pane is displaying an error message until the user closes it.
     Error(String),
     /// The LoadingPane is not doing anything and can be hidden.
@@ -209,14 +211,6 @@ impl LoadingPane {
         matches!(self.state, LoadingPaneState::BackwardsPaginateUntilEvent { .. })
     }
 
-    /// Returns the event ID this pane is currently searching for, if any.
-    pub fn searching_for(&self) -> Option<OwnedEventId> {
-        match &self.state {
-            LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, .. } => Some(target_event_id.clone()),
-            _ => None,
-        }
-    }
-
     /// Shows this pane and starts searching backwards for the given event.
     ///
     /// If another search was in progress, it will be cancelled.
@@ -228,18 +222,32 @@ impl LoadingPane {
         timeline_noun: &'static str,
         request_sender: TimelineRequestSender,
     ) {
-        self.set_state(cx, LoadingPaneState::BackwardsPaginateUntilEvent {
+        self.show(cx, LoadingPaneState::BackwardsPaginateUntilEvent {
             target_event_id,
             description,
             events_paginated: 0,
             timeline_noun,
             request_sender,
         });
-        self.visible = true;
-        let area = self.view.area();
-        self.orig_key_focus_area = Some(area);
-        cx.set_key_focus(area);
-        self.redraw(cx);
+    }
+
+    /// Shows this pane while we wait for the given link to be resolved.
+    ///
+    /// If a search was already in progress, it will be cancelled.
+    pub fn start_resolving_link(&mut self, cx: &mut Cx, link: RoomLink) {
+        self.show(cx, LoadingPaneState::ResolvingLink(link));
+    }
+
+    /// Returns `true` if this pane is waiting to resolve the given link.
+    pub fn is_resolving_link(&self, link: &RoomLink) -> bool {
+        matches!(&self.state, LoadingPaneState::ResolvingLink(l) if l == link)
+    }
+
+    /// Shows the given error message until the user closes this pane.
+    ///
+    /// This is a "final" state of the loading pane, which waits for the user.
+    pub fn show_error(&mut self, cx: &mut Cx, error_message: String) {
+        self.set_state(cx, LoadingPaneState::Error(error_message));
     }
 
     /// Adds `num_events` to the progress shown by an in-progress search.
@@ -267,7 +275,7 @@ impl LoadingPane {
     pub fn search_failed(&mut self, cx: &mut Cx) {
         let LoadingPaneState::BackwardsPaginateUntilEvent { timeline_noun, .. } = &self.state else { return };
         let error_message = jump_target_not_found_msg(timeline_noun);
-        self.set_state(cx, LoadingPaneState::Error(error_message));
+        self.show_error(cx, error_message);
     }
 
     /// Hides this pane, which also cancels any search it was showing.
@@ -287,6 +295,13 @@ impl LoadingPane {
             LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id: id, .. }
                 if &**id == target_event_id
         )
+    }
+
+    fn show(&mut self, cx: &mut Cx, state: LoadingPaneState) {
+        self.set_state(cx, state);
+        let area = self.view.area();
+        self.orig_key_focus_area = Some(area);
+        cx.set_key_focus(area);
     }
 
     fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
@@ -312,6 +327,17 @@ impl LoadingPane {
                     "Looking for {description}...\n\n\
                     Fetched {events_paginated} messages so far...",
                 ),
+                "Cancel",
+            )),
+            LoadingPaneState::ResolvingLink(link) => Some((
+                "Opening link...",
+                if link.event_id.is_some() {
+                    String::from("Looking for the linked message...")
+                } else if link.room_or_alias_id.is_room_alias_id() {
+                    format!("Looking up {}...", link.room_or_alias_id)
+                } else {
+                    String::from("Looking up the linked room...")
+                },
                 "Cancel",
             )),
             LoadingPaneState::Error(error_message) => Some((
@@ -347,11 +373,6 @@ impl LoadingPaneRef {
         self.borrow().is_some_and(|inner| inner.is_searching_for(target_event_id))
     }
 
-    /// See [`LoadingPane::searching_for()`]
-    pub fn searching_for(&self) -> Option<OwnedEventId> {
-        self.borrow().and_then(|inner| inner.searching_for())
-    }
-
     /// See [`LoadingPane::start_search()`]
     pub fn start_search(
         &self,
@@ -363,6 +384,23 @@ impl LoadingPaneRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.start_search(cx, target_event_id, description, timeline_noun, request_sender);
+    }
+
+    /// See [`LoadingPane::start_resolving_link()`]
+    pub fn start_resolving_link(&self, cx: &mut Cx, link: RoomLink) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.start_resolving_link(cx, link);
+    }
+
+    /// See [`LoadingPane::is_resolving_link()`]
+    pub fn is_resolving_link(&self, link: &RoomLink) -> bool {
+        self.borrow().is_some_and(|inner| inner.is_resolving_link(link))
+    }
+
+    /// See [`LoadingPane::show_error()`]
+    pub fn show_error(&self, cx: &mut Cx, error_message: String) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show_error(cx, error_message);
     }
 
     /// See [`LoadingPane::paginated_more_events()`]

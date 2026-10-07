@@ -1164,6 +1164,11 @@ impl Widget for SpaceLobbyScreen {
                             kind: JoinLeaveModalKind::JoinRoom {
                                 details: self.basic_room_details_for(room_id),
                                 is_space: *is_space,
+                                // The space's own entry for this room says which servers to ask about it.
+                                via: self.children_cache.values()
+                                    .flat_map(|children| children.iter())
+                                    .find(|child| &child.room_id == room_id)
+                                    .map_or_else(Vec::new, |child| child.via.clone()),
                             },
                             show_tip: false,
                         });

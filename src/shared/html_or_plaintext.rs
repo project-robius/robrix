@@ -2,7 +2,7 @@
 
 
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, RoomOrAliasId}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, RoomOrAliasId}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, room_preview_cache::{self, CachedRoomPreview}, sliding_sync::current_user_id, utils};
 
@@ -291,13 +291,8 @@ impl ScriptHook for RobrixHtmlLink {
             }
         }
 
-        (self.matrix_id, self.via) = if let Ok(uri) = MatrixToUri::parse(&self.url) {
-            (Some(uri.id().to_owned()), uri.via().to_vec())
-        } else if let Ok(uri) = MatrixUri::parse(&self.url) {
-            (Some(uri.id().to_owned()), uri.via().to_vec())
-        } else {
-            (None, Vec::new())
-        };
+        (self.matrix_id, self.via) = utils::parse_matrix_link(&self.url)
+            .map_or((None, Vec::new()), |(matrix_id, via)| (Some(matrix_id), via));
     }
 }
 
@@ -560,7 +555,11 @@ impl MatrixLinkPill {
                 };
                 // For @room mentions, show "@room" as the title, not the room name.
                 let display_name = if is_room_mention { "@room" } else { resolved_name.as_str() };
-                self.label(cx, ids!(title)).set_text(cx, display_name);
+                if matches!(matrix_id, MatrixId::Event(..)) {
+                    self.label(cx, ids!(title)).set_text(cx, &format!("{display_name} → 💬"));
+                } else {
+                    self.label(cx, ids!(title)).set_text(cx, display_name);
+                }
                 let avatar_final = self.populate_avatar(cx, &room_avatar, display_name);
                 self.is_waiting_for_data = !avatar_final;
                 return;
@@ -568,17 +567,21 @@ impl MatrixLinkPill {
         }
         // While waiting for the async request to complete, show "@room" or the room ID/alias.
         let fallback_name = if is_room_mention {
-            "@room".to_owned()
+            "@room"
         } else {
             match matrix_id {
-                MatrixId::Room(room_id) => room_id.as_str().to_owned(),
-                MatrixId::RoomAlias(alias) => alias.as_str().to_owned(),
-                MatrixId::Event(room_or_alias, _) => format!("Message in {}", room_or_alias.as_str()),
-                _ => String::new(),
+                MatrixId::Room(room_id) => room_id.as_str(),
+                MatrixId::RoomAlias(alias) => alias.as_str(),
+                MatrixId::Event(room_or_alias, _) => room_or_alias.as_str(),
+                _ => "",
             }
         };
-        self.set_text(cx, &fallback_name);
-        self.populate_avatar(cx, &AvatarState::Unknown, &fallback_name);
+        if matches!(matrix_id, MatrixId::Event(..)) {
+            self.set_text(cx, &format!("{fallback_name} → 💬"));
+        } else {
+            self.set_text(cx, fallback_name);
+        }
+        self.populate_avatar(cx, &AvatarState::Unknown, fallback_name);
         self.is_waiting_for_data = true;
     }
 

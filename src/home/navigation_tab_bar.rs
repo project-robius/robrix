@@ -543,7 +543,7 @@ impl Widget for NavigationTabBar {
             }
             else if self.view.navigation_bar_button(cx, ids!(add_room_button)).clicked(actions) {
                 self.apply_selected_tab(cx, Some(SelectedTab::AddRoom));
-                cx.action(NavigationBarAction::GoToAddRoom);
+                cx.action(NavigationBarAction::GoToAddRoom { search_for: None });
             }
             else {
                 // ProfileIcon's inner NavigationBarButton emits the click action,
@@ -655,7 +655,10 @@ pub enum NavigationBarAction {
     /// Go to the main rooms content view.
     GoToHome,
     /// Go the add/join/explore room view.
-    GoToAddRoom,
+    GoToAddRoom {
+        /// A room address (alias, ID, or Matrix link) to fill in and search for.
+        search_for: Option<String>,
+    },
     /// Go to the Settings view (open the `SettingsScreen`).
     OpenSettings,
     /// Close the Settings view (`SettingsScreen`), returning to the previous view.

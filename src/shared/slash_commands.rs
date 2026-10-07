@@ -6,7 +6,9 @@
 
 use std::fmt::Write;
 use unicode_segmentation::UnicodeSegmentation;
-use ruma::{events::room::message::RoomMessageEventContent, matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedUserId, UserId};
+use ruma::{events::room::message::RoomMessageEventContent, matrix_uri::MatrixId, OwnedUserId, UserId};
+
+use crate::utils;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SlashCommand {
@@ -142,8 +144,8 @@ pub static SLASH_COMMANDS: &[SlashCommand] = &[
     //   un-commenting the `UserPowerLevels::RoomPowerLevels` bit to gate them.
     // * /myroomnick, /myroomavatar, /roomavatar, /myavatar: read-modify-write of our own
     //   `m.room.member`, and the avatar ones also want a file picker.
-    // * /join and /goto <room-address>: we can't resolve an alias to a room ID yet.
-    //   See the `MatrixId::RoomAlias` TODO in `room_screen.rs`.
+    // * /join and /goto <room-address>: these could open the address just like a clicked
+    //   room link does, see `RoomScreen::handle_link_clicked()`.
     // * /upgraderoom, /converttodm, /converttoroom, /jumptodate, /devtools, /discardsession.
     // * No counterpart in Robrix at all yet: /verify (we only do interactive SAS, not
     //   manual fingerprints), /addwidget, /rageshake, /status, /holdcall.
@@ -299,11 +301,7 @@ fn parse_user_id(arg: &str) -> Option<OwnedUserId> {
     let uri = arg.strip_suffix(')')
         .and_then(|inner| inner.rfind("](").map(|i| &inner[i + 2..]))
         .unwrap_or(arg);
-    let matrix_id = MatrixToUri::parse(uri)
-        .map(|u| u.id().clone())
-        .or_else(|_| MatrixUri::parse(uri).map(|u| u.id().clone()))
-        .ok()?;
-    match matrix_id {
+    match utils::parse_matrix_link(uri)?.0 {
         MatrixId::User(user_id) => Some(user_id),
         _ => None,
     }

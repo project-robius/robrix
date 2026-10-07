@@ -289,7 +289,6 @@ where
             Entry::Vacant(entry) => {
                 if fetch_if_missing {
                     // log!("Did not find User {} in cache, fetching from server.", entry.key());
-                    // TODO: use the extra `via` parameters from `matrix_to_uri.via()`.
                     submit_async_request(MatrixRequest::GetUserProfile {
                         user_id: entry.key().clone(),
                         room_id: room_id.cloned(),

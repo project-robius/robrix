@@ -9,8 +9,8 @@ use imbl::Vector;
 use makepad_widgets::{error, image_cache::image_size_by_data, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, recovery::{IdentityResetHandle, RecoveryError, RecoveryState}, secret_storage::SecretStorageError, CrossSigningResetAuthType, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, Receipts}, ruma::{
-        api::{client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
+    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, recovery::{IdentityResetHandle, RecoveryError, RecoveryState}, secret_storage::SecretStorageError, CrossSigningResetAuthType, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, Receipts}, serde_helpers::extract_thread_root, ruma::{
+        api::{client::{alias::get_alias, authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             room::{
                 encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, MediaSource
@@ -37,7 +37,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, send_status_indicator::stringify_send_error, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, send_status_indicator::stringify_send_error, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -570,6 +570,8 @@ pub enum MatrixRequest {
     /// Request to join the given room.
     JoinRoom {
         room_id: OwnedRoomId,
+        /// Servers to ask about the room, which are needed if our homeserver isn't in it yet.
+        via: Vec<OwnedServerName>,
     },
     /// Request to leave the given room.
     LeaveRoom {
@@ -608,6 +610,13 @@ pub enum MatrixRequest {
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>,
         response_mode: RoomPreviewResponseMode,
+    },
+    /// Request to find out which screen should show a clicked link's room, space, or event.
+    /// Emits a [`RoomLinkResolved`] action with the result.
+    ResolveRoomLink {
+        link: RoomLink,
+        /// The ID of the link's room, if the UI already knows it (e.g., from its alias).
+        known_room_id: Option<OwnedRoomId>,
     },
     /// Request to fetch the full details (the room preview) of a tombstoned room.
     GetSuccessorRoomDetails {
@@ -1325,15 +1334,15 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::JoinRoom { room_id } => {
+            MatrixRequest::JoinRoom { room_id, via } => {
                 let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
                     log!("Sending request to join room {room_id}...");
                     let known_room = client.get_room(&room_id);
                     let was_invite = known_room.as_ref().is_some_and(|r| r.state() == RoomState::Invited);
                     let result = match known_room.as_ref() {
-                        Some(room) => room.join().await.map(|_| room.clone()),
-                        None => client.join_room_by_id(&room_id).await,
+                        Some(room) if via.is_empty() => room.join().await.map(|_| room.clone()),
+                        _ => client.join_room_by_id_or_alias((&*room_id).into(), &via).await,
                     };
                     // Show the success/failure popup here in case the UI screen that requested the join action
                     // has been hidden or navigated away from since then.
@@ -1470,7 +1479,7 @@ async fn matrix_worker_task(
                     let res = fetch_room_preview_with_avatar(&client, &room_or_alias_id, via).await;
                     match response_mode {
                         RoomPreviewResponseMode::Action => {
-                            Cx::post_action(RoomPreviewAction::Fetched(res));
+                            Cx::post_action(RoomPreviewAction::Fetched { room_or_alias_id, result: res });
                         }
                         RoomPreviewResponseMode::RoomPreviewCache => match res {
                             Ok(fetched) => enqueue_room_preview_update(RoomPreviewUpdate {
@@ -1480,6 +1489,18 @@ async fn matrix_worker_task(
                             Err(e) => log!("Failed to get room preview for {room_or_alias_id:?}: {e:?}"),
                         },
                     }
+                });
+            }
+
+            MatrixRequest::ResolveRoomLink { link, known_room_id } => {
+                let Some(client) = get_client() else {
+                    let result = Err(String::from("Couldn't open that link: you've been logged out."));
+                    Cx::post_action(RoomLinkResolved { link, result });
+                    continue;
+                };
+                let _resolve_room_link_task = Handle::current().spawn(async move {
+                    let result = resolve_room_link(&client, &link, known_room_id).await;
+                    Cx::post_action(RoomLinkResolved { link, result });
                 });
             }
 
@@ -5358,7 +5379,7 @@ async fn fetch_room_preview_with_avatar(
     room: &RoomOrAliasId,
     via: Vec<OwnedServerName>,
 ) -> Result<FetchedRoomPreview, matrix_sdk::Error> {
-    let room_preview = client.get_room_preview(room, via).await?;
+    let room_preview = client.get_room_preview(room, via.clone()).await?;
     // If this room has an avatar URL, fetch it.
     let room_avatar = if let Some(avatar_url) = room_preview.avatar_url.clone() {
         let media_request = MediaRequestParameters {
@@ -5381,7 +5402,91 @@ async fn fetch_room_preview_with_avatar(
         // The successor room did not have an avatar URL
         avatar_from_room_name(room_preview.name.as_deref())
     };
-    Ok(FetchedRoomPreview::from(room_preview, room_avatar))
+    Ok(FetchedRoomPreview::from(room_preview, room_avatar, via))
+}
+
+/// Resolves a room link to determine whether we should show it as a room, space, or event.
+async fn resolve_room_link(
+    client: &Client,
+    link: &RoomLink,
+    known_room_id: Option<OwnedRoomId>,
+) -> Result<RoomLinkDestination, String> {
+    // Like `RequestConfig::short_retry()`, but this keeps our client's longer timeout.
+    let request_config = client.request_config().retry_limit(3);
+    let room_id = match (known_room_id, <&RoomId>::try_from(&*link.room_or_alias_id)) {
+        (Some(room_id), _) => room_id,
+        (None, Ok(room_id)) => room_id.to_owned(),
+        (None, Err(alias)) => {
+            let request = get_alias::v3::Request::new(alias.to_owned());
+            match client.send(request).with_request_config(request_config).await {
+                Ok(response) => response.room_id,
+                Err(e) => {
+                    let e = Error::from(e);
+                    return Err(format!(
+                        "Couldn't open the link to {alias}: {}",
+                        match e.client_api_error_kind() {
+                            Some(ErrorKind::NotFound) => "no room or space has that alias.",
+                            _ => utils::stringify_matrix_error(&e),
+                        },
+                    ));
+                }
+            }
+        }
+    };
+    let Some(mut room) = client.get_room(&room_id) else {
+        return Ok(RoomLinkDestination::NotJoined);
+    };
+    // Like the rooms list, we skip over old versions of upgraded rooms (unless one is already loaded),
+    // and show the newest version instead.
+    //
+    // TODO: we can't yet show or jump to messages in an older tombstoned/upgraded room, though.
+    const UPGRADED_ROOM_ERROR: &str =
+        "Couldn't open that link: it points to an older version of a room that has since been upgraded.";
+    let mut upgraded_room_ids = Vec::new();
+    while (!room.is_space() || room.state() == RoomState::Invited)
+        && let Some(successor) = room.successor_room()
+        && let Some(successor_room) = client.get_room(&successor.room_id)
+        && (room.state() != RoomState::Joined
+            || matches!(successor_room.state(), RoomState::Joined | RoomState::Left | RoomState::Banned))
+        && get_room_timeline(room.room_id()).is_none()
+    {
+        upgraded_room_ids.push(room.room_id().to_owned());
+        if link.event_id.is_some() || upgraded_room_ids.contains(&successor.room_id) {
+            return Err(UPGRADED_ROOM_ERROR.into());
+        }
+        room = successor_room;
+    }
+    if !upgraded_room_ids.is_empty() && !matches!(room.state(), RoomState::Joined | RoomState::Invited) {
+        return Err(UPGRADED_ROOM_ERROR.into());
+    }
+    match room.state() {
+        RoomState::Invited => Ok(RoomLinkDestination::Invite(RoomNameId::from_room(&room).await)),
+        RoomState::Joined if room.is_space() => Ok(RoomLinkDestination::Space(RoomNameId::from_room(&room).await)),
+        RoomState::Joined => {
+            let room_id = room.room_id().to_owned();
+            // The main room timeline doesn't show thread replies, so a reply must be shown in its thread.
+            let thread_root_event_id = match &link.event_id {
+                Some(event_id) => match room.load_or_fetch_event(event_id, Some(request_config)).await {
+                    Ok(event) => extract_thread_root(event.raw()),
+                    Err(e) => return Err(format!(
+                        "Couldn't open the linked message: {}",
+                        match e.client_api_error_kind() {
+                            Some(ErrorKind::NotFound | ErrorKind::Forbidden) =>
+                                "it may have been deleted, or you may not have permission to view it.",
+                            _ => utils::stringify_matrix_error(&e),
+                        },
+                    )),
+                },
+                None => None,
+            };
+            let timeline_kind = match thread_root_event_id {
+                Some(thread_root_event_id) => TimelineKind::Thread { room_id, thread_root_event_id },
+                None => TimelineKind::MainRoom { room_id },
+            };
+            Ok(RoomLinkDestination::Timeline { room_name_id: RoomNameId::from_room(&room).await, timeline_kind })
+        }
+        RoomState::Left | RoomState::Knocked | RoomState::Banned => Ok(RoomLinkDestination::NotJoined),
+    }
 }
 
 /// Resolves a receipt's target to the nearest event the timeline can display,

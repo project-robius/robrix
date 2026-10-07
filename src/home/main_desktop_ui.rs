@@ -1,10 +1,10 @@
 use makepad_widgets::*;
-use ruma::OwnedRoomId;
+use ruma::{OwnedEventId, OwnedRoomId};
 use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, utils::RoomNameId};
-use super::{invite_screen::InviteScreenWidgetRefExt, room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt}, room_screen::RoomScreenWidgetRefExt, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, sliding_sync::TimelineKind, utils::RoomNameId};
+use super::{invite_screen::InviteScreenWidgetRefExt, room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt}, room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt}, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
 use crate::room::{pinned_messages_list::PinnedMessagesListAction, room_action_bar::RoomActionBarWidgetRefExt, room_pane, room_tabs::RoomTabs};
 
 script_mod! {
@@ -284,6 +284,25 @@ impl MainDesktopUI {
         } else {
             error!("BUG: failed to create tab for {room:?}");
         }
+    }
+
+    /// Focuses or creates the tab for the given timeline, and then jumps to the given event in it.
+    fn show_timeline_and_jump_to_event(
+        &mut self,
+        cx: &mut Cx,
+        room_name_id: &RoomNameId,
+        timeline_kind: &TimelineKind,
+        event_id: OwnedEventId,
+        description: String,
+    ) {
+        let screen = room_pane::timeline_screen(room_name_id, timeline_kind);
+        // If the room is open already, use its existing tab (which knows the room name).
+        let screen = self.open_rooms.get(&screen.tab_id()).cloned().unwrap_or(screen);
+        let tab_id = screen.tab_id();
+        self.cancel_dictation_unless_shown(&screen);
+        self.focus_or_create_tab(cx, screen);
+        self.view.dock(cx, ids!(dock)).item(tab_id).as_room_screen()
+            .jump_to_event_when_shown(cx, timeline_kind, event_id, description);
     }
 
     /// Closes a tab in the dock and selects the next most recently viewed tab.
@@ -690,6 +709,12 @@ impl WidgetMatchEvent for MainDesktopUI {
             // Handle RoomsList actions, which are updates from the rooms list.
             match widget_action.cast_ref() {
                 RoomsListAction::Selected(selected_room) => {
+                    // If we just navigated to Home from a space (e.g., after joining a room from the AddRoom screen),
+                    // we need to switch to the main home dock first before showing the selected room.
+                    let app_state = scope.data.get_mut::<AppState>().unwrap();
+                    if self.selected_space.is_some() && matches!(app_state.selected_tab, SelectedTab::Home) {
+                        self.switch_dock_to_space(cx, app_state, None);
+                    }
                     self.cancel_dictation_unless_shown(selected_room);
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
@@ -740,14 +765,22 @@ impl WidgetMatchEvent for MainDesktopUI {
             // or in a pane that's docked in another timeline,
             // so show the timeline that contains it and then jump to that message there.
             if let PinnedMessagesListAction::MessageClicked { room_name_id, timeline_kind, event_id, description } = widget_action.cast() {
-                let screen = room_pane::timeline_screen(&room_name_id, &timeline_kind);
-                // Use the room's existing tab, which has the room's current name.
-                let screen = self.open_rooms.get(&screen.tab_id()).cloned().unwrap_or(screen);
-                let tab_id = screen.tab_id();
-                self.focus_or_create_tab(cx, screen);
-                self.view.dock(cx, ids!(dock)).item(tab_id).as_room_screen()
-                    .jump_to_event_when_shown(cx, &timeline_kind, event_id, description);
+                self.show_timeline_and_jump_to_event(cx, &room_name_id, &timeline_kind, event_id, description);
                 continue;
+            }
+
+            // A clicked link leads to another screen, so show it and then jump to the linked event in it.
+            match action.downcast_ref() {
+                Some(NavigateToLinkAction::Screen(screen)) => {
+                    self.cancel_dictation_unless_shown(screen);
+                    self.focus_or_create_tab(cx, screen.clone());
+                    continue;
+                }
+                Some(NavigateToLinkAction::Event { room_name_id, timeline_kind, event_id, description }) => {
+                    self.show_timeline_and_jump_to_event(cx, room_name_id, timeline_kind, event_id.clone(), description.clone());
+                    continue;
+                }
+                None => {}
             }
 
             // Handle potential changes to room names.

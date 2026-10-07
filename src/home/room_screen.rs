@@ -8,8 +8,8 @@ use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, makepad_platform::event::finger::TouchState, *};
 use matrix_sdk::reqwest::StatusCode;
 use matrix_sdk::{
-    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::{RoomMember, reply::{EnforceThread, Reply}}, serde_helpers::extract_bundled_thread, ruma::{
-        EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, RoomId, UserId, events::{
+    RoomState, media::{MediaFormat, MediaRequestParameters}, room::{RoomMember, reply::{EnforceThread, Reply}}, serde_helpers::extract_bundled_thread, ruma::{
+        EventId, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedRoomOrAliasId, OwnedTransactionId, RoomId, UserId, events::{
             receipt::Receipt,
             room::{
                 ImageInfo, MediaSource, message::{
@@ -27,11 +27,11 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
+    room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
         attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -48,7 +48,7 @@ use crate::room::{
     pinned_messages_list::{PinnedMessagesListAction, confirm_unpin_message},
     room_action_bar::{RoomActionBarAction, RoomActionBarWidgetExt},
     room_members_list::{RoomMembersChanged, RoomMembersListAction, show_member_profile},
-    room_pane::RoomPaneKind,
+    room_pane::{self, RoomPaneKind},
 };
 use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
 use crate::home::send_status_indicator::{SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
@@ -287,8 +287,8 @@ script_mod! {
                 default: @off
                 off: AnimatorState{
                     redraw: true,
-                    from: { all: Forward {duration: 2.0} }
-                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    from: { all: Forward {duration: 4.5} }
+                    ease: InQuart
                     apply: { draw_bg: {highlight: 0.0} }
                 }
                 on: AnimatorState{
@@ -1115,13 +1115,32 @@ impl Widget for RoomScreen {
                 // Handle actions related to restoring the previously-saved state of rooms.
                 if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, ..}) = action.downcast_ref() {
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id()) {
+                        let was_shown = self.tl_state.is_some();
                         // `set_displayed_room()` does nothing if the room_name_id is unchanged, so we clear it first.
                         self.room_name_id = None;
                         let thread_root_event_id = self.timeline_kind.as_ref()
                             .and_then(|k| k.thread_root_event_id().cloned());
                         self.set_displayed_room(cx, room_name_id, thread_root_event_id);
+                        if was_shown {
+                            // If the timeline was already shown, continue processing actions for it.
+                            continue;
+                        }
                         return;
                     }
+                }
+
+                // Once we resolve a clicked link, navigate to that destination (unless the user canceled it already).
+                if let Some(RoomLinkResolved { link, result }) = action.downcast_ref()
+                    && loading_pane.is_resolving_link(link)
+                {
+                    match result {
+                        Ok(destination) => {
+                            loading_pane.hide(cx);
+                            self.show_link_destination(cx, link, destination, &loading_pane, &portal_list);
+                        }
+                        Err(error_message) => loading_pane.show_error(cx, error_message.clone()),
+                    }
+                    continue;
                 }
 
                 // Handle InviteResultAction to show popup notifications.
@@ -1300,7 +1319,7 @@ impl Widget for RoomScreen {
         // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
         // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
         actions_generated_within_this_room_screen.retain(|action| {
-            if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
+            if self.handle_link_clicked(cx, action, &user_profile_sliding_pane, &loading_pane, &portal_list) {
                 return false;
             }
 
@@ -1347,11 +1366,7 @@ impl Widget for RoomScreen {
 
             // Handle a message being clicked in the pinned messages pane.
             if let PinnedMessagesListAction::MessageClicked { timeline_kind, event_id, description, .. } = action.as_widget_action().cast() {
-                // A thread's timeline also includes its root message.
-                let is_in_this_timeline = self.tl_state.as_ref().is_some_and(|tl|
-                    tl.kind == timeline_kind || tl.kind.thread_root_event_id() == Some(&event_id)
-                );
-                if !is_in_this_timeline {
+                if !self.is_event_in_this_timeline(&timeline_kind, &event_id) {
                     // Our parent will show the timeline that contains this message,
                     // so jump to it in that room screen's timeline instead of here.
                     return true;
@@ -2257,119 +2272,149 @@ impl RoomScreen {
         cx: &mut Cx,
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
+        loading_pane: &LoadingPaneRef,
+        portal_list: &PortalListRef,
     ) -> bool {
-        // A closure that handles both MatrixToUri and MatrixUri links,
-        // and returns whether the link was handled.
-        let mut handle_matrix_link = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
-            match id {
-                MatrixId::User(user_id) => {
-                    let Some(room_name_id) = self.room_name_id.as_ref() else {
-                        return false;
-                    };
-                    // There is no synchronous way to get the user's full profile info
-                    // including the details of their room membership,
-                    // so we fill in with the details we *do* know currently,
-                    // show the UserProfileSlidingPane, and then after that,
-                    // the UserProfileSlidingPane itself will fire off
-                    // an async request to get the rest of the details.
-                    self.show_user_profile(
-                        cx,
-                        pane,
-                        UserProfilePaneInfo {
-                            profile_and_room_id: UserProfileAndRoomId {
-                                user_profile: UserProfile {
-                                    user_id: user_id.to_owned(),
-                                    username: None,
-                                    avatar_state: AvatarState::Unknown,
-                                },
-                                room_id: room_name_id.room_id().clone(),
-                            },
-                            room_name: room_name_id.to_string(),
-                            // TODO: use the extra `via` parameters
-                            room_member: None,
-                        },
-                    );
-                    true
-                }
-                MatrixId::Room(room_id) => {
-                    if self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id) {
-                        enqueue_popup_notification(
-                            "You are already viewing that room.",
-                            PopupKind::Info,
-                            Some(4.0),
-                        );
-                        return true;
-                    }
-                    if let Some(room_name_id) = cx.get_global::<RoomsListRef>().get_room_name(room_id) {
-                        cx.action(AppStateAction::NavigateToRoom {
-                            room_to_close: None,
-                            destination_room: BasicRoomDetails::Name(room_name_id),
-                        });
-                        return true;
-                    } else {
-                        log!("TODO: fetch and display room preview for room {}", room_id);
-                    }
-                    false
-                }
-                MatrixId::RoomAlias(room_alias) => {
-                    log!("TODO: open room alias {}", room_alias);
-                    // TODO: open a room loading screen that shows a spinner
-                    //       while our background async task calls Client::resolve_room_alias()
-                    //       and then either jumps to the room if known, or fetches and displays
-                    //       a room preview for that room.
-                    false
-                }
-                MatrixId::Event(room_id, event_id) => {
-                    log!("TODO: open event {} in room {}", event_id, room_id);
-                    // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                    //       but then we need to call Room::event_with_context() to get the event
-                    //       and its context (surrounding events ?).
-                    false
-                }
-                _ => false,
-            }
+        let (url, matrix_id) = if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+            let matrix_id = utils::parse_matrix_link(&url).map(|(matrix_id, _via)| matrix_id);
+            (url, matrix_id)
+        } else if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, .. } = action.as_widget_action().cast() {
+            (url, Some(matrix_id))
+        } else {
+            return false;
         };
 
-        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-            let mut link_was_handled = false;
-            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                link_was_handled |= handle_matrix_link(matrix_to_uri.id(), matrix_to_uri.via());
+        let (room_or_alias_id, event_id) = match matrix_id {
+            Some(MatrixId::Room(room_id)) => (room_id.into(), None),
+            Some(MatrixId::RoomAlias(alias)) => (alias.into(), None),
+            Some(MatrixId::Event(room_or_alias_id, event_id)) => (room_or_alias_id, Some(event_id)),
+            Some(MatrixId::User(user_id)) => {
+                let Some(room_name_id) = self.room_name_id.as_ref() else {
+                    utils::open_url(&url);
+                    return true;
+                };
+                // There is no synchronous way to get the user's full profile info
+                // including the details of their room membership,
+                // so we fill in with the details we *do* know currently
+                // and then show the UserProfileSlidingPane immediately.
+                // Then, the UserProfileSlidingPane itself will fire off an async request
+                // to get the rest of the details.
+                self.show_user_profile(
+                    cx,
+                    pane,
+                    UserProfilePaneInfo {
+                        profile_and_room_id: UserProfileAndRoomId {
+                            user_profile: UserProfile {
+                                user_id,
+                                username: None,
+                                avatar_state: AvatarState::Unknown,
+                            },
+                            room_id: room_name_id.room_id().clone(),
+                        },
+                        room_name: room_name_id.to_string(),
+                        room_member: None,
+                    },
+                );
+                return true;
             }
-            else if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                link_was_handled |= handle_matrix_link(matrix_uri.id(), matrix_uri.via());
+            _ => {
+                utils::open_url(&url);
+                return true;
             }
+        };
+        let link = RoomLink { room_or_alias_id, event_id, url };
 
-            if !link_was_handled {
-                log!("Opening URL \"{}\"", url);
-                if let Err(e) = robius_open::Uri::new(&url).open() {
-                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification(
-                        format!("Could not open URL: {url}"),
-                        PopupKind::Error,
-                        Some(10.0),
-                    );
-                }
+        // Fast path: first check the rooms list to see if we already know the room.
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        let known_room = match <&RoomId>::try_from(&*link.room_or_alias_id) {
+            Ok(room_id) => rooms_list_ref.get_room_name(&room_id.to_owned()),
+            Err(alias) => rooms_list_ref.get_room_name_by_alias(alias),
+        };
+        let known_room_state = known_room.as_ref().and_then(|rn| rooms_list_ref.get_room_state(rn.room_id()));
+        let destination = match (&known_room, known_room_state, &link.event_id) {
+            (Some(room_name_id), Some(RoomState::Invited), _) => Some(RoomLinkDestination::Invite(room_name_id.clone())),
+            (Some(room_name_id), Some(RoomState::Joined), None) => Some(RoomLinkDestination::Timeline {
+                room_name_id: room_name_id.clone(),
+                timeline_kind: TimelineKind::MainRoom { room_id: room_name_id.room_id().clone() },
+            }),
+            (Some(room_name_id), Some(RoomState::Joined), Some(event_id)) => self.tl_state.as_ref()
+                .filter(|tl| tl.kind.room_id() == room_name_id.room_id()
+                    && index_of_event(&tl.items, event_id, tl.items.len(), MAX_ITEMS_TO_SEARCH_THROUGH).is_some()
+                )
+                .map(|tl| RoomLinkDestination::Timeline { room_name_id: room_name_id.clone(), timeline_kind: tl.kind.clone() }),
+            _ => None,
+        };
+        match destination {
+            Some(destination) => self.show_link_destination(cx, &link, &destination, loading_pane, portal_list),
+            None => {
+                loading_pane.start_resolving_link(cx, link.clone());
+                submit_async_request(MatrixRequest::ResolveRoomLink {
+                    link,
+                    known_room_id: known_room.map(|rn| rn.room_id().clone()),
+                });
+                self.redraw(cx);
             }
-            true
         }
-        else if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, via, .. } = action.as_widget_action().cast() {
-            let link_was_handled = handle_matrix_link(&matrix_id, &via);
-            if !link_was_handled {
-                log!("Opening URL \"{}\"", url);
-                if let Err(e) = robius_open::Uri::new(&url).open() {
-                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification(
-                        format!("Could not open URL: {url}"),
-                        PopupKind::Error,
-                        Some(10.0),
-                    );
+        true
+    }
+
+    /// Returns `true` if this RoomScreen's timeline shows the given event from the given timeline.
+    fn is_event_in_this_timeline(&self, timeline_kind: &TimelineKind, event_id: &OwnedEventId) -> bool {
+        // A thread's timeline also includes its root message.
+        self.tl_state.as_ref().is_some_and(|tl|
+            &tl.kind == timeline_kind || tl.kind.thread_root_event_id() == Some(event_id)
+        )
+    }
+
+    /// Shows the given destination of a clicked link to a room, space, or event.
+    fn show_link_destination(
+        &mut self,
+        cx: &mut Cx,
+        link: &RoomLink,
+        destination: &RoomLinkDestination,
+        loading_pane: &LoadingPaneRef,
+        portal_list: &PortalListRef,
+    ) {
+        let (room_name_id, navigation) = match destination {
+            RoomLinkDestination::Timeline { room_name_id, timeline_kind } => match &link.event_id {
+                Some(event_id) => {
+                    let description = String::from("the linked message");
+                    if self.is_event_in_this_timeline(timeline_kind, event_id) {
+                        self.jump_to_event(cx, event_id, None, description, portal_list, loading_pane);
+                        return;
+                    }
+                    (room_name_id, NavigateToLinkAction::Event {
+                        room_name_id: room_name_id.clone(),
+                        timeline_kind: timeline_kind.clone(),
+                        event_id: event_id.clone(),
+                        description,
+                    })
                 }
+                None if self.timeline_kind.as_ref() == Some(timeline_kind) => {
+                    enqueue_popup_notification(
+                        "You are already viewing that room.",
+                        PopupKind::Info,
+                        Some(4.0),
+                    );
+                    return;
+                }
+                None => (room_name_id, NavigateToLinkAction::Screen(room_pane::timeline_screen(room_name_id, timeline_kind))),
+            },
+            RoomLinkDestination::Space(space_name_id) => (
+                space_name_id,
+                NavigateToLinkAction::Screen(SelectedRoom::Space { space_name_id: space_name_id.clone() }),
+            ),
+            RoomLinkDestination::Invite(room_name_id) => (
+                room_name_id,
+                NavigateToLinkAction::Screen(SelectedRoom::InvitedRoom { room_name_id: room_name_id.clone() }),
+            ),
+            RoomLinkDestination::NotJoined => {
+                cx.action(NavigationBarAction::GoToAddRoom { search_for: Some(link.url.clone()) });
+                return;
             }
-            true
-        }
-        else {
-            false
-        }
+        };
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(room_name_id.room_id().clone()));
+        cx.action(navigation);
     }
 
     /// Handles image clicks in message content by opening the image viewer.
@@ -3003,7 +3048,7 @@ impl RoomScreen {
         let room_id = kind.room_id().clone();
         let owner = self.widget_uid();
 
-        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_state_store::take(cx, &kind, owner) {
+        let (mut tl_state, is_new_tl_state) = match timeline_state_store::take(cx, &kind, owner) {
             timeline_state_store::TakeResult::Taken(existing) => (existing, false),
             timeline_state_store::TakeResult::AlreadyTaken { owner: current_owner } => {
                 error!("RoomScreen::show_timeline(): timeline {kind} is already taken by widget {current_owner:?}");
@@ -3082,6 +3127,7 @@ impl RoomScreen {
                 (tl_state, true)
             }
         };
+        let mut is_first_time_being_loaded = is_new_tl_state;
 
         // It is possible that this room has already been loaded (received from the server)
         // but that the RoomsList doesn't yet know about it.
@@ -3176,7 +3222,9 @@ impl RoomScreen {
         // Kick off a back pagination request if it's the first time loading this room, so the user
         // sees some messages asap. This comes after processing updates in case the rooms list already sent
         // one for this room, since that request's `PaginationCompleted` would make us think ours was done too.
-        if is_first_time_being_loaded
+        //
+        // If it's NOT the first time loading this room, don't paginate, since that'll mess up our indices.
+        if is_new_tl_state
             && let Some(tl) = self.tl_state.as_mut()
             && !tl.backwards_pagination.is_fully_paginated()
             && !tl.backwards_pagination.is_loading()
@@ -5912,6 +5960,59 @@ pub enum InviteResultAction {
 }
 
 
+/// A clicked link to a room, or space, or an event within a room.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomLink {
+    pub room_or_alias_id: OwnedRoomOrAliasId,
+    pub event_id: Option<OwnedEventId>,
+    /// The full link, which the AddRoom screen can show and search for.
+    pub url: String,
+}
+
+/// The screen that should show the room, space, or event that a [`RoomLink`] points to.
+#[derive(Debug)]
+pub enum RoomLinkDestination {
+    /// A joined room's timeline, which also contains the linked event, if there is one.
+    Timeline {
+        room_name_id: RoomNameId,
+        timeline_kind: TimelineKind,
+    },
+    /// A joined space's lobby.
+    Space(RoomNameId),
+    /// The invite to a room or space.
+    Invite(RoomNameId),
+    /// A room or space that the user hasn't joined, so show it in the AddRoom screen.
+    NotJoined,
+}
+
+/// The result of a [`MatrixRequest::ResolveRoomLink`] request.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub struct RoomLinkResolved {
+    pub link: RoomLink,
+    /// The resolved link's destination, or an error message if it couldn't be resolved.
+    pub result: Result<RoomLinkDestination, String>,
+}
+
+/// A request to show the room, space, or event that a clicked link leads to.
+///
+/// This is NOT a widget action, and is handled by `MainDesktopUI` or the mobile `HomeScreen`.
+#[derive(Debug)]
+pub enum NavigateToLinkAction {
+    /// Show the given room, space, thread, or invite screen.
+    Screen(SelectedRoom),
+    /// Show the given timeline, and then jump to the given event in it.
+    Event {
+        room_name_id: RoomNameId,
+        timeline_kind: TimelineKind,
+        event_id: OwnedEventId,
+        /// How to describe this event to the user while searching for it.
+        description: String,
+    },
+}
+
+
 /// Actions related to a specific message within a room timeline.
 #[derive(Clone, Default, Debug)]
 pub enum MessageAction {
@@ -6223,7 +6324,9 @@ impl Widget for Message {
 
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                     MessageAction::HighlightMessage(id) if id == &self.details.as_ref().unwrap().item_id => { // guaranteed to be Some()
-                        self.animator_play(cx, ids!(highlight.on));
+                        // Always start the highlight animation sequence from the beginning.
+                        self.animator_cut(cx, ids!(highlight.off)); // stop it first
+                        self.animator_play(cx, ids!(highlight.on)); // then start it over
                         self.redraw(cx);
                         continue;
                     }
@@ -6281,6 +6384,9 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.animator.is_animating() {
+            self.animator.next_frame = cx.new_next_frame();
+        }
         if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             script_apply_eval!(cx, self, {
                 draw_bg +: {
@@ -6371,6 +6477,7 @@ impl Message {
             self.is_context_menu_open = false;
             self.pressed_touch_uid = None;
             self.animator_cut(cx, ids!(bg_hover.off));
+            self.animator_cut(cx, ids!(highlight.off));
         }
 
         self.details = Some(details);

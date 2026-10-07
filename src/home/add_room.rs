@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::RoomState;
-use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServerName, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
+use ruma::{IdParseError, OwnedRoomOrAliasId, OwnedServerName, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
 
 use crate::{app::AppStateAction, home::invite_screen::JoinRoomResultAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils};
 
@@ -271,7 +271,6 @@ enum AddRoomState {
     /// We're now waiting for the room preview to be fetched and returned.
     Parsed {
         room_or_alias_id: OwnedRoomOrAliasId,
-        via: Vec<OwnedServerName>,
     },
     /// The user entered invalid input that we couldn't parse into a room address.
     ParseError(String),
@@ -280,7 +279,6 @@ enum AddRoomState {
     FetchedRoomPreview {
         frp: FetchedRoomPreview,
         room_or_alias_id: OwnedRoomOrAliasId,
-        via: Vec<OwnedServerName>,
     },
     /// We failed to fetch the room preview, likely because it couldn't be found
     /// or because of connectivity issues or something else.
@@ -383,7 +381,7 @@ impl Widget for AddRoomScreen {
                     }
                     (
                         JoinButtonFunction::Knock,
-                        AddRoomState::FetchedRoomPreview { frp, room_or_alias_id, via }
+                        AddRoomState::FetchedRoomPreview { frp, room_or_alias_id }
                     ) => {
                         submit_async_request(MatrixRequest::Knock {
                             room_or_alias_id: frp.canonical_alias.clone().map_or_else(
@@ -391,7 +389,7 @@ impl Widget for AddRoomScreen {
                                 Into::into
                             ),
                             reason: None,
-                            server_names: via.clone(),
+                            server_names: frp.via.clone(),
                         });
                     }
                     _ => { }
@@ -403,44 +401,21 @@ impl Widget for AddRoomScreen {
                 .then(|| room_alias_id_input.text())
                 .or_else(|| room_alias_id_input.returned(actions).map(|(t, _)| t));
             if let Some(t) = new_room_query {
-                match parse_address(t.trim()) {
-                    Ok((room_or_alias_id, via)) => {
-                        self.state = AddRoomState::Parsed {
-                            room_or_alias_id: room_or_alias_id.clone(),
-                            via: via.clone(),
-                        };
-                        submit_async_request(MatrixRequest::GetRoomPreview {
-                            room_or_alias_id,
-                            via,
-                            response_mode: RoomPreviewResponseMode::Action,
-                        });
-                    }
-                    Err(e) => {
-                        let err_str = format!("Could not parse the text as a valid room address.\nError: {e}.");
-                        enqueue_popup_notification(
-                            err_str.clone(),
-                            PopupKind::Error,
-                            None,
-                        );
-                        self.state = AddRoomState::ParseError(err_str);
-                        room_alias_id_input.set_key_focus(cx);
-                    }
-                }
-                self.redraw(cx);
+                self.search_for_room(cx, &t);
             }
 
             // If we're waiting for the room preview to be fetched (i.e., in the Parsed state),
             // then check if we've received it via an action.
-            if let AddRoomState::Parsed { room_or_alias_id, via } = &self.state {
+            if let AddRoomState::Parsed { room_or_alias_id } = &self.state {
                 for action in actions {
                     match action.downcast_ref() {
-                        Some(RoomPreviewAction::Fetched(Ok(frp))) => {
+                        Some(RoomPreviewAction::Fetched { room_or_alias_id: fetched_id, result: Ok(frp) })
+                            if fetched_id == room_or_alias_id =>
+                        {
                             let room_or_alias_id = room_or_alias_id.clone();
-                            let via = via.clone();
                             self.state = AddRoomState::FetchedRoomPreview {
                                 frp: frp.clone(),
                                 room_or_alias_id,
-                                via,
                             };
                             // Reset the buttons' hover states when they are first shown.
                             join_room_button.reset_hover(cx);
@@ -448,7 +423,9 @@ impl Widget for AddRoomScreen {
                             self.redraw(cx);
                             break;
                         }
-                        Some(RoomPreviewAction::Fetched(Err(e))) => {
+                        Some(RoomPreviewAction::Fetched { room_or_alias_id: fetched_id, result: Err(e) })
+                            if fetched_id == room_or_alias_id =>
+                        {
                             let err_str = format!("Failed to fetch room info.\n\nError: {e}.");
                             enqueue_popup_notification(
                                 err_str.clone(),
@@ -745,6 +722,45 @@ impl Widget for AddRoomScreen {
     }
 }
 
+impl AddRoomScreen {
+    /// Parses the given room address and starts fetching a preview of that room or space.
+    fn search_for_room(&mut self, cx: &mut Cx, address: &str) {
+        match parse_address(address.trim()) {
+            Ok((room_or_alias_id, via)) => {
+                self.state = AddRoomState::Parsed {
+                    room_or_alias_id: room_or_alias_id.clone(),
+                };
+                submit_async_request(MatrixRequest::GetRoomPreview {
+                    room_or_alias_id,
+                    via,
+                    response_mode: RoomPreviewResponseMode::Action,
+                });
+            }
+            Err(e) => {
+                let err_str = format!("Could not parse the text as a valid room address.\nError: {e}.");
+                enqueue_popup_notification(
+                    err_str.clone(),
+                    PopupKind::Error,
+                    None,
+                );
+                self.state = AddRoomState::ParseError(err_str);
+                self.view.text_input(cx, ids!(room_alias_id_input)).set_key_focus(cx);
+            }
+        }
+        self.redraw(cx);
+    }
+}
+
+impl AddRoomScreenRef {
+    /// Fills in the address input with the given room address and searches for it.
+    pub fn search_for_room(&self, cx: &mut Cx, address: &str) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.view.text_input(cx, ids!(room_alias_id_input)).set_text(cx, address);
+        inner.view.button(cx, ids!(search_for_room_button)).set_enabled(cx, true);
+        inner.search_for_room(cx, address);
+    }
+}
+
 
 /// The function to perform when the user clicks the join button in the fetched room preview.
 enum JoinButtonFunction {
@@ -786,11 +802,7 @@ fn parse_address(text: &str) -> Result<(OwnedRoomOrAliasId, Vec<OwnedServerName>
     match OwnedRoomOrAliasId::try_from(text) {
         Ok(room_or_alias_id) => Ok((room_or_alias_id, Vec::new())),
         Err(e) => {
-            let uri_result = MatrixToUri::parse(text)
-                .map(|uri| (uri.id().clone(), uri.via().to_owned()))
-                .or_else(|_| MatrixUri::parse(text).map(|uri| (uri.id().clone(), uri.via().to_owned())));
-            
-            if let Ok((matrix_id, via)) = uri_result {
+            if let Some((matrix_id, via)) = utils::parse_matrix_link(text) {
                 if let Some(room_or_alias_id) = match matrix_id {
                     MatrixId::Room(room_id) => Some(room_id.into()),
                     MatrixId::RoomAlias(alias) => Some(alias.into()),
