@@ -15,6 +15,7 @@ use crate::home::room_image_viewer::ImageViewerFetchAction;
 
 use crate::utils::format_decimal_file_size;
 use thiserror::Error;
+use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, pinch_zoom::{PinchZoom, ReleasedPress}, timestamp::TimestampWidgetRefExt},
     sliding_sync::TimelineKind,
@@ -28,6 +29,11 @@ const ROTATION_ANIMATION_DURATION_SECS: f64 = 0.2;
 
 /// How much each press of a zoom button or a zoom key zooms in or out by.
 const ZOOM_STEP: f64 = 1.2;
+
+/// The layout of the button group, which we use to tell how many buttons fit on each row.
+const BUTTON_SIZE: f64 = 44.0;
+const BUTTON_SPACING: f64 = 10.0;
+const BUTTON_GROUP_PADDING: f64 = 7.0;
 
 /// Error types for image loading operations
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -58,7 +64,8 @@ script_mod! {
 
     mod.widgets.ImageViewerButton = RobrixNeutralIconButton {
 
-        width: 44, height: 44
+        width: #(BUTTON_SIZE), height: #(BUTTON_SIZE)
+        margin: 0
         align: Align{x: 0.5, y: 0.5},
         spacing: 0,
         padding: 0,
@@ -72,6 +79,18 @@ script_mod! {
             color: #000
         }
         icon_walk: Walk{width: 27, height: 27}
+    }
+
+    mod.widgets.ImageNameAndSizeLabel = #(ImageNameAndSizeLabel::register_widget(vm)) {
+        ..mod.widgets.Label
+        width: Fill, height: Fit
+        padding: 0
+        max_lines: 2
+        text_overflow: Ellipsis
+        draw_text +: {
+            text_style: REGULAR_TEXT {font_size: 12},
+            color: (COLOR_TEXT),
+        }
     }
 
     mod.widgets.ImageViewer = set_type_default() do #(ImageViewer::register_widget(vm)) {
@@ -191,12 +210,11 @@ script_mod! {
                     }
                 }
 
-                username_label_view := View {
-                    width: Fill{weight: 0.35},
-                    // width: Fill,
-                    height: Fit,
-                    flow: Right,
-                    align: Align{ y: 0.5 }
+                info_view := View {
+                    width: Fill, height: Fit
+                    flow: Down
+                    align: Align{x: 0.0, y: 0.5}
+                    spacing: 4
 
                     username := Label {
                         width: Fill,
@@ -204,34 +222,15 @@ script_mod! {
                         padding: 0
                         margin: 0
                         flow: Flow.Right{wrap: true}
-                        max_lines: 2
+                        max_lines: 1
                         text_overflow: Ellipsis
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 12},
                             color: (COLOR_TEXT)
                         }
                     }
-                }
 
-                // Display image name and size below the username when the width is not enough.
-                image_name_and_size_view := View {
-                    width: Fill{weight: 0.65},
-                    // width: Fill
-                    height: Fit,
-                    align: Align{x: 0, y: 0.5}
-                    flow: Right
-                    image_name_and_size := Label {
-                        width: Fill,
-                        height: Fit,
-                        align: Align{x: 0, y: 0.5}
-                        flow: Flow.Right{wrap: true}
-                        max_lines: 2
-                        text_overflow: Ellipsis
-                        draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: 13},
-                            color: (COLOR_TEXT),
-                        }
-                    }
+                    image_name_and_size := mod.widgets.ImageNameAndSizeLabel {}
                 }
             }
         }
@@ -240,18 +239,23 @@ script_mod! {
             width: Fill, height: Fit
             flow: Right
             // Placeholder, see `metadata_view` above.
-            margin: Inset{top: 20, right: 20}
-            align: Align{x: 1.0, y: 0.5},
+            margin: Inset{top: 20, left: 20, right: 20}
+            align: Align{x: 0.5, y: 0.5},
 
             button_group_rounded_view := RoundedView {
                 width: Fit, height: Fit
-                spacing: 10
+                // A Fit width never wraps, so `draw_walk` gives this a fixed width
+                // when the buttons don't all fit on one row.
+                flow: Flow.Right{wrap: true}
+                align: Align{x: 0.5}
+                spacing: #(BUTTON_SPACING)
+                wrap_spacing: #(BUTTON_SPACING)
                 show_bg: true
                 draw_bg +: {
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND),
                     border_radius: 4.0
                 }
-                padding: Inset{ left: 7, top: 4, bottom: 4, right: 7}
+                padding: #(BUTTON_GROUP_PADDING)
 
                 zoom_out_button := mod.widgets.ImageViewerButton {
                     draw_icon +: { svg: (ICON_ZOOM_OUT) }
@@ -644,6 +648,7 @@ impl Widget for ImageViewer {
         let slide = self.ui_overlay_slide as f64;
         let insets = cx.display_context.safe_area_insets;
         let button_top_visible = 20.0_f64.max(insets.top);
+        let button_left         = 20.0_f64.max(insets.left);
         let button_right        = 20.0_f64.max(insets.right);
         let meta_top            = 20.0_f64.max(insets.top);
         let meta_left           = 20.0_f64.max(insets.left);
@@ -653,7 +658,21 @@ impl Widget for ImageViewer {
         let meta_bottom = meta_bottom_visible - (slide * 320.0); // visible → -300
         if let Some(mut button_group_view) = self.view(cx, ids!(button_group_view)).borrow_mut() {
             button_group_view.walk.margin.top = button_top;
+            button_group_view.walk.margin.left = button_left;
             button_group_view.walk.margin.right = button_right;
+        }
+        // Wrap the buttons onto more rows if they don't all fit on one.
+        let max_group_width = self.image_container_size.x - button_left - button_right;
+        let buttons_per_row = ((max_group_width - 2.0 * BUTTON_GROUP_PADDING + BUTTON_SPACING)
+            / (BUTTON_SIZE + BUTTON_SPACING)).floor();
+        if let Some(mut button_group_rounded_view) = self.view(cx, ids!(button_group_rounded_view)).borrow_mut() {
+            let button_count = button_group_rounded_view.children.iter().filter(|(_, button)| button.visible()).count() as f64;
+            button_group_rounded_view.walk.width = if buttons_per_row >= 1.0 && button_count > buttons_per_row {
+                // The extra 0.01 keeps float rounding from wrapping a row's last button early.
+                Size::Fixed(buttons_per_row * (BUTTON_SIZE + BUTTON_SPACING) - BUTTON_SPACING + 2.0 * BUTTON_GROUP_PADDING + 0.01)
+            } else {
+                Size::fit()
+            };
         }
         if let Some(mut metadata_view) = self.view(cx, ids!(metadata_view)).borrow_mut() {
             metadata_view.walk.margin = Inset {
@@ -1040,15 +1059,12 @@ impl ImageViewer {
 
     /// Sets the metadata view in the image viewer with the provided metadata.
     ///
-    /// The image_name_and_size and username labels handle their own overflow
-    /// via `max_lines: 2` + `text_overflow: Ellipsis` in the layout.
+    /// The image_name_and_size and username labels handle their own overflow.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
         let meta_view = self.view.view(cx, ids!(metadata_view));
-        let human_readable_size = format_decimal_file_size(metadata.image_file_size);
-        let display_text = format!("{} ({})", metadata.image_name, human_readable_size);
         meta_view
-            .label(cx, ids!(image_name_and_size))
-            .set_text(cx, &display_text);
+            .image_name_and_size_label(cx, ids!(info_view.image_name_and_size))
+            .set_name_and_size(cx, &metadata.image_name, metadata.image_file_size);
         if let Some(timestamp) = metadata.timestamp {
             meta_view
                 .timestamp(cx, ids!(avatar_timestamp_view.timestamp))
@@ -1070,7 +1086,7 @@ impl ImageViewer {
                 false,
             );
             meta_view
-                .label(cx, ids!(username_label_view.username))
+                .label(cx, ids!(info_view.username))
                 .set_text(cx, &sender);
         }
     }
@@ -1103,4 +1119,56 @@ pub struct ImageViewerMetaData {
     pub image_file_size: u64,
     /// When `Some`, the overlay's download button is shown.
     pub downloadable: Option<DownloadableAttachment>,
+}
+
+/// A label showing an image's name and size, which cuts off the end of the name
+/// (never the size) so that both fit within the label's `max_lines`.
+#[derive(Script, ScriptHook, Widget)]
+struct ImageNameAndSizeLabel {
+    #[source] source: ScriptObjectRef,
+    #[deref] label: Label,
+    #[rust] name: String,
+    #[rust] human_readable_size: String,
+    #[rust] fitted_width: Option<f64>,
+}
+
+impl Widget for ImageNameAndSizeLabel {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let width = cx.peek_walk_turtle(walk).size.x;
+        if self.fitted_width != Some(width) {
+            self.fitted_width = Some(width);
+            // Label only copies these into its draw_text when it draws, so we do it now to measure like it will.
+            self.label.draw_text.max_lines = self.label.max_lines;
+            self.label.draw_text.text_overflow = self.label.text_overflow;
+            let label = &self.label;
+            let scale = (label.draw_text.font_scale as f64).max(0.0001);
+            let mut fits = |text: &str| {
+                !label.draw_text.layout(cx, 0.0, 0.0, Some((width / scale) as f32), true, label.align, text).is_truncated
+            };
+            let mut text = format!("{} ({})", self.name, self.human_readable_size);
+            if !fits(&text) {
+                // Binary search for the longest start of the name that fits with "…" and the size after it.
+                let shorten_name_at = |end_byte: usize| format!("{}… ({})", self.name[..end_byte].trim_end(), self.human_readable_size);
+                let grapheme_start_bytes: Vec<usize> = self.name.grapheme_indices(true).map(|(start, _)| start).collect();
+                let (mut low, mut high) = (0, grapheme_start_bytes.len());
+                while high - low > 1 {
+                    let mid = (low + high) / 2;
+                    if fits(&shorten_name_at(grapheme_start_bytes[mid])) { low = mid } else { high = mid }
+                }
+                text = shorten_name_at(grapheme_start_bytes.get(low).copied().unwrap_or(0));
+            }
+            self.label.set_text(cx, &text);
+        }
+        self.label.draw_walk(cx, scope, walk)
+    }
+}
+
+impl ImageNameAndSizeLabelRef {
+    pub fn set_name_and_size(&self, cx: &mut Cx, name: &str, size_in_bytes: u64) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.name = name.to_string();
+        inner.human_readable_size = format_decimal_file_size(size_in_bytes);
+        inner.fitted_width = None;
+        inner.redraw(cx);
+    }
 }
