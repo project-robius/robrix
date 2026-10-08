@@ -49,7 +49,7 @@ const DOUBLE_TAP_ZOOM: f64 = 2.0;
 const MAX_UNDERZOOM_PERCENT: f64 = 40.0;
 /// How close an edge of the content can be moved to the opposite edge of the viewport,
 /// as a fraction of the viewport's width or height.
-const PAN_PADDING_FRACTION: f64 = 0.25;
+const PAN_PADDING_FRACTION: f64 = 0.5;
 /// How far a held double tap has to be dragged down (or up) to double (or halve) the zoom, in points.
 const ONE_FINGER_ZOOM_DOUBLING_DISTANCE: f64 = 200.0;
 
