@@ -1,7 +1,7 @@
-use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}};
+use std::{ops::{Deref, DerefMut}, path::PathBuf, sync::{Arc, Mutex}};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use makepad_widgets::{error, SignalToUI};
-use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
+use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, MxcUri, OwnedMxcUri}, Error, HttpError};
 use matrix_sdk::reqwest::StatusCode;
 use crate::{home::room_screen::TimelineUpdate, shared::attachment_download::media_source_mxc, sliding_sync::{self, MatrixRequest}};
 
@@ -204,6 +204,29 @@ impl MediaCache {
         });
     }
 
+    /// Returns the image cache keys of all of the media in this cache (see [`get_image_cache_key()`]).
+    pub fn get_image_cache_keys(&self) -> Vec<PathBuf> {
+        self.cache.iter()
+            .flat_map(|(mxc_uri, value)| {
+                let full_file_key = value.full_file.as_ref()
+                    .map(|_| get_image_cache_key(mxc_uri, &MediaFormat::File));
+                let thumbnail_key = value.thumbnail.as_ref()
+                    .map(|(_, settings)| get_image_cache_key(mxc_uri, &MediaFormat::Thumbnail(settings.clone())));
+                full_file_key.into_iter().chain(thumbnail_key)
+            })
+            .collect()
+    }
+}
+
+/// Returns the key in the makepad image cache for the media identified by the given MxcUri and format.
+pub fn get_image_cache_key(mxc_uri: &MxcUri, media_format: &MediaFormat) -> PathBuf {
+    // Include the file type (full or thumbnail) in the cache key to disambiguate.
+    let variant = match media_format {
+        MediaFormat::File => "full",
+        MediaFormat::Thumbnail(settings) if settings.animated => "animated_thumb",
+        MediaFormat::Thumbnail(_) => "thumb",
+    };
+    PathBuf::from(format!("{mxc_uri}#{variant}"))
 }
 
 /// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.

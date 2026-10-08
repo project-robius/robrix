@@ -14,8 +14,8 @@ version = "1.0.0-beta.2"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "text_input_keep_focus_robrix", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "text_input_keep_focus_robrix" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "image_memory_robrix", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "image_memory_robrix" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
