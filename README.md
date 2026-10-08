@@ -51,8 +51,6 @@ The following table shows which host systems can currently be used to build Robr
 
 
 ## Known issues
- - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
-
 
 > [!IMPORTANT]
 > Robrix only works with Matrix homeservers that support native Sliding Sync, just like other modern clients (e.g., Element X).
@@ -314,7 +312,6 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Show reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [x] Edit existing messages
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 
 
 
@@ -329,8 +326,9 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Mention users within a room (or the whole `@room`): https://github.com/project-robius/robrix/issues/452
 - [x] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
 - [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
-- [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
-- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
+- [x] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
+- [ ] Display multimedia (audio/video) messages: https://github.com/project-robius/robrix/issues/120
+- [x] Display animated image/gif formats: https://github.com/project-robius/robrix/issues/1133
 - [x] User settings screen
 - [x] Dedicated view of spaces: https://github.com/project-robius/robrix/pull/636
 - [x] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81, https://github.com/project-robius/robrix/pull/585
@@ -345,7 +343,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] List of members within a room (https://github.com/project-robius/robrix/pull/1094)
 - [x] List of pinned messages within a room (https://github.com/project-robius/robrix/pull/1096)
 - [x] List of threads within a room (https://github.com/project-robius/robrix/pull/1101)
-- [ ] Administrative abilities: ban, kick, etc
+- [ ] Administrative abilities: ban, kick, mass delete messages, etc
 - [x] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
 
