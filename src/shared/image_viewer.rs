@@ -364,7 +364,7 @@ script_mod! {
 
                 rotate_cw_button := mod.widgets.ImageViewerButton {
                     width: Fill{max: 50}
-                    draw_icon +: { svg: (ICON_ROTATE_CW) }
+                    draw_icon +: { svg: (ICON_ROTATE_CW_THIN) }
                     icon_walk: Walk{width: 30, height: 30, margin: Inset{left: 2}}
                 }
 
@@ -440,19 +440,19 @@ script_mod! {
 
                 download_button := mod.widgets.ImageViewerButton {
                     width: Fill{max: 50}
-                    draw_icon +: { svg: (ICON_DOWNLOAD) }
+                    draw_icon +: { svg: (ICON_DOWNLOAD_THIN) }
                     icon_walk: Walk{width: 24, height: 24}
                 }
 
                 share_button := mod.widgets.ImageViewerButton {
                     width: Fill{max: 50}
-                    draw_icon +: { svg: (ICON_SHARE) }
+                    draw_icon +: { svg: (ICON_SHARE_THIN) }
                     icon_walk: Walk{width: 24, height: 24}
                 }
 
                 close_button := mod.widgets.ImageViewerButton {
                     width: Fill{max: 50}
-                    draw_icon +: { svg: (ICON_CLOSE) }
+                    draw_icon +: { svg: (ICON_CLOSE_THIN) }
                     icon_walk: Walk{width: 21, height: 21 }
                 }
             }
