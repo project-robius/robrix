@@ -228,7 +228,7 @@ script_mod! {
 
     mod.widgets.COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
 
-    mod.widgets.COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
+    mod.widgets.COLOR_IMAGE_VIEWER_META_BACKGROUND = #18181BCC
 
     // Ensure all settings buttons have a consistent height
     mod.widgets.SETTINGS_BUTTON_HEIGHT = 40

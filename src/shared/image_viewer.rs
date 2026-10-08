@@ -13,10 +13,10 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use crate::home::room_image_viewer::ImageViewerFetchAction;
 
-use crate::utils::format_decimal_file_size;
+use crate::utils::{self, format_decimal_file_size};
 use thiserror::Error;
 use crate::{
-    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, pinch_zoom::{PinchZoom, ReleasedPress}, timestamp::TimestampWidgetRefExt},
+    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, pinch_zoom::{PinchZoom, ReleasedPress}, timestamp::TimestampWidgetExt},
     sliding_sync::TimelineKind,
 };
 
@@ -28,6 +28,22 @@ const ROTATION_ANIMATION_DURATION_SECS: f64 = 0.2;
 
 /// How much each press of a zoom button or a zoom key zooms in or out by.
 const ZOOM_STEP: f64 = 1.2;
+
+/// The layout of the button groups and the sender info, which `draw_walk` uses to fit the top bar.
+const BUTTON_SIZE: f64 = 44.0;
+const MIN_BUTTON_SLOT_WIDTH: f64 = 52.0;
+const BUTTON_SLOT_WIDTH: f64 = 67.0;
+const BUTTON_GROUP_PADDING: f64 = 4.0;
+const TOP_BAR_SPACING: f64 = 8.0;
+const AVATAR_SIZE: f64 = 36.0;
+const SENDER_SPACING: f64 = 10.0;
+const SENDER_PADDING: f64 = 8.0;
+const SENDER_PADDING_RIGHT: f64 = 16.0;
+
+/// Whether the overlay's rounded views show a blurred copy of the image behind them.
+const BLUR_BEHIND_ROUNDED_VIEWS: bool = true;
+/// The longest side of that blurred copy, in pixels. Smaller means blurrier.
+const BLUR_TEXTURE_SIZE: usize = 24;
 
 /// Error types for image loading operations
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -56,22 +72,154 @@ script_mod! {
 
     mod.widgets.UI_ANIMATION_DURATION_SECS = 0.4
 
-    mod.widgets.ImageViewerButton = RobrixNeutralIconButton {
-
-        width: 44, height: 44
+    // A bare white icon that only shows a round highlight when hovered or pressed.
+    mod.widgets.ImageViewerButton = RobrixIconButton {
+        width: #(BUTTON_SIZE), height: #(BUTTON_SIZE)
+        margin: 0
         align: Align{x: 0.5, y: 0.5},
         spacing: 0,
         padding: 0,
         draw_bg +: {
-            color: (COLOR_SECONDARY * 0.925)
-            color_hover: (COLOR_SECONDARY * 0.825)
-            color_down: (COLOR_SECONDARY * 0.7)
+            border_radius: #(BUTTON_SIZE / 2.0)
+            color: #0000
+            color_hover: #FFFFFF26
+            color_down: #FFFFFF40
         }
         draw_icon +: {
             svg: (ICON_ZOOM_OUT),
-            color: #000
+            color: #FFF
         }
         icon_walk: Walk{width: 27, height: 27}
+    }
+
+    // A translucent dark box with rounded corners that floats over the image.
+    // When `draw_walk` gives it a blurred copy of the image, it shows that copy behind it like frosted glass.
+    mod.widgets.ImageViewerRoundedView = RoundedShadowView {
+        width: Fit, height: Fit
+        draw_bg +: {
+            color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
+            border_size: 1.0
+            border_color: #FFFFFF29
+            shadow_color: #00000047
+            shadow_radius: 24.0
+            shadow_offset: vec2(0.0, 8.0)
+
+            blur_texture: texture_2d(float)
+            has_blur: uniform(0.0)
+            // How much the box's own color covers the blurred image.
+            blur_tint_opacity: uniform(0.6)
+            // Where the image is on screen, matching the image's own shader.
+            image_center: uniform(vec2(0.0, 0.0))
+            image_size: uniform(vec2(1.0, 1.0))
+            image_rotation: uniform(0.0)
+
+            // Bicubic B-spline sampling, so the tiny blur texture doesn't show its pixel grid when stretched.
+            bicubic_h: fn(uv: vec2, size: vec2) -> vec4 {
+                let tc = uv * size - 0.5
+                let f = fract(tc)
+                let tc0 = floor(tc)
+                let f2 = f * f
+                let f3 = f2 * f
+                let omf = 1.0 - f
+                let w1 = (f3 * 3.0 - f2 * 6.0 + 4.0) / 6.0
+                let g0 = omf * omf * omf / 6.0 + w1
+                let h0 = clamp((tc0 - 0.5 + w1 / g0) / size, vec2(0.0, 0.0), vec2(1.0, 1.0))
+                let h1 = clamp((tc0 + 1.5 + (f3 / 6.0) / (1.0 - g0)) / size, vec2(0.0, 0.0), vec2(1.0, 1.0))
+                return vec4(h0.x, h0.y, h1.x, h1.y)
+            }
+
+            bicubic_g0: fn(uv: vec2, size: vec2) -> vec2 {
+                let f = fract(uv * size - 0.5)
+                let f2 = f * f
+                let omf = 1.0 - f
+                return omf * omf * omf / 6.0 + (f2 * f * 3.0 - f2 * 6.0 + 4.0) / 6.0
+            }
+
+            sample_blur: fn(uv: vec2) -> vec4 {
+                let size = max(self.blur_texture.size(), vec2(1.0, 1.0))
+                let h = self.bicubic_h(uv, size)
+                let g0 = self.bicubic_g0(uv, size)
+                let g1 = 1.0 - g0
+                return self.blur_texture.sample_as_bgra(vec2(h.x, h.y)) * (g0.x * g0.y)
+                    + self.blur_texture.sample_as_bgra(vec2(h.z, h.y)) * (g1.x * g0.y)
+                    + self.blur_texture.sample_as_bgra(vec2(h.x, h.w)) * (g0.x * g1.y)
+                    + self.blur_texture.sample_as_bgra(vec2(h.z, h.w)) * (g1.x * g1.y)
+            }
+
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size3)
+
+                let mut fill_color = self.color
+                if self.has_blur > 0.5 {
+                    // Find the image's pixel behind this one, the same way the image's shader does.
+                    let angle = self.image_rotation * 3.141592653589793 / 180.0
+                    let cos_a = cos(-angle)
+                    let sin_a = sin(-angle)
+                    let c = self.rect_pos2 + self.pos * self.rect_size3 - self.image_center
+                    let cr = vec2(c.x * cos_a - c.y * sin_a, c.x * sin_a + c.y * cos_a)
+                    let uv = cr / self.image_size + vec2(0.5, 0.5)
+                    let frosted = vec4(mix(self.sample_blur(clamp(uv, vec2(0.0, 0.0), vec2(1.0, 1.0))).xyz, self.color.xyz, self.blur_tint_opacity), 1.0)
+                    // Fade back to the plain box color just outside the image's edges.
+                    let edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y))
+                    fill_color = mix(self.color, frosted, smoothstep(-0.02, 0.02, edge))
+                }
+
+                sdf.box(
+                    self.sdf_rect_pos.x
+                    self.sdf_rect_pos.y
+                    self.sdf_rect_size.x
+                    self.sdf_rect_size.y
+                    max(1.0 self.border_radius)
+                )
+                if sdf.shape > -1.0 {
+                    let m = self.shadow_radius
+                    let o = self.shadow_offset + self.rect_shift
+                    let v = GaussShadow.rounded_box_shadow(vec2(m) + o self.rect_size2+o self.pos * (self.rect_size3+vec2(m)) self.shadow_radius*0.5 self.border_radius*2.0)
+                    sdf.clear(self.shadow_color * v)
+                }
+
+                sdf.fill_keep(fill_color)
+
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.border_color self.border_size)
+                }
+                return sdf.result
+            }
+        }
+    }
+
+    // An image's timestamp and size, which go on separate lines if they don't both fit on one.
+    mod.widgets.ImageTimestampAndSize = #(ImageTimestampAndSize::register_widget(vm)) {
+        ..mod.widgets.View
+        width: Fit, height: Fit
+        flow: Right
+        spacing: 4
+
+        timestamp := Timestamp {
+            ts_label +: {
+                draw_text +: {
+                    text_style: theme.font_regular {font_size: 9.5},
+                    color: #FFFFFFBF
+                }
+            }
+        }
+        separator := Label {
+            width: Fit, height: Fit
+            padding: 0
+            text: "·"
+            draw_text +: {
+                text_style: theme.font_regular {font_size: 9.5},
+                color: #FFFFFFBF
+            }
+        }
+        image_size := Label {
+            width: Fit, height: Fit
+            padding: 0
+            draw_text +: {
+                text_style: theme.font_regular {font_size: 9.5},
+                color: #FFFFFFBF
+            }
+        }
     }
 
     mod.widgets.ImageViewer = set_type_default() do #(ImageViewer::register_widget(vm)) {
@@ -114,7 +262,7 @@ script_mod! {
                     loading_spinner := LoadingSpinner {
                         width: 40, height: 40,
                         draw_bg +: {
-                            color: (COLOR_TEXT)
+                            color: #FFF
                             border_size: 3.0
                         }
                     }
@@ -126,7 +274,7 @@ script_mod! {
                     Icon {
                         draw_icon +: {
                             svg: (ICON_FORBIDDEN),
-                            color: (COLOR_TEXT),
+                            color: #FFF,
                         }
                         icon_walk: Walk{ width: 30, height: 30 }
                     }
@@ -138,152 +286,153 @@ script_mod! {
                     text: "Loading image...",
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 14},
-                        color: (COLOR_TEXT)
+                        color: #FFF
                     }
                 }
             }
         }
 
-        metadata_view := View {
+        bottom_bar_view := View {
             width: Fill, height: Fill,
             // placeholder values: real values are set in Rust code, see `draw_walk`.
             margin: Inset{top: 20, left: 20, right: 20, bottom: 20}
-            align: Align{x: 0.0, y: 1.0},
-            metadata_rounded_view := RoundedView {
-                width: Fill, height: Fit
-                flow: Right
-                align: Align{y: 0.5, x: 0.0}
-                padding: Inset{top: 13, bottom: 8, left: 13, right: 13}
-                spacing: 8,
+            flow: Down
+            align: Align{x: 0.5, y: 1.0},
+            spacing: 12
+            clip_x: false, clip_y: false
 
-                show_bg: true
-                draw_bg +: {
-                    border_radius: 4.0
-                    color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
-                }
+            image_name_view := View {
+                width: Fill{max: 640}, height: Fit
+                align: Align{x: 0.5}
+                clip_x: false, clip_y: false
 
-                avatar_timestamp_view := View {
-                    width: Fit
-                    height: Fit
-                    flow: Down
-                    spacing: 2
-                    align: Align{x: 0.5, y: 0.0}
+                image_name_rounded_view := mod.widgets.ImageViewerRoundedView {
+                    padding: Inset{top: 8, bottom: 8, left: 16, right: 16}
+                    draw_bg +: { border_radius: 14.0 }
 
-                    avatar := Avatar {
-                        width: 45, height: 45,
-                        text_view +: {
-                            text +: {
-                                draw_text +: {
-                                    text_style: TITLE_TEXT { font_size: 15.0 }
-                                }
-                            }
-                        }
-                    }
-                    timestamp := Timestamp {
-                        width: Fit,
-                        height: Fit,
-                        ts_label := Label {
-                            draw_text +: {
-                                text_style: theme.font_regular {font_size: 9.5},
-                                color: (COLOR_TEXT)
-                            }
-                        }
-                    }
-                }
-
-                username_label_view := View {
-                    width: Fill{weight: 0.35},
-                    // width: Fill,
-                    height: Fit,
-                    flow: Right,
-                    align: Align{ y: 0.5 }
-
-                    username := Label {
-                        width: Fill,
-                        height: Fit,
+                    image_name := Label {
+                        width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit
                         padding: 0
-                        margin: 0
-                        flow: Flow.Right{wrap: true}
-                        max_lines: 2
+                        max_lines: 4
                         text_overflow: Ellipsis
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 12},
-                            color: (COLOR_TEXT)
-                        }
-                    }
-                }
-
-                // Display image name and size below the username when the width is not enough.
-                image_name_and_size_view := View {
-                    width: Fill{weight: 0.65},
-                    // width: Fill
-                    height: Fit,
-                    align: Align{x: 0, y: 0.5}
-                    flow: Right
-                    image_name_and_size := Label {
-                        width: Fill,
-                        height: Fit,
-                        align: Align{x: 0, y: 0.5}
-                        flow: Flow.Right{wrap: true}
-                        max_lines: 2
-                        text_overflow: Ellipsis
-                        draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: 13},
-                            color: (COLOR_TEXT),
+                            color: #FFF
                         }
                     }
                 }
             }
-        }
 
-        button_group_view := View {
-            width: Fill, height: Fit
-            flow: Right
-            // Placeholder, see `metadata_view` above.
-            margin: Inset{top: 20, right: 20}
-            align: Align{x: 1.0, y: 0.5},
-
-            button_group_rounded_view := RoundedView {
-                width: Fit, height: Fit
-                spacing: 10
-                show_bg: true
-                draw_bg +: {
-                    color: (COLOR_IMAGE_VIEWER_META_BACKGROUND),
-                    border_radius: 4.0
-                }
-                padding: Inset{ left: 7, top: 4, bottom: 4, right: 7}
+            controls_rounded_view := mod.widgets.ImageViewerRoundedView {
+                // placeholder width: the real width is set in `draw_walk`.
+                width: #(4.0 * BUTTON_SLOT_WIDTH + 2.0 * BUTTON_GROUP_PADDING)
+                flow: Right
+                distribute: Distribute.SpaceAround
+                padding: #(BUTTON_GROUP_PADDING)
+                draw_bg +: { border_radius: 26.0 }
 
                 zoom_out_button := mod.widgets.ImageViewerButton {
+                    width: Fill{max: 50}
                     draw_icon +: { svg: (ICON_ZOOM_OUT) }
                     icon_walk: Walk{width: 27, height: 27, margin: Inset{left: 2}}
                 }
 
                 zoom_in_button := mod.widgets.ImageViewerButton {
+                    width: Fill{max: 50}
                     draw_icon +: { svg: (ICON_ZOOM_IN) }
                     icon_walk: Walk{width: 27, height: 27, margin: Inset{left: 2}}
                 }
 
                 rotate_cw_button := mod.widgets.ImageViewerButton {
+                    width: Fill{max: 50}
                     draw_icon +: { svg: (ICON_ROTATE_CW) }
                     icon_walk: Walk{width: 30, height: 30, margin: Inset{left: 2}}
                 }
 
                 zoom_to_fit_button := mod.widgets.ImageViewerButton {
+                    width: Fill{max: 50}
                     draw_icon +: { svg: (ICON_ZOOM_TO_FIT) }
                     icon_walk: Walk{width: 25, height: 25}
                 }
+            }
+        }
+
+        // `draw_walk` puts the sender info below the action buttons when they don't fit side by side.
+        top_bar_view := View {
+            width: Fill, height: Fit
+            flow: Right
+            // Placeholder, see `bottom_bar_view` above.
+            margin: Inset{top: 20, left: 20, right: 20}
+            align: Align{x: 0.5, y: 0.5},
+            spacing: #(TOP_BAR_SPACING)
+            clip_x: false, clip_y: false
+
+            // Bounds the sender info, so it gets cut off before it reaches the action buttons.
+            sender_view := View {
+                width: Fill, height: Fit
+                clip_x: false, clip_y: false
+
+                sender_rounded_view := mod.widgets.ImageViewerRoundedView {
+                    flow: Right
+                    align: Align{y: 0.5}
+                    padding: Inset{top: #(SENDER_PADDING), bottom: #(SENDER_PADDING), left: #(SENDER_PADDING), right: #(SENDER_PADDING_RIGHT)}
+                    spacing: #(SENDER_SPACING)
+                    draw_bg +: { border_radius: 26.0 }
+
+                    avatar := Avatar {
+                        width: #(AVATAR_SIZE), height: #(AVATAR_SIZE),
+                        text_view +: {
+                            text +: {
+                                draw_text +: {
+                                    text_style: TITLE_TEXT { font_size: 12.0 }
+                                }
+                            }
+                        }
+                    }
+
+                    sender_info_view := View {
+                        width: Fit, height: Fit
+                        flow: Down
+                        spacing: 2
+
+                        username := Label {
+                            width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit
+                            padding: 0
+                            max_lines: 2
+                            text_overflow: Ellipsis
+                            draw_text +: {
+                                text_style: USERNAME_TEXT_STYLE {},
+                                color: #FFF
+                            }
+                        }
+
+                        timestamp_and_size := mod.widgets.ImageTimestampAndSize {}
+                    }
+                }
+            }
+
+            actions_rounded_view := mod.widgets.ImageViewerRoundedView {
+                // placeholder width: the real width is set in `draw_walk`.
+                width: #(3.0 * BUTTON_SLOT_WIDTH + 2.0 * BUTTON_GROUP_PADDING)
+                flow: Right
+                distribute: Distribute.SpaceAround
+                padding: #(BUTTON_GROUP_PADDING)
+                draw_bg +: { border_radius: 26.0 }
 
                 download_button := mod.widgets.ImageViewerButton {
+                    width: Fill{max: 50}
                     draw_icon +: { svg: (ICON_DOWNLOAD) }
                     icon_walk: Walk{width: 24, height: 24}
                 }
 
                 share_button := mod.widgets.ImageViewerButton {
+                    width: Fill{max: 50}
                     draw_icon +: { svg: (ICON_SHARE) }
                     icon_walk: Walk{width: 24, height: 24}
                 }
 
                 close_button := mod.widgets.ImageViewerButton {
+                    width: Fill{max: 50}
                     draw_icon +: { svg: (ICON_CLOSE) }
                     icon_walk: Walk{width: 21, height: 21 }
                 }
@@ -401,6 +550,12 @@ struct ImageViewer {
     #[rust] downloadable: Option<DownloadableAttachment>,
     /// A reference to the image being shown so we can easily save it to storage.
     #[rust] loaded_bytes: Option<Arc<[u8]>>,
+    /// The width of the sender info with everything on one line,
+    /// and the narrowest it can get while still fitting the whole username on its 2 lines.
+    #[rust] sender_info_width: f64,
+    #[rust] min_sender_info_width: f64,
+    /// A tiny copy of the image, which the overlay's rounded views stretch out into a blur.
+    #[rust] blur_texture: Option<Texture>,
 }
 
 impl ScriptHook for ImageViewer {
@@ -554,6 +709,7 @@ impl Widget for ImageViewer {
             let mut remove_receiver = false;
             match receiver.try_recv() {
                 Ok(Ok(image_buffer)) => {
+                    self.blur_texture = BLUR_BEHIND_ROUNDED_VIEWS.then(|| build_blur_texture(cx, &image_buffer)).flatten();
                     let texture = image_buffer.into_new_texture(cx);
                     self.texture = Some(texture);
                     self.next_frame = cx.new_next_frame();
@@ -593,8 +749,8 @@ impl Widget for ImageViewer {
         // so their stale areas don't consume events.
         if self.is_hiding_overlay && !self.animator.is_track_animating(id!(ui_animator)) {
             self.is_hiding_overlay = false;
-            self.view.view(cx, ids!(button_group_view)).set_visible(cx, false);
-            self.view.view(cx, ids!(metadata_view)).set_visible(cx, false);
+            self.view.view(cx, ids!(top_bar_view)).set_visible(cx, false);
+            self.view.view(cx, ids!(bottom_bar_view)).set_visible(cx, false);
             self.view.redraw(cx);
         }
 
@@ -643,25 +799,84 @@ impl Widget for ImageViewer {
         // in which 0.0 means fully visible and 1.0 means fully off-screen.
         let slide = self.ui_overlay_slide as f64;
         let insets = cx.display_context.safe_area_insets;
-        let button_top_visible = 20.0_f64.max(insets.top);
-        let button_right        = 20.0_f64.max(insets.right);
-        let meta_top            = 20.0_f64.max(insets.top);
-        let meta_left           = 20.0_f64.max(insets.left);
-        let meta_right          = 20.0_f64.max(insets.right);
-        let meta_bottom_visible = 20.0_f64.max(insets.bottom);
-        let button_top = button_top_visible - (slide * 220.0); // visible → -200
-        let meta_bottom = meta_bottom_visible - (slide * 320.0); // visible → -300
-        if let Some(mut button_group_view) = self.view(cx, ids!(button_group_view)).borrow_mut() {
-            button_group_view.walk.margin.top = button_top;
-            button_group_view.walk.margin.right = button_right;
+        // Keep the top bar below the window's own buttons, e.g., the macOS traffic lights.
+        let window_buttons = cx.get_current_window_id()
+            .map_or(Rect::default(), |window_id| cx.windows[window_id].window_geom.window_chrome_buttons);
+        let top    = 20.0_f64.max(insets.top).max(window_buttons.pos.y * 2.0 + window_buttons.size.y + 8.0);
+        let left   = 20.0_f64.max(insets.left);
+        let right  = 20.0_f64.max(insets.right);
+        let bottom = 20.0_f64.max(insets.bottom);
+
+        // Both button groups share one slot width, squeezed only to fit the sender info beside the
+        // top buttons. If even compact slots leave it too little room, it goes below them instead.
+        let bar_width = self.image_container_size.x - left - right;
+        let get_button_count = |view: ViewRef| view.borrow()
+            .map_or(0, |view| view.children.iter().filter(|(_, button)| button.visible()).count()) as f64;
+        let top_button_count = get_button_count(self.view(cx, ids!(actions_rounded_view)));
+        let bottom_button_count = get_button_count(self.view(cx, ids!(controls_rounded_view)));
+        let get_group_width = |slot_width: f64, button_count: f64| button_count * slot_width + 2.0 * BUTTON_GROUP_PADDING;
+        let max_slot_width = ((bar_width - 2.0 * BUTTON_GROUP_PADDING) / bottom_button_count)
+            .clamp(MIN_BUTTON_SLOT_WIDTH, BUTTON_SLOT_WIDTH);
+        let room_for_both = bar_width - TOP_BAR_SPACING;
+        let (slot_width, is_sender_below) = if self.sender_info_width + get_group_width(MIN_BUTTON_SLOT_WIDTH, top_button_count) <= room_for_both {
+            let room_for_slots = room_for_both - self.sender_info_width - 2.0 * BUTTON_GROUP_PADDING;
+            ((room_for_slots / top_button_count).min(max_slot_width), false)
+        } else if self.min_sender_info_width + get_group_width(MIN_BUTTON_SLOT_WIDTH, top_button_count) <= room_for_both {
+            (MIN_BUTTON_SLOT_WIDTH, false)
+        } else {
+            (max_slot_width, true)
+        };
+        if let Some(mut top_bar_view) = self.view(cx, ids!(top_bar_view)).borrow_mut() {
+            top_bar_view.walk.margin.top = top - (slide * 260.0); // visible → -240
+            top_bar_view.walk.margin.left = left;
+            top_bar_view.walk.margin.right = right;
+            top_bar_view.layout.flow = if is_sender_below { Flow::Overlay } else { Flow::right() };
+            top_bar_view.layout.align.y = if is_sender_below { 0.0 } else { 0.5 };
         }
-        if let Some(mut metadata_view) = self.view(cx, ids!(metadata_view)).borrow_mut() {
-            metadata_view.walk.margin = Inset {
-                top: meta_top,
-                left: meta_left,
-                right: meta_right,
-                bottom: meta_bottom,
+        if let Some(mut actions_rounded_view) = self.view(cx, ids!(actions_rounded_view)).borrow_mut() {
+            actions_rounded_view.walk.width = Size::Fixed(get_group_width(slot_width, top_button_count));
+        }
+        if let Some(mut controls_rounded_view) = self.view(cx, ids!(controls_rounded_view)).borrow_mut() {
+            controls_rounded_view.walk.width = Size::Fixed(get_group_width(slot_width, bottom_button_count));
+        }
+        if let Some(mut sender_view) = self.view(cx, ids!(sender_view)).borrow_mut() {
+            sender_view.walk.margin.top = if is_sender_below {
+                BUTTON_SIZE + 2.0 * BUTTON_GROUP_PADDING + TOP_BAR_SPACING
+            } else {
+                0.0
             };
+            sender_view.layout.align.x = if is_sender_below { 0.5 } else { 0.0 };
+        }
+        if let Some(mut bottom_bar_view) = self.view(cx, ids!(bottom_bar_view)).borrow_mut() {
+            bottom_bar_view.walk.margin = Inset {
+                top,
+                left,
+                right,
+                bottom: bottom - (slide * 320.0), // visible → -300
+            };
+        }
+
+        // Line the rounded views' blurred copy of the image up with the image itself.
+        let image_center = self.pinch_zoom.get_content_rect().center();
+        let image_size = self.natural_dimension * self.pinch_zoom.get_content_scale();
+        let rounded_views = [
+            self.view(cx, ids!(sender_rounded_view)),
+            self.view(cx, ids!(actions_rounded_view)),
+            self.view(cx, ids!(image_name_rounded_view)),
+            self.view(cx, ids!(controls_rounded_view)),
+        ];
+        for rounded_view in rounded_views {
+            let Some(mut rounded_view) = rounded_view.borrow_mut() else { continue };
+            let draw_vars = &mut rounded_view.draw_bg.draw_vars;
+            if let Some(blur_texture) = &self.blur_texture {
+                draw_vars.set_texture(0, blur_texture);
+                draw_vars.set_uniform(cx, live_id!(image_center), &[image_center.x as f32, image_center.y as f32]);
+                draw_vars.set_uniform(cx, live_id!(image_size), &[image_size.x as f32, image_size.y as f32]);
+                draw_vars.set_uniform(cx, live_id!(image_rotation), &[self.current_angle as f32]);
+            } else {
+                draw_vars.empty_texture(0);
+            }
+            draw_vars.set_uniform(cx, live_id!(has_blur), &[if self.blur_texture.is_some() { 1.0 } else { 0.0 }]);
         }
 
         self.view.draw_walk(cx, scope, walk)
@@ -773,11 +988,13 @@ impl MatchEvent for ImageViewer {
 }
 
 impl ImageViewer {
-    /// Returns the rects of the UI overlay's button bar and metadata panel while it's showing.
-    fn get_overlay_ui_rects(&self, cx: &mut Cx) -> Option<[Rect; 2]> {
+    /// Returns the rects of the UI overlay's rounded views while it's showing.
+    fn get_overlay_ui_rects(&self, cx: &mut Cx) -> Option<[Rect; 4]> {
         (self.ui_overlay_visible || self.is_hiding_overlay).then(|| [
-            self.view.view(cx, ids!(button_group_rounded_view)).area().rect(cx),
-            self.view.view(cx, ids!(metadata_rounded_view)).area().rect(cx),
+            self.view.view(cx, ids!(sender_rounded_view)).area().rect(cx),
+            self.view.view(cx, ids!(actions_rounded_view)).area().rect(cx),
+            self.view.view(cx, ids!(image_name_rounded_view)).area().rect(cx),
+            self.view.view(cx, ids!(controls_rounded_view)).area().rect(cx),
         ])
     }
 
@@ -812,8 +1029,8 @@ impl ImageViewer {
         if !self.ui_overlay_visible {
             self.ui_overlay_visible = true;
             self.is_hiding_overlay = false;
-            self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
-            self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+            self.view.view(cx, ids!(top_bar_view)).set_visible(cx, true);
+            self.view.view(cx, ids!(bottom_bar_view)).set_visible(cx, true);
             self.animator_play(cx, ids!(ui_animator.show));
             self.view.redraw(cx);
         }
@@ -837,6 +1054,7 @@ impl ImageViewer {
     /// Reset state.
     pub fn reset(&mut self, cx: &mut Cx) {
         self.rotation_step = 0; // Reset to upright (0°)
+        self.blur_texture = None;
         self.current_angle = 0.0;
         self.rotation_target_angle = 0.0;
         self.rotation_anim_start_time = None;
@@ -855,8 +1073,8 @@ impl ImageViewer {
         self.is_hiding_overlay = false;
         cx.stop_timer(self.hide_ui_timer);
         self.hide_ui_timer = Timer::empty();
-        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
-        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(top_bar_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(bottom_bar_view)).set_visible(cx, true);
         // Snap to fully visible (no animation on reset).
         self.animator_cut(cx, ids!(ui_animator.show));
         let rotated_image_ref = self
@@ -1007,8 +1225,8 @@ impl ImageViewer {
         // Snap the overlay to visible immediately on initial open (no animation).
         self.ui_overlay_visible = true;
         self.is_hiding_overlay = false;
-        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
-        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(top_bar_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(bottom_bar_view)).set_visible(cx, true);
         self.animator_cut(cx, ids!(ui_animator.show));
         cx.stop_timer(self.hide_ui_timer);
         self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
@@ -1040,20 +1258,14 @@ impl ImageViewer {
 
     /// Sets the metadata view in the image viewer with the provided metadata.
     ///
-    /// The image_name_and_size and username labels handle their own overflow
-    /// via `max_lines: 2` + `text_overflow: Ellipsis` in the layout.
+    /// The image_name and username labels handle their own overflow.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
-        let meta_view = self.view.view(cx, ids!(metadata_view));
-        let human_readable_size = format_decimal_file_size(metadata.image_file_size);
-        let display_text = format!("{} ({})", metadata.image_name, human_readable_size);
-        meta_view
-            .label(cx, ids!(image_name_and_size))
-            .set_text(cx, &display_text);
-        if let Some(timestamp) = metadata.timestamp {
-            meta_view
-                .timestamp(cx, ids!(avatar_timestamp_view.timestamp))
-                .set_date_time(cx, timestamp);
-        }
+        let sender_rounded_view = self.view.view(cx, ids!(sender_rounded_view));
+        let timestamp_and_size = sender_rounded_view.image_timestamp_and_size(cx, ids!(timestamp_and_size));
+        timestamp_and_size.set_timestamp_and_size(cx, metadata.timestamp, metadata.image_file_size);
+        self.view
+            .label(cx, ids!(image_name_rounded_view.image_name))
+            .set_text(cx, &metadata.image_name);
 
         self.loaded_bytes = None;
         self.downloadable = metadata.downloadable.clone();
@@ -1061,7 +1273,7 @@ impl ImageViewer {
             .set_visible(cx, self.downloadable.is_some());
 
         if let Some((timeline_kind, event_timeline_item)) = &metadata.avatar_parameter {
-            let (sender, _) = self.view.avatar(cx, ids!(avatar_timestamp_view.avatar)).set_avatar_and_get_username(
+            let (sender, _) = self.view.avatar(cx, ids!(sender_rounded_view.avatar)).set_avatar_and_get_username(
                 cx,
                 timeline_kind,
                 event_timeline_item.sender(),
@@ -1069,10 +1281,28 @@ impl ImageViewer {
                 event_timeline_item.event_id(),
                 false,
             );
-            meta_view
-                .label(cx, ids!(username_label_view.username))
+            sender_rounded_view
+                .label(cx, ids!(username))
                 .set_text(cx, &sender);
         }
+
+        // Measure the sender info, so `draw_walk` can tell whether it fits beside the action buttons.
+        let username_label = sender_rounded_view.label(cx, ids!(username));
+        let username = username_label.text();
+        let (username_width, min_username_width) = username_label.borrow().map_or((0.0, 0.0), |label| {
+            let mut get_width = |text: &str| utils::unwrapped_text_width(cx, &label.draw_text, text);
+            let full_width = get_width(&username);
+            // Try each place the username could break onto its 2nd line, and keep the narrowest.
+            let words: Vec<&str> = username.split_whitespace().collect();
+            let min_width = (1..words.len())
+                .map(|split| get_width(&words[..split].join(" ")).max(get_width(&words[split..].join(" "))))
+                .fold(full_width, f64::min);
+            (full_width, min_width)
+        });
+        let (widest_timestamp_and_size_width, narrowest_timestamp_and_size_width) = timestamp_and_size.get_widths();
+        let avatar_and_padding_width = SENDER_PADDING + AVATAR_SIZE + SENDER_SPACING + SENDER_PADDING_RIGHT;
+        self.sender_info_width = (avatar_and_padding_width + username_width.max(widest_timestamp_and_size_width)).ceil();
+        self.min_sender_info_width = (avatar_and_padding_width + min_username_width.max(narrowest_timestamp_and_size_width)).ceil();
     }
 }
 
@@ -1103,4 +1333,134 @@ pub struct ImageViewerMetaData {
     pub image_file_size: u64,
     /// When `Some`, the overlay's download button is shown.
     pub downloadable: Option<DownloadableAttachment>,
+}
+
+/// An image's timestamp and size, which go on separate lines if they don't both fit on one.
+/// The timestamp also shows the full date when there's room for it.
+#[derive(Script, ScriptHook, Widget)]
+struct ImageTimestampAndSize {
+    #[source] source: ScriptObjectRef,
+    #[deref] view: View,
+    #[rust] has_timestamp: bool,
+    #[rust] short_timestamp: String,
+    #[rust] full_timestamp: String,
+    #[rust] short_timestamp_width: f64,
+    #[rust] full_timestamp_width: f64,
+    #[rust] separator_width: f64,
+    #[rust] size_width: f64,
+}
+
+impl Widget for ImageTimestampAndSize {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Show as much as fits: the full timestamp on one line, then stacked, then the short one.
+        let available = cx.find_line_available_width().unwrap_or(f64::INFINITY);
+        let is_full = self.get_stacked_width(self.full_timestamp_width) <= available;
+        let timestamp_width = if is_full { self.full_timestamp_width } else { self.short_timestamp_width };
+        let is_stacked = self.has_timestamp && self.get_one_line_width(timestamp_width) > available;
+        let timestamp_text = if is_full { &self.full_timestamp } else { &self.short_timestamp };
+        self.view.label(cx, ids!(timestamp.ts_label)).set_text(cx, timestamp_text);
+        self.view.layout.flow = if is_stacked { Flow::Down } else { Flow::right() };
+        self.view.label(cx, ids!(separator)).set_visible(cx, self.has_timestamp && !is_stacked);
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl ImageTimestampAndSize {
+    fn get_one_line_width(&self, timestamp_width: f64) -> f64 {
+        if self.has_timestamp {
+            timestamp_width + 2.0 * self.view.layout.spacing + self.separator_width + self.size_width
+        } else {
+            self.size_width
+        }
+    }
+
+    fn get_stacked_width(&self, timestamp_width: f64) -> f64 {
+        if self.has_timestamp {
+            timestamp_width.max(self.size_width)
+        } else {
+            self.size_width
+        }
+    }
+}
+
+impl ImageTimestampAndSizeRef {
+    pub fn set_timestamp_and_size(&self, cx: &mut Cx, timestamp: Option<DateTime<Local>>, size_in_bytes: u64) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.has_timestamp = timestamp.is_some();
+        let timestamp_ref = inner.view.timestamp(cx, ids!(timestamp));
+        if let Some(timestamp) = timestamp {
+            timestamp_ref.set_date_time(cx, timestamp);
+        }
+        timestamp_ref.set_visible(cx, inner.has_timestamp);
+        let timestamp_label = inner.view.label(cx, ids!(timestamp.ts_label));
+        let separator_label = inner.view.label(cx, ids!(separator));
+        let size_label = inner.view.label(cx, ids!(image_size));
+        size_label.set_text(cx, &format_decimal_file_size(size_in_bytes));
+        // The short timestamp is whatever the Timestamp widget just showed, and the full one adds its date.
+        let short_timestamp = timestamp_label.text();
+        let full_timestamp = timestamp.map_or_else(String::new, |timestamp|
+            format!("{}, {short_timestamp}", timestamp.format("%a %b %-d, %Y"))
+        );
+        let mut get_width = |label: &LabelRef, text: &str| label.borrow()
+            .map_or(0.0, |label| utils::unwrapped_text_width(cx, &label.draw_text, text));
+        inner.short_timestamp_width = get_width(&timestamp_label, &short_timestamp);
+        inner.full_timestamp_width = get_width(&timestamp_label, &full_timestamp);
+        inner.separator_width = get_width(&separator_label, &separator_label.text());
+        inner.size_width = get_width(&size_label, &size_label.text());
+        inner.short_timestamp = short_timestamp;
+        inner.full_timestamp = full_timestamp;
+        inner.redraw(cx);
+    }
+
+    /// Returns this widget's widest width, with the full timestamp on one line,
+    /// and its narrowest, with the short timestamp above the size.
+    pub fn get_widths(&self) -> (f64, f64) {
+        self.borrow().map_or((0.0, 0.0), |inner| (
+            inner.get_one_line_width(inner.full_timestamp_width),
+            inner.get_stacked_width(inner.short_timestamp_width),
+        ))
+    }
+}
+
+/// Builds a tiny copy of the given image, which the overlay's rounded views stretch out into a blur.
+fn build_blur_texture(cx: &mut Cx, image: &ImageBuffer) -> Option<Texture> {
+    // An animated image holds all its frames side by side, so we only use the first one.
+    let (width, height) = image.animation.as_ref()
+        .map_or((image.width, image.height), |animation| (animation.width, animation.height));
+    if width == 0 || height == 0 || width > image.width || image.data.len() < image.width * height {
+        return None;
+    }
+    let scale = BLUR_TEXTURE_SIZE as f64 / width.max(height) as f64;
+    let blur_width = ((width as f64 * scale).round() as usize).clamp(1, width);
+    let blur_height = ((height as f64 * scale).round() as usize).clamp(1, height);
+    // Each tiny pixel averages a grid of samples spread across its part of the image,
+    // weighted by their alpha so the hidden colors of transparent pixels don't show.
+    const SAMPLES_PER_SIDE: usize = 4;
+    let sample_count = (SAMPLES_PER_SIDE * SAMPLES_PER_SIDE) as u32;
+    let mut data = Vec::with_capacity(blur_width * blur_height);
+    for blur_y in 0..blur_height {
+        for blur_x in 0..blur_width {
+            let mut channel_sums = [0u32; 4];
+            for sample_y in 0..SAMPLES_PER_SIDE {
+                let y = ((blur_y * SAMPLES_PER_SIDE + sample_y) * 2 + 1) * height / (blur_height * SAMPLES_PER_SIDE * 2);
+                for sample_x in 0..SAMPLES_PER_SIDE {
+                    let x = ((blur_x * SAMPLES_PER_SIDE + sample_x) * 2 + 1) * width / (blur_width * SAMPLES_PER_SIDE * 2);
+                    let pixel = image.data[y * image.width + x];
+                    let alpha = pixel >> 24;
+                    for (channel, sum) in channel_sums[..3].iter_mut().enumerate() {
+                        *sum += ((pixel >> (channel * 8)) & 0xFF) * alpha / 255;
+                    }
+                    channel_sums[3] += alpha;
+                }
+            }
+            data.push(channel_sums.iter().enumerate()
+                .fold(0, |pixel, (channel, sum)| pixel | ((sum / sample_count) << (channel * 8))));
+        }
+    }
+    Some(Texture::new_with_format(cx, TextureFormat::VecBGRAu8_32 {
+        width: blur_width,
+        height: blur_height,
+        data: Some(data),
+        updated: TextureUpdated::Full,
+    }))
 }
