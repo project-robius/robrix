@@ -27,18 +27,47 @@ pub fn fetch_full_image_for_viewer(media_source: MediaSource) {
     });
 }
 
-/// Gets the image's file name and size in bytes from an event timeline item.
-pub fn get_image_name_and_filesize(event_tl_item: &EventTimelineItem) -> (String, u64) {
-    if let Some(message) = event_tl_item.content().as_message() {
-        if let MessageType::Image(image_content) = message.msgtype() {
-            let name = image_content.filename().to_string();
-            let size = image_content.info.as_ref()
-                .and_then(|info| info.size)
-                .map_or(0, u64::from);
-            return (name, size);
-        }
+/// Details about the file of an image message or a sticker.
+pub struct ImageFileDetails {
+    pub name: String,
+    pub caption: Option<String>,
+    /// The image's format, e.g., "PNG", from its mimetype or else its file extension.
+    pub format: Option<String>,
+    pub size_in_bytes: Option<u64>,
+}
+
+/// Gets the details of the file of an image message or a sticker from an event timeline item.
+pub fn get_image_file_details(event_tl_item: &EventTimelineItem) -> ImageFileDetails {
+    let content = event_tl_item.content();
+    let (name, caption, info) = if let Some(message) = content.as_message()
+        && let MessageType::Image(image_content) = message.msgtype()
+    {
+        (image_content.filename(), image_content.caption(), image_content.info.as_deref())
+    } else if let Some(sticker) = content.as_sticker() {
+        // A sticker has no file name or caption, just a description in its body.
+        (sticker.content().body.as_str(), None, Some(&sticker.content().info))
+    } else {
+        return ImageFileDetails {
+            name: "Unknown Image".to_string(),
+            caption: None,
+            format: None,
+            size_in_bytes: None,
+        };
+    };
+    let format = info
+        .and_then(|info| info.mimetype.as_deref())
+        .and_then(|mimetype| mimetype.strip_prefix("image/"))
+        // e.g., "svg+xml" is SVG and "x-icon" is ICON.
+        .map(|subtype| subtype.split('+').next().unwrap_or(subtype).trim_start_matches("x-"))
+        .or_else(|| name.rsplit_once('.').map(|(_, extension)| extension))
+        .filter(|format| !format.is_empty())
+        .map(str::to_uppercase);
+    ImageFileDetails {
+        name: name.to_string(),
+        caption: caption.map(str::to_string),
+        format,
+        size_in_bytes: info.and_then(|info| info.size).map(u64::from).filter(|&size| size > 0),
     }
-    ("Unknown Image".to_string(), 0)
 }
 
 /// The result of the image viewer's request to fetch a full-size image.

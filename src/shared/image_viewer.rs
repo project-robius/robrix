@@ -38,7 +38,7 @@ const TOP_BAR_SPACING: f64 = 8.0;
 const AVATAR_SIZE: f64 = 36.0;
 const SENDER_SPACING: f64 = 10.0;
 const SENDER_PADDING: f64 = 8.0;
-const SENDER_PADDING_RIGHT: f64 = 16.0;
+const SENDER_PADDING_RIGHT: f64 = 22.0;
 
 /// Whether the overlay's rounded views show a blurred copy of the image behind them.
 const BLUR_BEHIND_ROUNDED_VIEWS: bool = true;
@@ -222,6 +222,15 @@ script_mod! {
         }
     }
 
+    // A label that hugs its text and centers its lines, up to the width available to it.
+    mod.widgets.CenteredLabel = #(CenteredLabel::register_widget(vm)) {
+        ..mod.widgets.Label
+        width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit
+        padding: 0
+        align: Align{x: 0.5}
+        text_overflow: Ellipsis
+    }
+
     mod.widgets.ImageViewer = set_type_default() do #(ImageViewer::register_widget(vm)) {
         ..mod.widgets.SolidView
 
@@ -307,17 +316,27 @@ script_mod! {
                 clip_x: false, clip_y: false
 
                 image_name_rounded_view := mod.widgets.ImageViewerRoundedView {
-                    padding: Inset{top: 8, bottom: 8, left: 16, right: 16}
+                    flow: Down
+                    align: Align{x: 0.5}
+                    spacing: 4
+                    padding: Inset{top: 8, bottom: 8, left: 22, right: 22}
                     draw_bg +: { border_radius: 14.0 }
 
-                    image_name := Label {
-                        width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit
-                        padding: 0
+                    // The image's caption, or its file name if it has no caption.
+                    image_caption := mod.widgets.CenteredLabel {
                         max_lines: 4
-                        text_overflow: Ellipsis
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 12},
                             color: #FFF
+                        }
+                    }
+
+                    // The file name below the caption, only when there's both.
+                    image_file_name := mod.widgets.CenteredLabel {
+                        max_lines: 2
+                        draw_text +: {
+                            text_style: REGULAR_TEXT {font_size: 10},
+                            color: #FFFFFFBF
                         }
                     }
                 }
@@ -550,10 +569,9 @@ struct ImageViewer {
     #[rust] downloadable: Option<DownloadableAttachment>,
     /// A reference to the image being shown so we can easily save it to storage.
     #[rust] loaded_bytes: Option<Arc<[u8]>>,
-    /// The width of the sender info with everything on one line,
-    /// and the narrowest it can get while still fitting the whole username on its 2 lines.
+    /// The width the sender info needs to show everything without cutting anything short,
+    /// e.g., the whole username and the full timestamp.
     #[rust] sender_info_width: f64,
-    #[rust] min_sender_info_width: f64,
     /// A tiny copy of the image, which the overlay's rounded views stretch out into a blur.
     #[rust] blur_texture: Option<Texture>,
 }
@@ -807,8 +825,8 @@ impl Widget for ImageViewer {
         let right  = 20.0_f64.max(insets.right);
         let bottom = 20.0_f64.max(insets.bottom);
 
-        // Both button groups share one slot width, squeezed only to fit the sender info beside the
-        // top buttons. If even compact slots leave it too little room, it goes below them instead.
+        // Both button groups share one slot width, squeezed only to fit the sender info beside the top
+        // buttons without cutting it short. If even compact slots can't do that, it goes below them.
         let bar_width = self.image_container_size.x - left - right;
         let get_button_count = |view: ViewRef| view.borrow()
             .map_or(0, |view| view.children.iter().filter(|(_, button)| button.visible()).count()) as f64;
@@ -821,8 +839,6 @@ impl Widget for ImageViewer {
         let (slot_width, is_sender_below) = if self.sender_info_width + get_group_width(MIN_BUTTON_SLOT_WIDTH, top_button_count) <= room_for_both {
             let room_for_slots = room_for_both - self.sender_info_width - 2.0 * BUTTON_GROUP_PADDING;
             ((room_for_slots / top_button_count).min(max_slot_width), false)
-        } else if self.min_sender_info_width + get_group_width(MIN_BUTTON_SLOT_WIDTH, top_button_count) <= room_for_both {
-            (MIN_BUTTON_SLOT_WIDTH, false)
         } else {
             (max_slot_width, true)
         };
@@ -1258,14 +1274,23 @@ impl ImageViewer {
 
     /// Sets the metadata view in the image viewer with the provided metadata.
     ///
-    /// The image_name and username labels handle their own overflow.
+    /// The image caption, file name, and username labels handle their own overflow.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
         let sender_rounded_view = self.view.view(cx, ids!(sender_rounded_view));
         let timestamp_and_size = sender_rounded_view.image_timestamp_and_size(cx, ids!(timestamp_and_size));
-        timestamp_and_size.set_timestamp_and_size(cx, metadata.timestamp, metadata.image_file_size);
+        timestamp_and_size.set_timestamp_and_size(
+            cx,
+            metadata.timestamp,
+            metadata.image_file_size,
+            metadata.image_format.as_deref(),
+        );
+        let caption = metadata.image_caption.as_deref();
         self.view
-            .label(cx, ids!(image_name_rounded_view.image_name))
-            .set_text(cx, &metadata.image_name);
+            .widget(cx, ids!(image_name_rounded_view.image_caption))
+            .set_text(cx, caption.unwrap_or(&metadata.image_name));
+        let file_name_label = self.view.widget(cx, ids!(image_name_rounded_view.image_file_name));
+        file_name_label.set_text(cx, &metadata.image_name);
+        file_name_label.set_visible(cx, caption.is_some());
 
         self.loaded_bytes = None;
         self.downloadable = metadata.downloadable.clone();
@@ -1289,20 +1314,10 @@ impl ImageViewer {
         // Measure the sender info, so `draw_walk` can tell whether it fits beside the action buttons.
         let username_label = sender_rounded_view.label(cx, ids!(username));
         let username = username_label.text();
-        let (username_width, min_username_width) = username_label.borrow().map_or((0.0, 0.0), |label| {
-            let mut get_width = |text: &str| utils::unwrapped_text_width(cx, &label.draw_text, text);
-            let full_width = get_width(&username);
-            // Try each place the username could break onto its 2nd line, and keep the narrowest.
-            let words: Vec<&str> = username.split_whitespace().collect();
-            let min_width = (1..words.len())
-                .map(|split| get_width(&words[..split].join(" ")).max(get_width(&words[split..].join(" "))))
-                .fold(full_width, f64::min);
-            (full_width, min_width)
-        });
-        let (widest_timestamp_and_size_width, narrowest_timestamp_and_size_width) = timestamp_and_size.get_widths();
+        let username_width = username_label.borrow()
+            .map_or(0.0, |label| utils::unwrapped_text_width(cx, &label.draw_text, &username));
         let avatar_and_padding_width = SENDER_PADDING + AVATAR_SIZE + SENDER_SPACING + SENDER_PADDING_RIGHT;
-        self.sender_info_width = (avatar_and_padding_width + username_width.max(widest_timestamp_and_size_width)).ceil();
-        self.min_sender_info_width = (avatar_and_padding_width + min_username_width.max(narrowest_timestamp_and_size_width)).ceil();
+        self.sender_info_width = (avatar_and_padding_width + username_width.max(timestamp_and_size.get_preferred_width())).ceil();
     }
 }
 
@@ -1329,8 +1344,11 @@ pub struct ImageViewerMetaData {
     pub avatar_parameter: Option<(TimelineKind, EventTimelineItem)>,
     pub timestamp: Option<DateTime<Local>>,
     pub image_name: String,
-    // Image size in bytes
-    pub image_file_size: u64,
+    pub image_caption: Option<String>,
+    /// The image's format, e.g., "PNG".
+    pub image_format: Option<String>,
+    // Image size in bytes, if it's known
+    pub image_file_size: Option<u64>,
     /// When `Some`, the overlay's download button is shown.
     pub downloadable: Option<DownloadableAttachment>,
 }
@@ -1342,6 +1360,7 @@ struct ImageTimestampAndSize {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[rust] has_timestamp: bool,
+    #[rust] has_size_or_format: bool,
     #[rust] short_timestamp: String,
     #[rust] full_timestamp: String,
     #[rust] short_timestamp_width: f64,
@@ -1360,17 +1379,18 @@ impl Widget for ImageTimestampAndSize {
         let timestamp_text = if is_full { &self.full_timestamp } else { &self.short_timestamp };
         self.view.label(cx, ids!(timestamp.ts_label)).set_text(cx, timestamp_text);
         self.view.layout.flow = if is_stacked { Flow::Down } else { Flow::right() };
-        self.view.label(cx, ids!(separator)).set_visible(cx, self.has_timestamp && !is_stacked);
+        self.view.label(cx, ids!(separator)).set_visible(cx, self.has_timestamp && self.has_size_or_format && !is_stacked);
+        self.view.label(cx, ids!(image_size)).set_visible(cx, self.has_size_or_format);
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl ImageTimestampAndSize {
     fn get_one_line_width(&self, timestamp_width: f64) -> f64 {
-        if self.has_timestamp {
-            timestamp_width + 2.0 * self.view.layout.spacing + self.separator_width + self.size_width
-        } else {
-            self.size_width
+        match (self.has_timestamp, self.has_size_or_format) {
+            (true, true) => timestamp_width + 2.0 * self.view.layout.spacing + self.separator_width + self.size_width,
+            (true, false) => timestamp_width,
+            (false, _) => self.size_width,
         }
     }
 
@@ -1384,7 +1404,14 @@ impl ImageTimestampAndSize {
 }
 
 impl ImageTimestampAndSizeRef {
-    pub fn set_timestamp_and_size(&self, cx: &mut Cx, timestamp: Option<DateTime<Local>>, size_in_bytes: u64) {
+    /// The size shows the image's format after it too, if either is known, e.g., "4.1 MB · PNG".
+    pub fn set_timestamp_and_size(
+        &self,
+        cx: &mut Cx,
+        timestamp: Option<DateTime<Local>>,
+        size_in_bytes: Option<u64>,
+        format: Option<&str>,
+    ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.has_timestamp = timestamp.is_some();
         let timestamp_ref = inner.view.timestamp(cx, ids!(timestamp));
@@ -1395,12 +1422,19 @@ impl ImageTimestampAndSizeRef {
         let timestamp_label = inner.view.label(cx, ids!(timestamp.ts_label));
         let separator_label = inner.view.label(cx, ids!(separator));
         let size_label = inner.view.label(cx, ids!(image_size));
-        size_label.set_text(cx, &format_decimal_file_size(size_in_bytes));
-        // The short timestamp is whatever the Timestamp widget just showed, and the full one adds its date.
-        let short_timestamp = timestamp_label.text();
-        let full_timestamp = timestamp.map_or_else(String::new, |timestamp|
-            format!("{}, {short_timestamp}", timestamp.format("%a %b %-d, %Y"))
-        );
+        let size_text = [size_in_bytes.map(format_decimal_file_size), format.map(str::to_string)]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+        inner.has_size_or_format = !size_text.is_empty();
+        size_label.set_text(cx, &size_text);
+        // The full timestamp adds the date to the time the Timestamp widget just showed,
+        // and the short one is relative to now, like the rooms list's previews.
+        let (full_timestamp, short_timestamp) = timestamp.map_or_else(Default::default, |timestamp| (
+            format!("{}, {}", timestamp.format("%a %b %-d, %Y"), timestamp_label.text()),
+            utils::relative_format_at(timestamp, Local::now()).into_owned(),
+        ));
         let mut get_width = |label: &LabelRef, text: &str| label.borrow()
             .map_or(0.0, |label| utils::unwrapped_text_width(cx, &label.draw_text, text));
         inner.short_timestamp_width = get_width(&timestamp_label, &short_timestamp);
@@ -1412,13 +1446,49 @@ impl ImageTimestampAndSizeRef {
         inner.redraw(cx);
     }
 
-    /// Returns this widget's widest width, with the full timestamp on one line,
-    /// and its narrowest, with the short timestamp above the size.
-    pub fn get_widths(&self) -> (f64, f64) {
-        self.borrow().map_or((0.0, 0.0), |inner| (
-            inner.get_one_line_width(inner.full_timestamp_width),
-            inner.get_stacked_width(inner.short_timestamp_width),
-        ))
+    /// Returns this widget's width with the full timestamp above the size, the narrowest it gets
+    /// without cutting anything short.
+    pub fn get_preferred_width(&self) -> f64 {
+        self.borrow().map_or(0.0, |inner| inner.get_stacked_width(inner.full_timestamp_width))
+    }
+}
+
+/// A label that hugs its text and centers its lines. A plain `Fit` label would center them
+/// across its max width instead, so we size this one to its widest line before drawing it.
+#[derive(Script, ScriptHook, Widget)]
+struct CenteredLabel {
+    #[source] source: ScriptObjectRef,
+    #[deref] label: Label,
+    /// The available width that `text_width` was measured for.
+    #[rust] measured_for_width: Option<f64>,
+    #[rust] text_width: f64,
+}
+
+impl Widget for CenteredLabel {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let Some(available) = cx.find_line_available_width() else {
+            return self.label.draw_walk(cx, scope, walk);
+        };
+        if self.measured_for_width != Some(available) {
+            self.measured_for_width = Some(available);
+            // Label only copies these into its draw_text when it draws, so we do it now to measure like it will.
+            self.label.draw_text.max_lines = self.label.max_lines;
+            self.label.draw_text.text_overflow = self.label.text_overflow;
+            let scale = (self.label.draw_text.font_scale as f64).max(0.0001);
+            let text = self.label.text();
+            let laidout = self.label.draw_text.layout(cx, 0.0, 0.0, Some((available / scale) as f32), true, self.label.align, &text);
+            self.text_width = (laidout.size_in_lpxs.width as f64 * scale).ceil();
+        }
+        self.label.draw_walk(cx, scope, Walk { width: Size::Fixed(self.text_width), ..walk })
+    }
+
+    fn text(&self) -> String {
+        self.label.text()
+    }
+
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
+        self.measured_for_width = None;
+        self.label.set_text(cx, v);
     }
 }
 
