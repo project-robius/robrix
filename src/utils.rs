@@ -673,7 +673,7 @@ pub fn stringify_pagination_error(
 /// - **Less than 60 seconds ago**: Returns `"Just now"`.
 /// - **Less than 60 minutes ago**: Returns `"X min(s) ago"`, where X is the number of minutes.
 /// - **Same day**: Returns `"HH:MM"` (current time format for today).
-/// - **Yesterday**: Returns `"Yesterday at HH:MM"` for messages from the previous day.
+/// - **Yesterday**: Returns `"Yesterday` for messages from the previous day.
 /// - **2 to 6 days ago**: Returns the name of the day (e.g., "Tuesday").
 /// - **Older**: Returns `"YYYY-MM-DD"` as the absolute date.
 ///
@@ -685,7 +685,7 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<Cow<'static
 }
 
 /// Formats the given `datetime` relative to the given `now`; see [`relative_format()`].
-fn relative_format_at(datetime: DateTime<Local>, now: DateTime<Local>) -> Cow<'static, str> {
+pub fn relative_format_at(datetime: DateTime<Local>, now: DateTime<Local>) -> Cow<'static, str> {
     let duration = now - datetime;
     if duration < Duration::seconds(60) {
         "Just now".into()
@@ -700,7 +700,7 @@ fn relative_format_at(datetime: DateTime<Local>, now: DateTime<Local>) -> Cow<'s
         // We count calendar days, since a day isn't always 24 hours long (e.g., upon a DST change).
         match (now.date_naive() - datetime.date_naive()).num_days() {
             0 => datetime.format("%H:%M").to_string().into(),
-            1 => format!("Yesterday at {}", datetime.format("%H:%M")).into(),
+            1 => "Yesterday".into(),
             // A week ago is shown as a date, else it'd have the same day name as today.
             2..=6 => datetime.format("%A").to_string().into(),
             _ => datetime.format("%F").to_string().into(),
@@ -1378,7 +1378,7 @@ mod tests_relative_format {
         // 2026-09-23 is a Wednesday.
         let now = local("2026-09-23 00:30");
         assert_eq!(relative_format_at(local("2026-09-23 00:00"), now), "30 mins ago");
-        assert_eq!(relative_format_at(local("2026-09-22 23:00"), now), "Yesterday at 23:00");
+        assert_eq!(relative_format_at(local("2026-09-22 23:00"), now), "Yesterday");
         assert_eq!(relative_format_at(local("2026-09-21 23:00"), now), "Monday");
 
         let now = local("2026-09-23 10:00");
