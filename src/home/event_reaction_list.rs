@@ -39,16 +39,12 @@ script_mod! {
 
 
     mod.widgets.COLOR_BUTTON_GREY = #B6BABF
-    mod.widgets.REACTION_LIST_PADDING_RIGHT = 30.0;
 
     mod.widgets.ReactionList = #(ReactionList::register_widget(vm)) {
         width: Fill,
         height: Fit,
         flow: Flow.Right{wrap: true},
         margin: Inset{top: 5.0}
-        padding: Inset{
-            right: (mod.widgets.REACTION_LIST_PADDING_RIGHT)
-        }
         item: Button {
             width: Fit,
             height: Fit,
