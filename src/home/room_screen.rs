@@ -318,7 +318,7 @@ script_mod! {
             flow: Down
             margin: Inset{ bottom: 3, top: 10 }
             preview_content +: {
-                margin +: { left: 29 }
+                margin +: { left: 20 }
                 padding +: { bottom: 10 }
             }
         }
@@ -327,17 +327,20 @@ script_mod! {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: Inset{top: 0, bottom: 10, left: 10, right: 10},
+            padding: Inset{top: 0, bottom: 10, left: 8, right: 10},
 
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
+                width: 50.0,
                 height: Fit,
-                margin: Inset{top: 4.5, right: 10}
+                margin: Inset{top: 4.5, right: 8}
                 flow: Down,
                 avatar := Avatar {
-                    width: 48,
-                    height: 48,
+                    width: 40,
+                    height: 40,
+                    // The vertical margins keep the username centered on the avatar
+                    // and the timestamp in line with the first line of text.
+                    margin: Inset{top: 4, bottom: 4}
                 }
                 timestamp := Timestamp {
                     margin: Inset{ top: 5.9 }
@@ -393,17 +396,17 @@ script_mod! {
         padding: Inset{ top: 2.0, bottom: 2.0 }
         replied_to_message +: {
             preview_content +: {
-                margin: Inset{ left: 74, bottom: 5.0 }
+                margin: Inset{ left: 55, bottom: 5.0 }
             }
         }
         body := View {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: Inset{ top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
+            padding: Inset{ top: 0, bottom: 2.5, left: 8.0, right: 10.0 },
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
+                width: 50.0,
                 height: Fit,
                 flow: Down,
                 timestamp := Timestamp {
@@ -416,7 +419,7 @@ script_mod! {
                 width: Fill,
                 height: Fit,
                 flow: Down,
-                padding: Inset{ left: 10.0 }
+                padding: Inset{ left: 8.0 }
 
                 message := HtmlOrPlaintext { }
                 link_preview_view := mod.widgets.LinkPreview {}

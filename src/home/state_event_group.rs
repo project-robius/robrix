@@ -63,7 +63,7 @@ script_mod! {
         width: Fill,
         height: Fit,
         margin: Inset{top: 4.0}
-        padding: Inset{ left: 82.0, top: 2.0, bottom: 2.0 }
+        padding: Inset{ left: 63.0, top: 2.0, bottom: 2.0 }
         cursor: MouseCursor.Hand
 
         show_bg: true
@@ -139,12 +139,12 @@ script_mod! {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: Inset{ left: 7.0, top: 3.0, bottom: 3.0, right: 10.0 }
+            padding: Inset{ left: 8.0, top: 3.0, bottom: 3.0, right: 10.0 }
             spacing: 5.0
 
             left_container := View {
                 align: Align{x: 0.5, y: 0}
-                width: 70.0,
+                width: 50.0,
                 height: Fit
 
                 timestamp := Timestamp {
@@ -263,7 +263,7 @@ script_mod! {
             width: Fill,
             height: Fit
             // Align it with the avatar/content column (left padding that's the same width as a timestamp).
-            padding: Inset{ left: 82.0, top: 1.0, bottom: 1.0 }
+            padding: Inset{ left: 63.0, top: 1.0, bottom: 1.0 }
 
             toggle := mod.widgets.GroupToggle {}
         }
@@ -273,12 +273,12 @@ script_mod! {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: Inset{ left: 7.0, top: 2.0, bottom: 2.0, right: 10.0 }
+            padding: Inset{ left: 8.0, top: 2.0, bottom: 2.0, right: 10.0 }
             spacing: 5.0
 
             left_container := View {
                 align: Align{x: 0.5, y: 0}
-                width: 70.0,
+                width: 50.0,
                 height: Fit
 
                 timestamp := Timestamp {
