@@ -5,6 +5,7 @@
 
 use makepad_widgets::{image_cache::ImageCacheImpl, *};
 use matrix_sdk::ruma::events::room::MediaSource;
+use crate::shared::attachment_download::media_source_mxc;
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -36,6 +37,7 @@ script_mod! {
             image := Image {
                 width: Fill, height: Fit,
                 fit: ImageFit.Smallest,
+                downscale_to_drawn_size: true,
             }
         }
     }
@@ -171,6 +173,14 @@ impl TextOrImageRef {
         } else {
             TextOrImageStatus::Text
         }
+    }
+
+    /// Returns whether this is showing an image (or its placeholder) from the given source.
+    pub fn is_showing_image_from(&self, source: &MediaSource) -> bool {
+        self.borrow().is_some_and(|inner| matches!(
+            &inner.status,
+            TextOrImageStatus::Image(Some(shown)) if media_source_mxc(shown) == media_source_mxc(source)
+        ))
     }
 
     /// See [TextOrImage::clear()].

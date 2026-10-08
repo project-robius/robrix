@@ -116,6 +116,7 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
     matches!(
         mimetype,
         "image/png"
+            | "image/apng"
             | "image/jpeg"
             | "image/jpg"
             | "image/gif"
@@ -808,14 +809,20 @@ pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnai
     }
 );
 
+/// The thumbnail settings to use for regular media images.
+const MEDIA_THUMBNAIL_SETTINGS: MediaThumbnailSettingsConst = MediaThumbnailSettingsConst {
+    method: Method::Scale,
+    width: 400,
+    height: 400,
+    animated: false,
+};
+
 /// The thumbnail format to use for regular media images.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
-    MediaThumbnailSettingsConst {
-        method: Method::Scale,
-        width: 400,
-        height: 400,
-        animated: false,
-    }
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(MEDIA_THUMBNAIL_SETTINGS);
+
+/// The thumbnail format to use for media images that may be animated, e.g., GIFs.
+pub const ANIMATED_MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+    MediaThumbnailSettingsConst { animated: true, ..MEDIA_THUMBNAIL_SETTINGS }
 );
 
 /// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.

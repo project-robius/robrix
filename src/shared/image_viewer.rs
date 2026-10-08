@@ -1083,6 +1083,7 @@ impl ImageViewer {
         self.receiver = None;
         self.is_loaded = false;
         self.loaded_bytes = None;
+        self.texture = None;
         self.image_container_size = DVec2::new();
         self.ui_overlay_visible = true;
         self.mouse_over_overlay_ui = false;
@@ -1145,22 +1146,15 @@ impl ImageViewer {
             return;
         }
         let rotated_image = self.image(cx, ids!(rotated_image));
-        // Natural (unrotated) size: the texture's dimensions for raster images,
-        // or the intrinsic SVG size when an SVG has been loaded into the widget.
-        let natural = if self.texture.is_some() {
-            let texture = self.texture.clone();
-            rotated_image.set_texture(cx, texture);
-            self.texture
-                .as_ref()
-                .and_then(|t| t.get_format(cx).vec_width_height())
-                .map(|(w, h)| DVec2 { x: w as f64, y: h as f64 })
-                .unwrap_or_default()
-        } else {
-            rotated_image
-                .size_in_pixels(cx)
-                .map(|(w, h)| DVec2 { x: w as f64, y: h as f64 })
-                .unwrap_or_default()
-        };
+        if self.texture.is_some() {
+            rotated_image.set_texture(cx, self.texture.clone());
+        }
+        // Natural (unrotated) size: the texture's dimensions for raster images
+        // (one frame of an animation), or the intrinsic SVG size (if an SVG has been loaded).
+        let natural = rotated_image
+            .size_in_pixels(cx)
+            .map(|(w, h)| DVec2 { x: w as f64, y: h as f64 })
+            .unwrap_or_default();
         if natural.x == 0.0 || natural.y == 0.0 {
             return;
         }

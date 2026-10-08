@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
     avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::clear_room_preview_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -314,6 +314,13 @@ impl MatchEvent for App {
                     continue;
                 }
                 _ => {}
+            }
+
+            if let Some(DropDecodedImagesAction(image_keys)) = action.downcast_ref() {
+                for image_key in image_keys {
+                    evict_image_from_cache(cx, image_key);
+                }
+                continue;
             }
 
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {

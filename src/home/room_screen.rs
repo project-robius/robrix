@@ -1,7 +1,7 @@
 //! The `RoomScreen` widget is the UI view that displays a single room or thread's timeline
 //! of events (messages，state changes, etc.), along with an input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc, time::{Duration, Instant}};
+use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, path::PathBuf, sync::Arc, time::{Duration, Instant}};
 
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
@@ -27,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -35,7 +35,7 @@ use crate::{
     shared::{
         attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::backwards_pagination::BackwardsPaginationState;
@@ -3969,6 +3969,14 @@ pub enum TimelineUpdate {
     AttachmentDownloadReset(OwnedMxcUri),
 }
 
+/// An action indicating that the main UI thread can now free the given set
+/// of decoded images from makepad's image cache.
+///
+/// This is typically used for when a timeline has been closed and its
+/// decoded images are no longer needed, so they can be dropped to save memory.
+#[derive(Debug)]
+pub struct DropDecodedImagesAction(pub Vec<PathBuf>);
+
 /// Stores timeline UI state that is not currently owned by a `RoomScreen`.
 mod timeline_state_store {
     use super::*;
@@ -4056,6 +4064,9 @@ mod timeline_state_store {
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(&kind) {
                 Some(StateEntry::Taken { owner: current_owner, invalidated, was_closed }) if current_owner == owner => {
+                    if invalidated || was_closed {
+                        drop_decoded_images(&state);
+                    }
                     // If it was invalidated and we (the `owner`) was the RoomScreen currently showing it,
                     // just return here to keep it removed from the TIMELINE_STATES.
                     if invalidated {
@@ -4080,9 +4091,13 @@ mod timeline_state_store {
     }
 
     /// Drops the loaded data of the given timeline's docked panes.
+    /// Since its screen was closed, its decoded images get freed too.
     pub(super) fn drop_pane_data(_cx: &mut Cx, kind: &TimelineKind) {
         TIMELINE_STATES.with_borrow_mut(|states| match states.get_mut(kind) {
-            Some(StateEntry::Stored(state)) => state.saved_state.room_panes.iter_mut().for_each(SavedRoomPane::drop_data),
+            Some(StateEntry::Stored(state)) => {
+                state.saved_state.room_panes.iter_mut().for_each(SavedRoomPane::drop_data);
+                drop_decoded_images(state);
+            }
             Some(StateEntry::Taken { was_closed, .. }) => *was_closed = true,
             None => {}
         });
@@ -4094,6 +4109,11 @@ mod timeline_state_store {
     /// during logout or session teardown.
     pub(super) fn clear_all(_cx: &mut Cx) {
         TIMELINE_STATES.with_borrow_mut(|states| {
+            for entry in states.values() {
+                if let StateEntry::Stored(state) = entry {
+                    drop_decoded_images(state);
+                }
+            }
             states.clear();
         });
     }
@@ -4113,7 +4133,9 @@ mod timeline_state_store {
             }
 
             // Otherwise, if it's not being shown, just remove it now.
-            states.remove(kind);
+            if let Some(StateEntry::Stored(state)) = states.remove(kind) {
+                drop_decoded_images(&state);
+            }
         });
     }
 
@@ -4125,16 +4147,28 @@ mod timeline_state_store {
                 if kind.room_id() != room_id {
                     return true;
                 }
-                // Same as `invalidate()`: keep the shown UI state but flag it
-                // such that `put_back()` drops it when the RoomScreen hides it.
-                if let StateEntry::Taken { invalidated, .. } = entry {
-                    *invalidated = true;
-                    true
-                } else {
-                    false
+                match entry {
+                    // Same as `invalidate()`: keep the shown UI state but flag it
+                    // such that `put_back()` drops it when the RoomScreen hides it.
+                    StateEntry::Taken { invalidated, .. } => {
+                        *invalidated = true;
+                        true
+                    }
+                    StateEntry::Stored(state) => {
+                        drop_decoded_images(state);
+                        false
+                    }
                 }
             });
         });
+    }
+
+    /// Frees the decoded images of a timeline that nothing shows anymore.
+    fn drop_decoded_images(state: &TimelineUiState) {
+        let image_keys = state.media_cache.get_image_cache_keys();
+        if !image_keys.is_empty() {
+            Cx::post_action(DropDecodedImagesAction(image_keys));
+        }
     }
 
     /// Returns `true` if the given timeline's state was invalidated while a RoomScreen was still displaying it,
@@ -5339,125 +5373,151 @@ fn populate_image_message_content(
         }
     }
 
-    let mut fully_drawn = false;
+    let Some(image_info) = image_info_source else {
+        text_or_image_ref.show_text(cx, format!("{body}\n\nImage message had no source URL."));
+        return true;
+    };
 
-    // Fall back to fetching the full-size image instead of a failed thumbnail if it's not too big.
-    const MAX_FULL_IMAGE_SIZE: u64 = 1024 * 1024; // 1MiB
-    let should_fetch_full_size = image_info_source
-        .and_then(|info| info.size)
-        .is_none_or(|size| u64::from(size) <= MAX_FULL_IMAGE_SIZE);
+    // A still thumbnail only shows an animated image's first frame, which is often blank.
+    // Encrypted media can't be thumbnailed, so asking for one downloads the whole original.
+    let mut should_animate = image_info.is_animated.unwrap_or_else(||
+        mimetype.is_some_and(|mime| matches!(mime, "image/gif" | "image/webp" | "image/apng"))
+    );
+    let is_encrypted = matches!(original_source, MediaSource::Encrypted(_));
+    // Use the provided thumbnail URI if it exists; otherwise use the original URI.
+    let get_still_thumbnail_source = || image_info.thumbnail_source.clone().unwrap_or_else(|| original_source.clone());
+    let (mut media_source, requested_format) = if should_animate {
+        (original_source.clone(), ANIMATED_MEDIA_THUMBNAIL_FORMAT.into())
+    } else {
+        (get_still_thumbnail_source(), MEDIA_THUMBNAIL_FORMAT.into())
+    };
+    let mut media_entry = media_cache.try_get_media_or_fetch(&media_source, requested_format);
+    // If the original image can't be found, try its thumbnail, which may have been uploaded separately.
+    if should_animate && matches!(
+        media_entry,
+        (MediaCacheEntry::Failed(StatusCode::NOT_FOUND), MediaFormat::Thumbnail(_))
+    ) {
+        should_animate = false;
+        media_source = get_still_thumbnail_source();
+        media_entry = media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into());
+    }
+    // The server can't thumbnail this image (the spec's errors for that), so show the original instead.
+    if matches!(
+        media_entry,
+        (MediaCacheEntry::Failed(StatusCode::BAD_REQUEST | StatusCode::PAYLOAD_TOO_LARGE | StatusCode::BAD_GATEWAY), MediaFormat::Thumbnail(_))
+    ) {
+        media_entry = media_cache.try_get_media_or_fetch(&media_source, MediaFormat::File);
+    }
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: &ImageInfo| {
-        match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
-            (MediaCacheEntry::Loaded(data), media_format) => {
-                // Include the file type (full or thumbnail) in the cache key to disambiguate.
-                let variant = if matches!(media_format, MediaFormat::File) { "full" } else { "thumb" };
-                let cache_key = format!("{}#{variant}", media_source_mxc(&media_source));
-                let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                    utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
-                        .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+    // The image keeps the original source rather than the thumbnail's,
+    // so that clicking on it opens (or downloads) the original image.
+    // A placeholder texture stays visible until the new image is decoded.
+    let show_loaded_image = |cx: &mut Cx, media_format: MediaFormat, data: Arc<[u8]>, placeholder: Option<Texture>| {
+        let cache_key = get_image_cache_key(media_source_mxc(&media_source), &media_format);
+        let show_image_result = text_or_image_ref.show_image(cx, Some(original_source.clone()), |cx, img| {
+            if placeholder.is_some() {
+                img.set_texture(cx, placeholder);
+            }
+            utils::load_image_with_cache_key(&img, cx, &cache_key, data)
+                .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+        });
+        if let Err(e) = show_image_result {
+            let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+            error!("{err_str}");
+            text_or_image_ref.show_text(cx, &err_str);
+        }
+    };
+
+    match media_entry {
+        // The server sent a non-animated thumbnail, so we show that while fetching
+        // the original image that *can* be animated.
+        (MediaCacheEntry::Loaded(data), MediaFormat::Thumbnail(settings))
+            if should_animate && !is_encrypted && !is_animated_image(&data) =>
+        {
+            match media_cache.try_get_media_or_fetch(&media_source, MediaFormat::File) {
+                (MediaCacheEntry::Loaded(full_data), MediaFormat::File) => {
+                    // Keep showing the thumbnail until the original is full decoded.
+                    let still = text_or_image_ref.is_showing_image_from(&original_source)
+                        .then(|| text_or_image_ref.get_texture(cx))
+                        .flatten();
+                    show_loaded_image(cx, MediaFormat::File, full_data, still);
+                    true
+                }
+                (MediaCacheEntry::Failed(_), _) => {
+                    show_loaded_image(cx, MediaFormat::Thumbnail(settings), data, None);
+                    true
+                }
+                _ => {
+                    show_loaded_image(cx, MediaFormat::Thumbnail(settings), data, None);
+                    false
+                }
+            }
+        }
+        (MediaCacheEntry::Loaded(data), media_format) => {
+            show_loaded_image(cx, media_format, data, None);
+            // We're done drawing the image, so mark it as fully drawn.
+            true
+        }
+        (MediaCacheEntry::Requested, _media_format) => {
+            // If the image is being fetched, we try to show its blurhash.
+            // Only decode the image once, not on every draw while we're wait.
+            if !text_or_image_ref.is_showing_image_from(&original_source)
+                && let (Some(blurhash), Some(width), Some(height)) = (image_info.blurhash.as_deref(), image_info.width, image_info.height)
+            {
+                let show_image_result = text_or_image_ref.show_image(cx, Some(original_source.clone()), |cx, img| {
+                    let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
+                        return Err(image_cache::ImageError::EmptyData)
+                    };
+                    let (width, height): (u32, u32) = (width, height);
+                    if width == 0 || height == 0 {
+                        warning!("Image had an invalid aspect ratio (width or height of 0).");
+                        return Err(image_cache::ImageError::EmptyData);
+                    }
+                    let aspect_ratio: f32 = width as f32 / height as f32;
+                    // Cap the blurhash to a max size of 500 pixels in each dimension
+                    // because the `blurhash::decode()` function can be rather expensive.
+                    let (mut capped_width, mut capped_height) = (width, height);
+                    if capped_height > BLURHASH_IMAGE_MAX_SIZE {
+                        capped_height = BLURHASH_IMAGE_MAX_SIZE;
+                        capped_width = (capped_height as f32 * aspect_ratio).floor() as u32;
+                    }
+                    if capped_width > BLURHASH_IMAGE_MAX_SIZE {
+                        capped_width = BLURHASH_IMAGE_MAX_SIZE;
+                        capped_height = (capped_width as f32 / aspect_ratio).floor() as u32;
+                    }
+
+                    match blurhash::decode(blurhash, capped_width, capped_height, 1.0) {
+                        Ok(data) => {
+                            ImageBuffer::new(&data, capped_width as usize, capped_height as usize).map(|img_buff| {
+                                let texture = Some(img_buff.into_new_texture(cx));
+                                img.set_texture(cx, texture);
+                                img.size_in_pixels(cx).unwrap_or_default()
+                            })
+                        }
+                        Err(e) => {
+                            error!("Failed to decode blurhash {e:?}");
+                            Err(image_cache::ImageError::EmptyData)
+                        }
+                    }
                 });
                 if let Err(e) = show_image_result {
                     let err_str = format!("{body}\n\nFailed to display image: {e:?}");
                     error!("{err_str}");
                     text_or_image_ref.show_text(cx, &err_str);
                 }
-
-                // We're done drawing the image, so mark it as fully drawn.
-                fully_drawn = true;
             }
-            (MediaCacheEntry::Requested, _media_format) => {
-                // If the image is being fetched, we try to show its blurhash.
-                if let (Some(blurhash), Some(width), Some(height)) = (image_info.blurhash.as_deref(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                        let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
-                            return Err(image_cache::ImageError::EmptyData)
-                        };
-                        let (width, height): (u32, u32) = (width, height);
-                        if width == 0 || height == 0 {
-                            warning!("Image had an invalid aspect ratio (width or height of 0).");
-                            return Err(image_cache::ImageError::EmptyData);
-                        }
-                        let aspect_ratio: f32 = width as f32 / height as f32;
-                        // Cap the blurhash to a max size of 500 pixels in each dimension
-                        // because the `blurhash::decode()` function can be rather expensive.
-                        let (mut capped_width, mut capped_height) = (width, height);
-                        if capped_height > BLURHASH_IMAGE_MAX_SIZE {
-                            capped_height = BLURHASH_IMAGE_MAX_SIZE;
-                            capped_width = (capped_height as f32 * aspect_ratio).floor() as u32;
-                        }
-                        if capped_width > BLURHASH_IMAGE_MAX_SIZE {
-                            capped_width = BLURHASH_IMAGE_MAX_SIZE;
-                            capped_height = (capped_width as f32 / aspect_ratio).floor() as u32;
-                        }
-
-                        match blurhash::decode(blurhash, capped_width, capped_height, 1.0) {
-                            Ok(data) => {
-                                ImageBuffer::new(&data, capped_width as usize, capped_height as usize).map(|img_buff| {
-                                    let texture = Some(img_buff.into_new_texture(cx));
-                                    img.set_texture(cx, texture);
-                                    img.size_in_pixels(cx).unwrap_or_default()
-                                })
-                            }
-                            Err(e) => {
-                                error!("Failed to decode blurhash {e:?}");
-                                Err(image_cache::ImageError::EmptyData)
-                            }
-                        }
-                    });
-                    if let Err(e) = show_image_result {
-                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                        error!("{err_str}");
-                        text_or_image_ref.show_text(cx, &err_str);
-                    }
-                }
-                fully_drawn = false;
-            }
-            (MediaCacheEntry::Failed(status_code), MediaFormat::Thumbnail(_))
-                if should_fetch_full_size && status_code != StatusCode::NOT_FOUND =>
-            {
-                match media_cache.try_get_media_or_fetch(&media_source, MediaFormat::File) {
-                    (MediaCacheEntry::Loaded(data), _) => {
-                        let cache_key = format!("{}#full", media_source_mxc(&media_source));
-                        let res = text_or_image_ref.show_image(cx, Some(media_source.clone()), |cx, img| {
-                            utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
-                                .map(|()| img.size_in_pixels(cx).unwrap_or_default())
-                        });
-                        if let Err(e) = res {
-                            error!("Failed to display full-size image: {e:?}");
-                        }
-                        fully_drawn = true;
-                    }
-                    (MediaCacheEntry::Requested, _) => fully_drawn = false,
-                    (MediaCacheEntry::Failed(_), _) => fully_drawn = true,
-                }
-            }
-            (MediaCacheEntry::Failed(_status_code), _media_format) => {
-                text_or_image_ref.show_text(
-                    cx,
-                    format!("{body}\n\nFailed to fetch image from {:?}", media_source_mxc(&media_source)),
-                );
-                // For now, we consider this as being "complete". In the future, we could support
-                // retrying to fetch thumbnail of the image on a user click/tap.
-                fully_drawn = true;
-            }
+            false
         }
-    };
-
-    match image_info_source {
-        Some(image_info) => {
-            // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let media_source = image_info.thumbnail_source.clone()
-                .unwrap_or(original_source);
-            fetch_and_show_media_source(cx, media_source, image_info);
-        }
-        None => {
-            text_or_image_ref.show_text(cx, format!("{body}\n\nImage message had no source URL."));
-            fully_drawn = true;
+        (MediaCacheEntry::Failed(_status_code), _media_format) => {
+            text_or_image_ref.show_text(
+                cx,
+                format!("{body}\n\nFailed to fetch image from {:?}", media_source_mxc(&media_source)),
+            );
+            // For now, we consider this as being "complete". In the future, we could support
+            // retrying to fetch thumbnail of the image on a user click/tap.
+            true
         }
     }
-
-    fully_drawn
 }
 
 
