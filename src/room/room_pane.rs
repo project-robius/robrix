@@ -107,15 +107,11 @@ struct RoomPanes {
     pending: HashMap<TimelineKind, Vec<(RoomPaneKind, Option<SavedPaneContent>)>>,
     /// The panes that are currently popped out into a separate view.
     /// * Key: the popped-out pane's room ID and kind.
-    /// * Value: the timeline it came from, plus its saved state.
-    popped_out: HashMap<(OwnedRoomId, RoomPaneKind), PoppedOutPane>,
-}
-
-struct PoppedOutPane {
-    /// The timeline that this pane came from, which it can return to.
-    from: TimelineKind,
-    /// This pane's state while it's not being shown.
-    saved: Option<SavedPaneContent>,
+    /// * Value: the pane's saved state while it's not being shown.
+    popped_out: HashMap<(OwnedRoomId, RoomPaneKind), Option<SavedPaneContent>>,
+    /// The timeline that each pane was last popped out of, which it can return to.
+    /// Unlike `popped_out`, this outlives a dropped pane, since the nav history can reopen it.
+    pane_origins: HashMap<(OwnedRoomId, RoomPaneKind), TimelineKind>,
 }
 
 thread_local! {
@@ -185,8 +181,11 @@ pub fn pop_out(
     timeline_kind: TimelineKind,
     saved: SavedPaneContent,
 ) {
-    let popped_out = PoppedOutPane { from: timeline_kind, saved: Some(saved) };
-    with_room_panes(|rp| rp.popped_out.insert((room_name_id.room_id().clone(), kind.clone()), popped_out));
+    with_room_panes(|rp| {
+        let key = (room_name_id.room_id().clone(), kind.clone());
+        rp.pane_origins.insert(key.clone(), timeline_kind);
+        rp.popped_out.insert(key, Some(saved));
+    });
     cx.widget_action(
         widget_uid,
         RoomsListAction::Selected(SelectedRoom::RoomPane {
@@ -198,21 +197,23 @@ pub fn pop_out(
 
 /// Returns the timeline that the given popped-out pane came from, or else its room's main timeline.
 pub fn popped_out_from(room_id: &RoomId, kind: &RoomPaneKind) -> TimelineKind {
-    with_room_panes(|rp| rp.popped_out.get(&(room_id.to_owned(), kind.clone())).map(|pane| pane.from.clone()))
+    with_room_panes(|rp| rp.pane_origins.get(&(room_id.to_owned(), kind.clone())).cloned())
         .unwrap_or_else(|| TimelineKind::MainRoom { room_id: room_id.to_owned() })
 }
 
 /// Takes the saved state of the given popped-out pane, so its original roomscreen can show the same pane.
 pub fn take_popped_out_state(room_id: &RoomId, kind: &RoomPaneKind) -> Option<SavedPaneContent> {
-    with_room_panes(|rp| rp.popped_out.get_mut(&(room_id.to_owned(), kind.clone()))?.saved.take())
+    // A pane that the nav history reopens (after we already dropped it) needs to be
+    // popped out again, such that it can save its state again.
+    with_room_panes(|rp| rp.popped_out.entry((room_id.to_owned(), kind.clone())).or_default().take())
 }
 
 /// Saves the state of the given popped-out pane while its screen is hidden,
 /// unless that pane has since been closed or returned to its timeline.
 pub fn save_popped_out_state(room_id: &RoomId, kind: &RoomPaneKind, saved: SavedPaneContent) {
     with_room_panes(|rp| {
-        if let Some(pane) = rp.popped_out.get_mut(&(room_id.to_owned(), kind.clone())) {
-            pane.saved = Some(saved);
+        if let Some(pane_saved) = rp.popped_out.get_mut(&(room_id.to_owned(), kind.clone())) {
+            *pane_saved = Some(saved);
         }
     });
 }

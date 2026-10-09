@@ -6446,7 +6446,7 @@ impl Widget for Message {
             script_apply_eval!(cx, self, {
                 draw_bg +: {
                     color: #ffffd1,
-                    color_hover: #xfff9c2,
+                    color_hover: #fff9c2,
                     mentions_bar_color: #ffd54f
                 }
             });

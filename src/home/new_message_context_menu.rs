@@ -619,6 +619,14 @@ impl NewMessageContextMenu {
 }
 
 impl NewMessageContextMenuRef {
+    /// Closes this context menu if it's shown.
+    pub fn close(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if inner.visible {
+            inner.close(cx);
+        }
+    }
+
     /// See [`NewMessageContextMenu::is_currently_shown()`].
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
         let Some(inner) = self.borrow() else { return false };

@@ -623,7 +623,7 @@ impl RoomActionBarRef {
 
 /// This uses the main top-level app's tooltip but doesn't consume hits.
 #[derive(Default)]
-pub(super) struct RoomActionTooltip {
+pub(crate) struct RoomActionTooltip {
     hovered: Option<WidgetUid>,
 }
 

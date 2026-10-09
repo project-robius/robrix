@@ -1880,10 +1880,13 @@ impl Widget for RoomsList {
                                 }
                             }
                         }
-                        _ => {
+                        SelectedTab::Home => {
                             self.selected_space = None;
                             self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_visible(cx, false);
                         }
+                        // AddRoom and Settings are only shown temporarily,
+                        // so they don't affect which space is selected.
+                        SelectedTab::AddRoom | SelectedTab::Settings => continue,
                     }
 
                     self.update_displayed_rooms(cx, true);
