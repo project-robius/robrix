@@ -82,7 +82,7 @@ impl Widget for Timestamp {
 impl Timestamp {
     pub fn set_date_time(&mut self, cx: &mut Cx, dt: DateTime<Local>) {
         // TODO: use pure_rust_locales crate to format the time based on the chosen Locale.
-        let locale_fmt_en_us = "%-I:%M %P";
+        let locale_fmt_en_us = "%-I:%M%P";
         self.label(cx, ids!(ts_label)).set_text(
             cx,
             &dt.format(locale_fmt_en_us).to_string()

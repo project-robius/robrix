@@ -70,6 +70,8 @@ script_mod! {
             margin: Inset{left: 1.5}
             html_view +: {
                 html +: {
+                    // A compact preview keeps its paragraphs close together.
+                    paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
                     font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
                     text_style_normal +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
                     text_style_italic +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }

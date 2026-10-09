@@ -829,8 +829,22 @@ pub const ANIMATED_MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::
 pub fn trim_start_html_whitespace(mut text: &str) -> &str {
     let mut prev_text_len = text.len();
     loop {
+        text = trim_start_html_line_breaks(text).trim_start_matches("<p>");
+
+        if text.len() == prev_text_len {
+            break;
+        }
+        prev_text_len = text.len();
+    }
+    text
+}
+
+/// Removes leading whitespace and `<br>` tags from the given `text`, but keeps a leading `<p>`
+/// so that the first paragraph still gets its bottom margin.
+pub fn trim_start_html_line_breaks(mut text: &str) -> &str {
+    let mut prev_text_len = text.len();
+    loop {
         text = text
-            .trim_start_matches("<p>")
             .trim_start_matches("<br>")
             .trim_start_matches("<br/>")
             .trim_start_matches("<br />")
