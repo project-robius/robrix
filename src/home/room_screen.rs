@@ -254,11 +254,9 @@ script_mod! {
             mentions_bar_width: instance(4.0)
 
             pixel: fn() {
-                // Multiply rather than replace, so a mention-highlighted message
-                // keeps its yellow on hover, just darker.
                 let base_color = mix(
                     self.color,
-                    self.color * self.color_hover,
+                    self.color_hover,
                     self.hover
                 );
 
@@ -6471,6 +6469,7 @@ impl Message {
             return reply.clone();
         }
         let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+                    color_hover: #fff9c2,
         self.replied_to_message_view = Some(reply.clone());
         reply
     }

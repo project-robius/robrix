@@ -102,7 +102,7 @@ script_mod! {
                 on: AnimatorState{
                     redraw: true
                     from: {all: Snap}
-                    apply: { draw_bg: { color: (COLOR_LIST_ROW_HOVER) } }
+                    apply: { draw_bg: { color: (COLOR_LIST_ITEM_BG_HOVER) } }
                 }
             }
         }

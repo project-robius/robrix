@@ -9,9 +9,6 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    // The background color of a hovered row.
-    mod.widgets.COLOR_LIST_ROW_HOVER = #xEAEFF5
-
     // A clickable row with an avatar, a title, and a smaller subtitle beneath it.
     // Its owner sets `draw_bg.color` to highlight it, e.g., upon hover.
     mod.widgets.AvatarListRow = RoundedView {

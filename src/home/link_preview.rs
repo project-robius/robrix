@@ -136,7 +136,7 @@ script_mod! {
             spacing: 10
             show_bg: true,
             draw_bg +: {
-                color: (COLOR_BG_PREVIEW)
+                color: (COLOR_BG_PREVIEW_TRANSLUCENT)
                 border_radius: 4.0
             }
             align: Align{ y: 0.5 }
@@ -448,7 +448,7 @@ impl LinkPreviewRef {
 fn reset_hover(cx: &mut Cx, item: &ViewRef) {
     let mut item = item.clone();
     script_apply_eval!(cx, item, {
-        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW
+        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW_TRANSLUCENT
     });
 }
 

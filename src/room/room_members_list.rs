@@ -26,7 +26,7 @@ script_mod! {
     mod.widgets.RoomMembersList = #(RoomMembersList::register_widget(vm)) {
         width: Fill, height: Fill
         flow: Down, spacing: 6
-        color_hover: (COLOR_LIST_ROW_HOVER)
+        color_hover: (COLOR_LIST_ITEM_BG_HOVER)
 
         member_filter_bar := mod.widgets.RoomFilterInputBar {
             margin: Inset{right: #(FRAME_PADDING)}

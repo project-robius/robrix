@@ -19,7 +19,7 @@ script_mod! {
 
         draw_bg +: {
             color: (COLOR_PRIMARY)
-            color_hover: #xE0E8F0
+            color_hover: (COLOR_LIST_ITEM_BG_HOVER)
             color_down: #xD0D8E8
             border_radius: 4.0
         }
