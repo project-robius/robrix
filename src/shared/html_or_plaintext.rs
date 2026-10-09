@@ -133,8 +133,9 @@ script_mod! {
         draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
-            code_color: (#EDEDED)
-            quote_bg_color: (#EDEDED)
+            // #EDEDED atop white, but translucent so it also stands out on a hovered or highlighted message.
+            code_color: (#x00000012)
+            quote_bg_color: (#x00000012)
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
 

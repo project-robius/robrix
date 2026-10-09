@@ -41,7 +41,7 @@ script_mod! {
         align: Align{x: 0.0, y: 0.0}
 
         color_focus: #xB6D3F2
-        color_hover: (COLOR_LIST_ROW_HOVER)
+        color_hover: (COLOR_LIST_ITEM_BG_HOVER)
 
         // So the way this works is that we move the popup_frame wrapper view,
         // which allows the `main_content` to just behave like a regular Fill/Fill view.

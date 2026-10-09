@@ -380,7 +380,7 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: #f5f5f5
+                color: (COLOR_LIST_ITEM_BG_HOVER)
                 border_radius: 4.0
                 border_size: 0
             }

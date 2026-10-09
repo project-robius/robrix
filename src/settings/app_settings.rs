@@ -103,7 +103,7 @@ script_mod! {
 
         draw_item +: {
             color: (COLOR_PRIMARY),
-            color_hover: (COLOR_BG_PREVIEW),
+            color_hover: (COLOR_LIST_ITEM_BG_HOVER),
             color_active: (COLOR_BG_PREVIEW),
             mark_color: uniform(COLOR_ACTIVE_PRIMARY_DARKER),
             pixel: fn() {

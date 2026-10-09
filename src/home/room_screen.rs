@@ -254,11 +254,9 @@ script_mod! {
             mentions_bar_width: instance(4.0)
 
             pixel: fn() {
-                // Multiply rather than replace, so a mention-highlighted message
-                // keeps its yellow on hover, just darker.
                 let base_color = mix(
                     self.color,
-                    self.color * self.color_hover,
+                    self.color_hover,
                     self.hover
                 );
 
@@ -6456,6 +6454,7 @@ impl Widget for Message {
             script_apply_eval!(cx, self, {
                 draw_bg +: {
                     color: #ffffd1,
+                    color_hover: #xfff9c2,
                     mentions_bar_color: #ffd54f
                 }
             });

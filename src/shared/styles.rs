@@ -158,8 +158,8 @@ script_mod! {
     mod.widgets.COLOR_SECONDARY = #E3E3E3
     mod.widgets.COLOR_SECONDARY_DARKER = #C8C8C8
 
-    // What a rooms list entry or timeline message darkens to on hover or press.
-    mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #f4f4f4
+    // What a list item, e.g., a room, message, or menu item, darkens to on hover or press.
+    mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #xEFF3F8
 
     // Every scroll bar uses this styling.
     mod.widgets.ScrollBar.draw_bg.color = #00000040
@@ -173,6 +173,8 @@ script_mod! {
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
 
     // The light lavender of the room action buttons and room pane headers.
+    // Looks like COLOR_BG_PREVIEW atop white, but it also darkens a hovered or highlighted message behind it.
+    mod.widgets.COLOR_BG_PREVIEW_TRANSLUCENT = #x1060FF10
     mod.widgets.COLOR_BG_LAVENDER = #xEDE8FD
     mod.widgets.COLOR_BG_LAVENDER_HOVER = #xE8E1FA
     mod.widgets.COLOR_BG_LAVENDER_DOWN = #xE1D7F7
