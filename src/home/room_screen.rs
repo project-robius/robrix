@@ -6470,7 +6470,6 @@ impl Message {
             return reply.clone();
         }
         let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
-                    color_hover: #fff9c2,
         self.replied_to_message_view = Some(reply.clone());
         reply
     }
