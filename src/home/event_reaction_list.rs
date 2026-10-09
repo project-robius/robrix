@@ -125,6 +125,10 @@ pub struct ReactionList {
 }
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.children.is_empty() {
+            self.area = Area::Empty;
+            return DrawStep::done();
+        }
         cx.begin_turtle(walk, self.layout);
         for (button, _) in self.children.iter_mut() {
             let _ = button.draw(cx, scope);

@@ -71,9 +71,20 @@ script_mod! {
             hover: instance(0.0)
             color: instance((COLOR_PRIMARY))
             color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
+            border_radius: uniform(4.0)
+            border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
             pixel: fn() {
-                return Pal.premul(mix(self.color, self.color_hover, self.hover))
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.border_inset.x,
+                    self.border_inset.y,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w),
+                    self.border_radius
+                )
+                sdf.fill(mix(self.color, self.color_hover, self.hover))
+                return sdf.result
             }
         }
 
@@ -111,9 +122,20 @@ script_mod! {
         draw_bg +: {
             highlight: instance(0.0)
             color_highlight: instance(#c5d6fa)
+            border_radius: uniform(4.0)
+            border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
             pixel: fn() {
-                return Pal.premul(vec4(self.color_highlight.xyz, self.color_highlight.w * self.highlight))
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.border_inset.x,
+                    self.border_inset.y,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w),
+                    self.border_radius
+                )
+                sdf.fill(vec4(self.color_highlight.xyz, self.color_highlight.w * self.highlight))
+                return sdf.result
             }
         }
 
@@ -148,7 +170,7 @@ script_mod! {
                 height: Fit
 
                 timestamp := Timestamp {
-                    margin: Inset{top: 3}
+                    margin: Inset{top: 3.13} // puts its baseline on the state text's baseline
                 }
             }
 
@@ -237,9 +259,20 @@ script_mod! {
             hover: instance(0.0)
             color: instance((COLOR_PRIMARY))
             color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
+            border_radius: uniform(4.0)
+            border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
             pixel: fn() {
-                return Pal.premul(mix(self.color, self.color_hover, self.hover))
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.border_inset.x,
+                    self.border_inset.y,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w),
+                    self.border_radius
+                )
+                sdf.fill(mix(self.color, self.color_hover, self.hover))
+                return sdf.result
             }
         }
 
@@ -282,7 +315,7 @@ script_mod! {
                 height: Fit
 
                 timestamp := Timestamp {
-                    margin: Inset{top: 3}
+                    margin: Inset{top: 3.13} // puts its baseline on the state text's baseline
                 }
             }
 

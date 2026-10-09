@@ -146,14 +146,14 @@ script_mod! {
 
         list_item_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
         list_item_marker_pad: 8.0
-        list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 1, bottom: 3 } }
+        list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 1, bottom: 7 } }
         table_row_layout: Layout{ flow: Flow.Right{row_align: RowAlign.Center} }
         table_cell_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, padding: Inset{left: 6, right: 6, top: 4, bottom: 4} }
         code_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
         code_walk: Walk{ margin: Inset{ top: 10, bottom: 10, left: 0, right: 0 } }
 
         heading_margin: Inset{ top: 1.0, bottom: 0.1 }
-        paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
+        paragraph_margin: Inset{ top: 1.8, bottom: 1.8 }
 
         inline_code_padding: Inset{top: 2.5, bottom: 1.5, left: 5, right: 5 }
         inline_code_margin: Inset{ left: 0, right: 0, bottom: 2, top: 2 }
@@ -188,6 +188,8 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 padding: 0,
                 draw_text +: {
+                    // Keeps plaintext on the same baseline as Html, which doesn't ink-center its text.
+                    ink_centered: false
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: (MESSAGE_FONT_SIZE) },
                 }
@@ -210,6 +212,8 @@ script_mod! {
                     font_size: 9.3
                     max_lines: 2
                     text_overflow: Ellipsis
+                    // A two-line preview keeps its paragraphs close together.
+                    paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
                     text_style_normal +: { font_size: 9.3, line_spacing: 1.32 }
                     text_style_italic +: { font_size: 9.3, line_spacing: 1.32 }
                     text_style_bold +: { font_size: 9.3, line_spacing: 1.32 }

@@ -229,6 +229,8 @@ script_mod! {
         thread_summary_latest := MessageHtml {
             max_lines: 2
             text_overflow: Ellipsis
+            // A two-line preview keeps its paragraphs close together.
+            paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
         }
     }
 
@@ -250,8 +252,10 @@ script_mod! {
             color: instance((COLOR_PRIMARY)) // default color)
             color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
 
-            mentions_bar_color: instance((COLOR_PRIMARY))
+            mentions_bar_color: instance(#0000)
             mentions_bar_width: instance(4.0)
+            border_radius: uniform(4.0)
+            border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
             pixel: fn() {
                 let base_color = mix(
@@ -268,12 +272,23 @@ script_mod! {
 
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
 
+                // A mention's highlight covers the full width, while other highlights are inset.
+                let not_mention = 1.0 - step(0.001, self.mentions_bar_color.w);
+                let inset = self.border_inset * not_mention;
+
                 // draw bg
-                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y);
-                sdf.fill(with_highlight);
+                sdf.box(
+                    inset.x,
+                    inset.y,
+                    self.rect_size.x - (inset.x + inset.z),
+                    self.rect_size.y - (inset.y + inset.w),
+                    self.border_radius
+                );
+                sdf.fill_keep(with_highlight);
 
                 // draw the left vertical line
-                sdf.rect(0., 0., self.mentions_bar_width, self.rect_size.y);
+                sdf.rect(inset.x, 0., self.mentions_bar_width, self.rect_size.y);
+                sdf.intersect(); // clip it to the bg's rounded corners
                 sdf.fill(self.mentions_bar_color);
 
                 return sdf.result;
@@ -321,28 +336,48 @@ script_mod! {
             }
         }
 
-        body := View {
+        // The sender's avatar and username, which a condensed message hides.
+        header := View {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: Inset{top: 0, bottom: 10, left: 8, right: 10},
+            padding: Inset{left: 8, right: 10},
+
+            avatar := Avatar {
+                width: 42,
+                height: 42,
+                // Centered over the timestamp column below it.
+                margin: Inset{top: 7.5, bottom: 6.1, left: 4, right: 12}
+            }
+            username := Label {
+                width: Fill,
+                flow: Flow.Right { wrap: false },
+                padding: 0,
+                margin: Inset{top: 20.0, right: 10.0} // centers it on the avatar
+                max_lines: 1
+                text_overflow: Ellipsis
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE {},
+                    color: (USERNAME_TEXT_COLOR)
+                }
+                text: "<Username not available>"
+            }
+        }
+
+        body := View {
+            width: Fill,
+            height: Fit
+            // Aligns the timestamp with the baseline of the content's first line
+            flow: Flow.Right{row_align: RowAlign.Baseline},
+            padding: Inset{top: 0, bottom: 7.5, left: 8, right: 10},
 
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 50.0,
                 height: Fit,
-                margin: Inset{top: 4.5, right: 8}
+                margin: Inset{right: 8}
                 flow: Down,
-                avatar := Avatar {
-                    width: 40,
-                    height: 40,
-                    // The vertical margins keep the username centered on the avatar
-                    // and the timestamp in line with the first line of text.
-                    margin: Inset{top: 4, bottom: 4}
-                }
-                timestamp := Timestamp {
-                    margin: Inset{ top: 5.9 }
-                }
+                timestamp := Timestamp { }
                 edited_indicator := EditedIndicator { }
                 tsp_sign_indicator := TspSignIndicator { }
             }
@@ -352,25 +387,6 @@ script_mod! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
-
-                username_view := View {
-                    flow: Right,
-                    width: Fill,
-                    height: Fit,
-                    username := Label {
-                        width: Fill,
-                        flow: Flow.Right { wrap: false },
-                        padding: 0,
-                        margin: Inset{bottom: 9.0, top: 20.0, right: 10.0,}
-                        max_lines: 1
-                        text_overflow: Ellipsis
-                        draw_text +: {
-                            text_style: USERNAME_TEXT_STYLE {},
-                            color: (USERNAME_TEXT_COLOR)
-                        }
-                        text: "<Username not available>"
-                    }
-                }
 
                 message := HtmlOrPlaintext { }
                 link_preview_view := mod.widgets.LinkPreview {}
@@ -397,41 +413,9 @@ script_mod! {
                 margin: Inset{ left: 55, bottom: 5.0 }
             }
         }
-        body := View {
-            width: Fill,
-            height: Fit
-            flow: Right,
-            padding: Inset{ top: 0, bottom: 2.5, left: 8.0, right: 10.0 },
-            profile := View {
-                align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 50.0,
-                height: Fit,
-                flow: Down,
-                timestamp := Timestamp {
-                    margin: Inset{top: 2.5}
-                }
-                edited_indicator := EditedIndicator { }
-                tsp_sign_indicator := TspSignIndicator { }
-            }
-            content := View {
-                width: Fill,
-                height: Fit,
-                flow: Down,
-                padding: Inset{ left: 8.0 }
-
-                message := HtmlOrPlaintext { }
-                link_preview_view := mod.widgets.LinkPreview {}
-                download_section := mod.widgets.MessageDownloadSection {}
-                View {
-                    width: Fill,
-                    height: Fit
-                    flow: Right,
-                    reaction_list := mod.widgets.ReactionList { }
-                    avatar_row := mod.widgets.AvatarRow {}
-                    send_status_indicator := mod.widgets.SendStatusIndicator {}
-                }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
-            }
+        header +: { visible: false }
+        body +: {
+            padding: Inset{ top: 2.5, bottom: 2.5, left: 8.0, right: 10.0 },
         }
     }
 
@@ -456,9 +440,13 @@ script_mod! {
                         caption := HtmlOrPlaintext {}
                     }
                     image := TextOrImage {
-                        image_view +: { image +: {
-                            height: (mod.widgets.IMG_MSG_FIT)
-                        } }
+                        image_view +: {
+                            // The same spacing as timestamps in other text-based messages
+                            baseline: Baseline.At(13.57)
+                            image +: {
+                                height: (mod.widgets.IMG_MSG_FIT)
+                            }
+                        }
                     }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
@@ -492,9 +480,13 @@ script_mod! {
                         caption := HtmlOrPlaintext {}
                     }
                     image := TextOrImage {
-                        image_view +: { image +: {
-                            height: (mod.widgets.IMG_MSG_FIT)
-                        } }
+                        image_view +: {
+                            // The same spacing as timestamps in other text-based messages
+                            baseline: Baseline.At(13.57)
+                            image +: {
+                                height: (mod.widgets.IMG_MSG_FIT)
+                            }
+                        }
                     }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
@@ -4698,7 +4690,7 @@ fn populate_message_view(
                         (item, true)
                     } else {
                         // Draw the profile up front here because we need the username for the emote body.
-                        let (username, profile_drawn) = item.avatar(cx, ids!(profile.avatar)).set_avatar_and_get_username(
+                        let (username, profile_drawn) = item.avatar(cx, ids!(header.avatar)).set_avatar_and_get_username(
                             cx,
                             timeline_kind,
                             event_tl_item.sender(),
@@ -5123,11 +5115,11 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let mut username_label = item.label(cx, ids!(content.username));
+        let mut username_label = item.label(cx, ids!(header.username));
 
         if !is_server_notice { // the normal case
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                item.avatar(cx, ids!(profile.avatar)).set_avatar_and_get_username(
+                item.avatar(cx, ids!(header.avatar)).set_avatar_and_get_username(
                     cx,
                     timeline_kind,
                     event_tl_item.sender(),
@@ -5148,7 +5140,7 @@ fn populate_message_view(
         }
         else {
             // Server notices are drawn with a red color avatar background and username.
-            let avatar = item.avatar(cx, ids!(profile.avatar));
+            let avatar = item.avatar(cx, ids!(header.avatar));
             avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
             username_label.set_text(cx, "Server notice");
             script_apply_eval!(cx, username_label, {
@@ -5254,7 +5246,7 @@ fn populate_text_message_content(
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
         let linkified_html = utils::linkify_get_urls(
-            utils::trim_start_html_whitespace(&fb.body),
+            utils::trim_start_html_line_breaks(&fb.body),
             true,
             Some(&mut links),
         );
