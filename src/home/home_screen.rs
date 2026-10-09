@@ -489,7 +489,7 @@ pub struct HomeScreen {
     #[rust] previous_selection: SelectedTab,
     #[rust] is_spaces_bar_shown: bool,
 
-    /// The Home or Space tab that was previouly selected before the transition
+    /// The Home or Space tab that was previously selected before the transition
     /// to mobile view mode or before another transition (like going to AddRoom).
     #[rust] tab_to_restore_on_mobile: Option<SelectedTab>,
 
@@ -516,7 +516,7 @@ impl ScriptHook for HomeScreen {
 
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Begin a cancel scope ASAP so that any modal that opens later can take precendence.
+        // Begin a cancel scope ASAP so that any modal that opens later can take precedence.
         if self.cancel_scope.is_none() {
             self.cancel_scope = Some(self.begin_cancel_scope_for(cx, CancelScopeKind::Back));
         }
