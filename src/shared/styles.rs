@@ -10,6 +10,8 @@ script_mod! {
     mod.widgets.ICON_ADD_PHOTO        = crate_resource("self://resources/icons/add_photo.svg")
     mod.widgets.ICON_ADD_USER         = crate_resource("self://resources/icons/add_user.svg")
     mod.widgets.ICON_ADD_WALLET       = crate_resource("self://resources/icons/add_wallet.svg")
+    mod.widgets.ICON_ARROW_LEFT       = crate_resource("self://resources/icons/arrow_left.svg")
+    mod.widgets.ICON_ARROW_RIGHT      = crate_resource("self://resources/icons/arrow_right.svg")
     mod.widgets.ICON_FORBIDDEN        = crate_resource("self://resources/icons/forbidden.svg")
     mod.widgets.ICON_CHECKMARK        = crate_resource("self://resources/icons/checkmark.svg")
     mod.widgets.ICON_CHEVRON_DOWN     = crate_resource("self://resources/icons/chevron_down.svg")
@@ -171,10 +173,10 @@ script_mod! {
     mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
 
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
-
-    // The light lavender of the room action buttons and room pane headers.
     // Looks like COLOR_BG_PREVIEW atop white, but it also darkens a hovered or highlighted message behind it.
     mod.widgets.COLOR_BG_PREVIEW_TRANSLUCENT = #x1060FF10
+
+    // The light lavender of the room action buttons and room pane headers.
     mod.widgets.COLOR_BG_LAVENDER = #xEDE8FD
     mod.widgets.COLOR_BG_LAVENDER_HOVER = #xE8E1FA
     mod.widgets.COLOR_BG_LAVENDER_DOWN = #xE1D7F7

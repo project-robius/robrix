@@ -3,9 +3,9 @@ use ruma::{OwnedEventId, OwnedRoomId};
 use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, sliding_sync::TimelineKind, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{home_screen::ScreenRestoredAction, nav_history::{GoBackAction, GoForwardAction, NavHistory, can_show}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, sliding_sync::TimelineKind, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt}, room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt}, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
-use crate::room::{pinned_messages_list::PinnedMessagesListAction, room_action_bar::RoomActionBarWidgetRefExt, room_pane, room_tabs::RoomTabs};
+use crate::{logout::logout_confirm_modal::LogoutAction, room::{pinned_messages_list::PinnedMessagesListAction, room_action_bar::RoomActionBarWidgetRefExt, room_pane, room_tabs::RoomTabs}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -88,18 +88,19 @@ pub struct MainDesktopUI {
     #[rust] default_layout: SavedDockState,
 
     /// The rooms that are currently open, keyed by the LiveId of their tab.
-    #[rust]
-    open_rooms: HashMap<LiveId, SelectedRoom>,
+    #[rust] open_rooms: HashMap<LiveId, SelectedRoom>,
 
     /// The order in which room/thread tabs were last viewed,
     /// from oldest at the front to most recent at the end.
-    #[rust]
-    room_order: Vec<SelectedRoom>,
+    #[rust] room_order: Vec<SelectedRoom>,
 
     /// The most recently selected room, used to prevent re-selecting the same room in Dock
     /// which would trigger redraw of whole Widget.
-    #[rust]
-    most_recently_selected_room: Option<SelectedRoom>,
+    #[rust] most_recently_selected_room: Option<SelectedRoom>,
+
+    /// The tab that was selected before the current one,
+    /// which is shown in the tab bar if the current tab is closed or dragged out.
+    #[rust] previously_selected_tab: Option<LiveId>,
 
     /// The ID of the currently-selected space, if any.
     ///
@@ -107,17 +108,16 @@ pub struct MainDesktopUI {
     /// If `None`, we're displaying the main home view of all rooms from any space.
     #[rust] selected_space: Option<OwnedRoomId>,
 
-    /// Boolean to indicate if we've drawn the MainDesktopUi previously in the desktop view.
+    /// Whether we've loaded (or asked to load) the dock from the saved dock state.
     ///
-    /// When switching mobile view to desktop, we need to restore the saved app state to the UI.
-    /// * If false, this widget emits an action to load the dock from the saved dock state.
+    /// When switching from mobile view mode to desktop, we restore the saved app state to the UI.
+    /// * If false, this widget loads the dock before handling its first event,
+    ///   or emits an action to load it upon its first draw, whichever comes first.
     /// * If true, this widget proceeds to draw the desktop UI as normal.
-    #[rust]
-    drawn_previously: bool,
+    #[rust] is_dock_loaded: bool,
 
-    /// Held while Back closes the selected thread tab; child overlays take priority.
-    #[rust]
-    cancel_scope: Option<CancelScope>,
+    /// Lets the go-back gesture go back in the nav history; child overlays take priority.
+    #[rust] cancel_scope: Option<CancelScope>,
 }
 
 impl ScriptHook for MainDesktopUI {
@@ -129,49 +129,51 @@ impl ScriptHook for MainDesktopUI {
 }
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // It's possible for this widget to receive events before its first draw,
+        // so we load the saved dock first in order for actions/events to apply to
+        // the saved dock state instead of applying to a default state
+        // that would then overwrite the saved one.
+        if !self.is_dock_loaded && cx.has_global::<RoomsListRef>() {
+            self.is_dock_loaded = true;
+            self.selected_space = cx.get_global::<RoomsListRef>().get_selected_space_id();
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+            self.restore_dock(cx, app_state);
+        }
+
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
         self.room_tabs.handle_event(cx, event, scope, &mut self.view, &self.open_rooms);
 
-        // For convenience, we support go-back gestures when viewing a thread's tab
-        // to easily go back to the most recent room.
+        // The back gesture results in navigating back to the previous spot in nav history.
         // The mouse's back button is treated like the go-back gesture, so any overlay view
         // will "own" (consume) the go-back event before this code can do so here.
-        if let Some(sr @ SelectedRoom::Thread { .. }) = self.most_recently_selected_room.as_ref()
-            && self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
-            && (event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back()))
+        if self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+            && (matches!(event, Event::BackPressed { .. }) || matches!(event, Event::MouseUp(e) if e.button.is_back()))
         {
-            self.close_tab(cx, sr.tab_id());
-            self.redraw(cx);
-            cx.action(MainDesktopUiAction::SaveDockIntoAppState);
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+            if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), can_show(cx))
+                && (event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back()))
+            {
+                self.go_back_to(cx, &mut app_state.nav_history, previous_place);
+            }
         }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if !self.drawn_previously && cx.has_global::<RoomsListRef>() {
-            // When changing from Mobile to Desktop view mode, we need to restore the state
+        if !self.is_dock_loaded && cx.has_global::<RoomsListRef>() {
+            // When switching from mobile view mode to desktop, we need to restore the state
             // of this widget, which we get from the `AppState` passed down via `scope`.
             // This includes the currently selected space, which we get from the RoomsList widget.
             // We must set `selected_space` first before the load operation occurs, in order for
             // the proper space-specific instance of the saved dock UI layout/state to be selected.
             self.selected_space = cx.get_global::<RoomsListRef>().get_selected_space_id();
             cx.action(MainDesktopUiAction::LoadDockFromAppState);
-            self.drawn_previously = true;
+            self.is_dock_loaded = true;
         }
         self.room_tabs.draw_walk(cx, scope, walk, &mut self.view, &self.open_rooms)
     }
 }
 
 impl MainDesktopUI {
-    fn update_cancel_scope(&mut self, cx: &mut Cx) {
-        if matches!(self.most_recently_selected_room, Some(SelectedRoom::Thread { .. })) {
-            if self.cancel_scope.is_none() {
-                self.cancel_scope = Some(self.begin_cancel_scope_for(cx, CancelScopeKind::Back));
-            }
-        } else {
-            self.cancel_scope = None;
-        }
-    }
-
     /// Moves or adds the given room the the end of the `room_order`, the most recent spot.
     fn mark_room_as_recent(&mut self, room: &SelectedRoom) {
         self.room_order.retain(|sr| sr != room);
@@ -183,6 +185,12 @@ impl MainDesktopUI {
     /// Updates the room order, current selection, and app state.
     fn select_room(&mut self, cx: &mut Cx, room: Option<SelectedRoom>) {
         let dock = self.view.dock(cx, ids!(dock));
+        let current_tab_id = self.most_recently_selected_room.as_ref()
+            .map_or(id!(home_tab), SelectedRoom::tab_id);
+        if room.as_ref().map_or(id!(home_tab), SelectedRoom::tab_id) != current_tab_id {
+            self.previously_selected_tab = Some(current_tab_id);
+            cancel_all_dictation();
+        }
         if let Some(room) = room {
             dock.select_tab(cx, room.tab_id());
             self.mark_room_as_recent(&room);
@@ -192,14 +200,6 @@ impl MainDesktopUI {
             dock.select_tab(cx, id!(home_tab));
             cx.action(AppStateAction::FocusNone);
             self.most_recently_selected_room = None;
-        }
-        self.update_cancel_scope(cx);
-    }
-
-    /// Cancels dictation unless `room` is already shown, since showing it hides the current tab.
-    fn cancel_dictation_unless_shown(&self, room: &SelectedRoom) {
-        if self.most_recently_selected_room.as_ref() != Some(room) {
-            cancel_all_dictation();
         }
     }
 
@@ -286,10 +286,42 @@ impl MainDesktopUI {
         }
     }
 
+    /// Shows the given screen, such that going back from it will return to the current screen.
+    fn navigate_to_screen(&mut self, cx: &mut Cx, nav_history: &mut NavHistory, screen: SelectedRoom) {
+        if self.most_recently_selected_room.as_ref() != Some(&screen) {
+            nav_history.record_navigation_from(self.most_recently_selected_room.clone());
+        }
+        self.focus_or_create_tab(cx, screen);
+    }
+
+    /// Goes back from the current screen to its `previous_place`, or the home tab if `None`.
+    fn go_back_to(&mut self, cx: &mut Cx, nav_history: &mut NavHistory, previous_place: Option<SelectedRoom>) {
+        let current_screen = self.most_recently_selected_room.clone();
+        nav_history.record_going_back_from(current_screen.clone(), can_show(cx));
+        // We show the previous place first so that if its tab was closed,
+        // its new tab takes the current tab's spot.
+        self.show_place(cx, previous_place);
+        // Going back from a thread closes its tab; going forward to it will reopen it again.
+        if let Some(thread @ SelectedRoom::Thread { .. }) = current_screen {
+            self.close_tab(cx, thread.tab_id());
+        }
+        self.redraw(cx);
+        cx.action(MainDesktopUiAction::SaveDockIntoAppState);
+    }
+
+    /// Shows the given place from the nav history, or the home tab if `None`.
+    fn show_place(&mut self, cx: &mut Cx, place: Option<SelectedRoom>) {
+        match place {
+            Some(screen) => self.focus_or_create_tab(cx, screen),
+            None => self.select_room(cx, None),
+        }
+    }
+
     /// Focuses or creates the tab for the given timeline, and then jumps to the given event in it.
     fn show_timeline_and_jump_to_event(
         &mut self,
         cx: &mut Cx,
+        nav_history: &mut NavHistory,
         room_name_id: &RoomNameId,
         timeline_kind: &TimelineKind,
         event_id: OwnedEventId,
@@ -299,14 +331,14 @@ impl MainDesktopUI {
         // If the room is open already, use its existing tab (which knows the room name).
         let screen = self.open_rooms.get(&screen.tab_id()).cloned().unwrap_or(screen);
         let tab_id = screen.tab_id();
-        self.cancel_dictation_unless_shown(&screen);
-        self.focus_or_create_tab(cx, screen);
+        self.navigate_to_screen(cx, nav_history, screen);
         self.view.dock(cx, ids!(dock)).item(tab_id).as_room_screen()
             .jump_to_event_when_shown(cx, timeline_kind, event_id, description);
     }
 
     /// Closes a tab in the dock and selects the next most recently viewed tab.
-    fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) {
+    /// Returns the screen that the closed tab was showing.
+    fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) -> Option<SelectedRoom> {
         let dock = self.view.dock(cx, ids!(dock));
 
         let Some(room_being_closed) = self.open_rooms.get(&tab_id).cloned() else {
@@ -314,7 +346,7 @@ impl MainDesktopUI {
             // but we still need to handle it gracefully.
             dock.close_tab(cx, tab_id);
             self.init_all_visible_tabs(cx);
-            return;
+            return None;
         };
         // If we're closing a thread timeline, free up its resources & bkgd async tasks.
         room_being_closed.drop_resources(cx);
@@ -334,6 +366,7 @@ impl MainDesktopUI {
         self.select_room(cx, room_to_select);
 
         self.init_all_visible_tabs(cx);
+        Some(room_being_closed)
     }
 
     /// Closes all tabs
@@ -407,6 +440,8 @@ impl MainDesktopUI {
     ) {
         self.save_dock_state_to(cx, app_state);
         self.selected_space = new_space;
+        // The other dock's screens aren't in this dock, so we start a fresh nav history.
+        app_state.nav_history.clear();
         self.load_dock_state_from(cx, app_state);
     }
 
@@ -433,6 +468,29 @@ impl MainDesktopUI {
             room_order: self.room_order.clone(),
             selected_room: self.most_recently_selected_room.clone(),
         }
+    }
+
+    /// Loads the saved dock, but keeps showing the current screen within it.
+    fn restore_dock(&mut self, cx: &mut Cx, app_state: &mut AppState) {
+        // If we just switched from mobile view mode, we want to keep showing
+        // the same screen that the mobile view was showing:
+        // either a room/thread/etc, or the rooms list (which becomes the home/welcome tab).
+        // If there's no nav history at all, we show the saved tab instead.
+        let shown_screen = app_state.selected_room.clone();
+        let is_home_shown = shown_screen.is_none()
+            && !(app_state.nav_history.back.is_empty() && app_state.nav_history.forward.is_empty());
+        self.load_dock_state_from(cx, app_state);
+        if let Some(shown_screen) = shown_screen {
+            self.focus_or_create_tab(cx, shown_screen);
+        } else if is_home_shown {
+            self.select_room(cx, None);
+        }
+        app_state.selected_room = self.most_recently_selected_room.clone();
+        // We hold this scope for as long as we exist, so modals opened later take precedence.
+        if self.cancel_scope.is_none() {
+            self.cancel_scope = Some(self.begin_cancel_scope_for(cx, CancelScopeKind::Back));
+        }
+        cx.action(ScreenRestoredAction);
     }
 
     /// Loads and populates the dock from the saved dock state for the currently-selected space.
@@ -510,7 +568,8 @@ impl MainDesktopUI {
             Some(selected_room) => self.focus_or_create_tab(cx, selected_room),
             None => self.most_recently_selected_room = None,
         }
-        self.update_cancel_scope(cx);
+        // The previous dock's selection isn't in this dock.
+        self.previously_selected_tab = None;
         app_state.selected_room = selected_room;
         self.redraw(cx);
     }
@@ -598,9 +657,8 @@ impl WidgetMatchEvent for MainDesktopUI {
         if let Some(tab_id) = self.room_tabs.expansion_clicked(cx, actions, &self.open_rooms)
             && let Some(room) = self.open_rooms.get(&tab_id).cloned()
         {
-            self.cancel_dictation_unless_shown(&room);
-            self.select_room(cx, Some(room));
-            self.init_tab_if_needed(cx, tab_id);
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+            self.navigate_to_screen(cx, &mut app_state.nav_history, room);
             let action_bar = self.view.dock(cx, ids!(dock)).item(tab_id)
                 .room_action_bar(cx, ids!(room_actions));
             action_bar.set_expanded(cx, !action_bar.is_expanded(), true);
@@ -616,18 +674,39 @@ impl WidgetMatchEvent for MainDesktopUI {
                 continue;
             }
 
+            if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                self.selected_space = None;
+                continue;
+            }
+
+            if action.downcast_ref::<GoBackAction>().is_some() {
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), can_show(cx)) {
+                    self.go_back_to(cx, &mut app_state.nav_history, previous_place);
+                }
+                continue;
+            }
+
+            if action.downcast_ref::<GoForwardAction>().is_some() {
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                if let Some(next_place) = app_state.nav_history.next_place(can_show(cx)) {
+                    app_state.nav_history.record_going_forward_from(self.most_recently_selected_room.clone(), can_show(cx));
+                    self.show_place(cx, next_place);
+                    should_save_dock_action = true;
+                }
+                continue;
+            }
+
             // An invited space's InviteScreen should be shown in the main home dock.
             // We switch to that dock directly, here, instead of handling it as a `GoToHome` action,
             // because it's instant, and then we can create the new InviteScreen tab immediately.
             if let SpacesBarAction::InvitedSpaceClicked { space_name_id } = widget_action.cast() {
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
                 if self.selected_space.is_some() {
-                    let app_state = scope.data.get_mut::<AppState>().unwrap();
                     self.switch_dock_to_space(cx, app_state, None);
                 }
                 cx.action(NavigationBarAction::GoToHome);
-                let invite = SelectedRoom::InvitedRoom { room_name_id: space_name_id };
-                self.cancel_dictation_unless_shown(&invite);
-                self.focus_or_create_tab(cx, invite);
+                self.navigate_to_screen(cx, &mut app_state.nav_history, SelectedRoom::InvitedRoom { room_name_id: space_name_id });
                 continue;
             }
 
@@ -653,11 +732,11 @@ impl WidgetMatchEvent for MainDesktopUI {
             match widget_action.cast() {
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
-                    // Switching tabs hides whatever the user was dictating into.
                     let current_tab_id = self.most_recently_selected_room.as_ref()
                         .map_or(id!(home_tab), SelectedRoom::tab_id);
                     if tab_id != current_tab_id {
-                        cancel_all_dictation();
+                        let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        app_state.nav_history.record_navigation_from(self.most_recently_selected_room.clone());
                     }
                     if tab_id == id!(home_tab) {
                         self.select_room(cx, None);
@@ -670,7 +749,12 @@ impl WidgetMatchEvent for MainDesktopUI {
                     should_save_dock_action = true;
                 }
                 DockAction::TabCloseWasPressed(tab_id) => {
-                    self.close_tab(cx, tab_id);
+                    let current_screen = self.most_recently_selected_room.clone();
+                    // Closing the current tab C shows another tab A, so going back from tab A should reopen tab C.
+                    if self.close_tab(cx, tab_id).is_some_and(|closed_screen| current_screen.as_ref() == Some(&closed_screen)) {
+                        let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        app_state.nav_history.record_navigation_from(current_screen);
+                    }
                     self.redraw(cx);
                     should_save_dock_action = true;
                 }
@@ -696,8 +780,48 @@ impl WidgetMatchEvent for MainDesktopUI {
                         internal_id: Some(internal_id),
                         ..
                     } = &drop_event.items[0] {
-                        self.view.dock(cx, ids!(dock)).drop_move(cx, drop_event.abs, *internal_id);
+                        let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        let dock = self.view.dock(cx, ids!(dock));
+                        let old_tab_bar = dock.clone_state().and_then(|items| items.into_values().find_map(|item| match item {
+                            DockItem::Tabs { tabs, selected, .. } if tabs.contains(internal_id) => Some((tabs, selected)),
+                            _ => None,
+                        }));
+                        dock.drop_move(cx, drop_event.abs, *internal_id);
+                        // by default, the dock shows the neighboring tab when a tab is dragged out of a tab bar,
+                        // but instead we want to show the tab that was previously selected before the dragged-out tab.
+                        if let Some((tabs, selected)) = old_tab_bar
+                            && let Some(tab_left_behind) = tabs.iter().find(|tab_id| *tab_id != internal_id)
+                            && dock.find_tab_bar_of_tab(*tab_left_behind).map(|(bar, _)| bar)
+                                != dock.find_tab_bar_of_tab(*internal_id).map(|(bar, _)| bar)
+                        {
+                            let was_left_behind = |tab_id: &LiveId| tab_id != internal_id && tabs.contains(tab_id);
+                            let tab_to_select = tabs.get(selected).copied().filter(was_left_behind)
+                                .or_else(|| self.previously_selected_tab.filter(was_left_behind))
+                                .or_else(|| app_state.nav_history.back.iter().rev()
+                                    .map(|place| place.as_ref().map_or(id!(home_tab), SelectedRoom::tab_id))
+                                    .find(was_left_behind)
+                                )
+                                .or_else(|| self.room_order.iter().rev().map(SelectedRoom::tab_id).find(was_left_behind));
+                            if let Some(tab_to_select) = tab_to_select {
+                                dock.select_tab(cx, tab_to_select);
+                            }
+                        }
+                        // Unlike a mouse press, a touch drag doesn't select the dragged tab,
+                        // so we do that now in case it's covering the current tab.
+                        let current_tab_id = self.most_recently_selected_room.as_ref().map_or(id!(home_tab), SelectedRoom::tab_id);
+                        let dropped_place = if *internal_id == id!(home_tab) {
+                            Some(None)
+                        } else {
+                            self.open_rooms.get(internal_id).cloned().map(Some)
+                        };
+                        if *internal_id != current_tab_id
+                            && let Some(dropped_place) = dropped_place
+                        {
+                            app_state.nav_history.record_navigation_from(self.most_recently_selected_room.clone());
+                            self.select_room(cx, dropped_place);
+                        }
                     }
+
                     // A drag-drop may create a new split pane, revealing an
                     // uninitialized tab that was deferred during dock restoration.
                     self.init_all_visible_tabs(cx);
@@ -715,11 +839,10 @@ impl WidgetMatchEvent for MainDesktopUI {
                     if self.selected_space.is_some() && matches!(app_state.selected_tab, SelectedTab::Home) {
                         self.switch_dock_to_space(cx, app_state, None);
                     }
-                    self.cancel_dictation_unless_shown(selected_room);
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                     // a redraw to be happening in order to draw the tab content.
-                    self.focus_or_create_tab(cx, selected_room.clone());
+                    self.navigate_to_screen(cx, &mut app_state.nav_history, selected_room.clone());
                 }
                 RoomsListAction::InviteAccepted { room_name_id, kind } => {
                     // A space's SpaceLobbyScreen should be shown in its top-level ancestor space's dock
@@ -754,8 +877,12 @@ impl WidgetMatchEvent for MainDesktopUI {
                 room_pane::dock_when_shown(cx, timeline_kind, kind, saved);
                 // Use the room's existing tab, which has the room's current name.
                 let screen = self.open_rooms.get(&screen.tab_id()).cloned().unwrap_or(screen);
-                self.focus_or_create_tab(cx, screen);
-                self.close_tab(cx, pane_tab_id);
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                self.navigate_to_screen(cx, &mut app_state.nav_history, screen.clone());
+                if let Some(pane) = self.close_tab(cx, pane_tab_id) {
+                    // The pane is back in its room's screen, so going back or forward to the pane goes there instead.
+                    app_state.nav_history.replace(&pane, &screen, Some(&screen));
+                }
                 self.redraw(cx);
                 should_save_dock_action = true;
                 continue;
@@ -765,19 +892,21 @@ impl WidgetMatchEvent for MainDesktopUI {
             // or in a pane that's docked in another timeline,
             // so show the timeline that contains it and then jump to that message there.
             if let PinnedMessagesListAction::MessageClicked { room_name_id, timeline_kind, event_id, description } = widget_action.cast() {
-                self.show_timeline_and_jump_to_event(cx, &room_name_id, &timeline_kind, event_id, description);
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                self.show_timeline_and_jump_to_event(cx, &mut app_state.nav_history, &room_name_id, &timeline_kind, event_id, description);
                 continue;
             }
 
             // A clicked link leads to another screen, so show it and then jump to the linked event in it.
             match action.downcast_ref() {
                 Some(NavigateToLinkAction::Screen(screen)) => {
-                    self.cancel_dictation_unless_shown(screen);
-                    self.focus_or_create_tab(cx, screen.clone());
+                    let app_state = scope.data.get_mut::<AppState>().unwrap();
+                    self.navigate_to_screen(cx, &mut app_state.nav_history, screen.clone());
                     continue;
                 }
                 Some(NavigateToLinkAction::Event { room_name_id, timeline_kind, event_id, description }) => {
-                    self.show_timeline_and_jump_to_event(cx, room_name_id, timeline_kind, event_id.clone(), description.clone());
+                    let app_state = scope.data.get_mut::<AppState>().unwrap();
+                    self.show_timeline_and_jump_to_event(cx, &mut app_state.nav_history, room_name_id, timeline_kind, event_id.clone(), description.clone());
                     continue;
                 }
                 None => {}
@@ -807,7 +936,7 @@ impl WidgetMatchEvent for MainDesktopUI {
             match action.downcast_ref() {
                 Some(MainDesktopUiAction::LoadDockFromAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    self.load_dock_state_from(cx, app_state);
+                    self.restore_dock(cx, app_state);
                 }
                 Some(MainDesktopUiAction::SaveDockIntoAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
