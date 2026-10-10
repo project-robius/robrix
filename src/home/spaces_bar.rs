@@ -116,8 +116,8 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
 
         auto_tail: false,
-        bounce_at_start: false,
-        bounce_at_end: false,
+        bounce_at_start: true,
+        bounce_at_end: true,
         // Nothing here listens for scroll position changes.
         emit_scroll_actions: false,
         scroll_bar: ScrollBar {  // hide the scroll bar
