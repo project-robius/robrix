@@ -20,8 +20,6 @@ script_mod! {
     mod.widgets.COLOR_LOGIN_BG_TOP = #EEEAFA
     mod.widgets.COLOR_LOGIN_BG_BOTTOM = #FFFFFF
 
-    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
-
     mod.widgets.LoginButton = mod.widgets.RobrixIconButton {
         width: Fill {max: 275}, height: Fit
         padding: Inset{top: 12.5, bottom: 12.5, left: 10, right: 10}

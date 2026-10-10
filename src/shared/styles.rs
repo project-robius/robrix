@@ -68,6 +68,8 @@ script_mod! {
     mod.widgets.ICON_ADD_ATTACHMENT   = crate_resource("self://resources/icons/add_attachment.svg")
     mod.widgets.ICON_FILE             = crate_resource("self://resources/icons/file.svg")
 
+    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
+
     mod.widgets.TITLE_TEXT = theme.font_regular {
         font_size: (13),
     }
