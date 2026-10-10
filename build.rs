@@ -18,7 +18,14 @@ fn main() {
         let plist = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("packaging/macos/Info.plist");
         println!("cargo:rerun-if-changed=packaging/macos/Info.plist");
-        println!("cargo:rustc-link-arg-bin=robrix=-Wl,-sectcreate,__TEXT,__info_plist,{}", plist.display());
+        // Cargo can reuse these linker arguments across checkouts sharing a target
+        // directory. Keep the embedded plist there, so a removed checkout cannot
+        // leave incremental links pointing at a missing source file.
+        let embedded_plist = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap())
+            .join("Info.plist");
+        std::fs::copy(&plist, &embedded_plist)
+            .expect("Failed to copy macOS Info.plist into the build output directory");
+        println!("cargo:rustc-link-arg-bin=robrix=-Wl,-sectcreate,__TEXT,__info_plist,{}", embedded_plist.display());
     }
 
     if target_os == "windows" {
