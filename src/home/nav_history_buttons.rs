@@ -82,11 +82,11 @@ impl Widget for NavHistoryButtons {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, mut walk: Walk) -> DrawStep {
-        // We keep clear of the window's own buttons if they're on the left, like macOS's traffic lights.
+        // Avoid drawing over the window chrome buttons, either on the left or right of the caption bar.
         if let Some(window_id) = cx.get_current_window_id() {
             let geom = &cx.windows[window_id].window_geom;
             let chrome = geom.window_chrome_buttons;
-            if chrome.size.x > 0.0 && chrome.pos.x < geom.inner_size.x / 2.0 {
+            if chrome.size.x > 0.0 && chrome.pos.x + chrome.size.x / 2.0 < geom.inner_size.x / 2.0 {
                 walk.margin.left += chrome.pos.x + chrome.size.x;
             }
         }
