@@ -25,7 +25,7 @@ script_mod! {
             visible: true,
             draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 3.0
+                stroke_width: 3.0
             }
         }
 

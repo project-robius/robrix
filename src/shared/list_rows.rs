@@ -38,7 +38,7 @@ script_mod! {
         padding: Inset{left: 12, right: 12, top: 13, bottom: 13}
         loading_spinner := LoadingSpinner {
             width: 20, height: 20
-            draw_bg +: { color: (COLOR_ACTIVE_PRIMARY), border_size: 2.5 }
+            draw_bg +: { color: (COLOR_ACTIVE_PRIMARY), stroke_width: 2.5 }
         }
         loading_label := Label {
             width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit, text_overflow: Ellipsis

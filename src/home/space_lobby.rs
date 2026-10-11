@@ -450,7 +450,7 @@ script_mod! {
             margin: Inset{right: 10}
             draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 2.5
+                stroke_width: 2.5
             }
         }
 
@@ -491,7 +491,7 @@ script_mod! {
                 margin: Inset{left: 10, right: 4}
                 draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
-                    border_size: 2.0
+                    stroke_width: 2.0
                 }
             }
 
