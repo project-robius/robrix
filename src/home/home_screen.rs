@@ -5,7 +5,7 @@ use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
         nav_history::{GoBackAction, GoForwardAction, can_show},
-        nav_history_menu::{LongPressWatcher, NavHistoryDirection, ShowNavHistoryMenuAction},
+        nav_history_menu::{LongPressWatcher, NavHistoryDirection, request_nav_history_menu},
         add_room::AddRoomScreenWidgetRefExt,
         invite_screen::InviteScreenWidgetRefExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
@@ -861,13 +861,10 @@ impl Widget for HomeScreen {
                 .find(|button| button.widget_uid() == uid)
         };
 
-        if let Some(uid) = self.backwards_nav_button_long_press.handle_event(cx, event, |cx, uid| back_button_with_uid(cx, uid).is_some())
+        if let Some((uid, held_pointer)) = self.backwards_nav_button_long_press.handle_event(cx, event, |cx, uid| back_button_with_uid(cx, uid).is_some())
             && let Some(back_button) = back_button_with_uid(cx, uid)
         {
-            cx.action(ShowNavHistoryMenuAction {
-                direction: NavHistoryDirection::Back,
-                anchor: back_button.area().rect(cx),
-            });
+            request_nav_history_menu(cx, NavHistoryDirection::Back, &back_button, held_pointer);
         }
     }
 

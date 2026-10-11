@@ -5,7 +5,7 @@
 //! * the go-forward button in the title/caption bar,
 //! * the go-back button in the stack nav header.
 
-use makepad_widgets::{makepad_platform::event::finger::{TAP_COUNT_DISTANCE, TAP_COUNT_TIME}, *};
+use makepad_widgets::{makepad_platform::event::finger::{TAP_COUNT_DISTANCE, TAP_COUNT_TIME, TouchState}, *};
 use crate::{
     app::{AppState, SelectedRoom},
     home::nav_history::{GoBackAction, GoForwardAction, NavHistory, can_navigate_history, can_show, current_place},
@@ -94,6 +94,16 @@ pub struct ShowNavHistoryMenuAction {
     /// The location of the button that caused the nav history menu to be shown,
     /// such that the menu can be positioned right below it.
     pub anchor: Rect,
+    /// The mouse or touch that's still pressing that button.
+    pub held_pointer: HeldPointer,
+}
+
+/// A mouse or touch that's still pressing the button that opened a [`NavHistoryMenu`],
+/// which can drag over the menu's rows and be released on one to go to its place, like in a web browser.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HeldPointer {
+    Mouse,
+    Touch(u64),
 }
 
 /// The state of a place's row content & avatar since a [`NavHistoryMenu`] was shown.
@@ -115,6 +125,10 @@ pub struct NavHistoryMenu {
     #[rust] current: Option<SelectedRoom>,
     /// The places in this menu, from nearest to furthest, along with their row states.
     #[rust] places: Vec<(Option<SelectedRoom>, RowState)>,
+    /// The mouse or touch still pressing the button that opened this menu, if any.
+    #[rust] held_pointer: Option<HeldPointer>,
+    /// The index of the row that the `held_pointer` has highlighted by dragging over it.
+    #[rust] dragged_over_index: Option<usize>,
     /// Held while this menu is shown, so it receives Escape/Back cancel events.
     #[rust] cancel_scope: Option<CancelScope>,
 }
@@ -167,7 +181,10 @@ impl Widget for NavHistoryMenu {
             }
             return;
         }
-        self.view.handle_event(cx, event, scope);
+        // The rows can't scroll away from a press that's still held, as releasing it picks the row under it.
+        if !(self.held_pointer.is_some() && matches!(event, Event::Scroll(_))) {
+            self.view.handle_event(cx, event, scope);
+        }
 
         let hit = event.hits_with_capture_overload(cx, self.view.area(), true);
         let close_menu = is_context_menu_cancelled(cx, event, self.cancel_scope.as_ref())
@@ -180,6 +197,47 @@ impl Widget for NavHistoryMenu {
         if close_menu {
             self.close(cx);
             return;
+        }
+        // The mouse or touch still pressing this menu's button highlights the row it's dragged over,
+        // and releasing it on a row goes to that place.
+        if let Some(held_pointer) = self.held_pointer {
+            let pointer_update = match (held_pointer, event) {
+                (HeldPointer::Mouse, Event::MouseMove(e)) => {
+                    // A mouse that isn't held anymore has ended its press, even if we missed that release.
+                    let state = if cx.fingers.first_mouse_button.is_some() { TouchState::Move } else { TouchState::Cancel };
+                    Some((e.abs, state))
+                }
+                (HeldPointer::Mouse, Event::MouseUp(e)) if e.button.is_primary() => Some((e.abs, TouchState::Stop)),
+                (HeldPointer::Touch(uid), Event::TouchUpdate(e)) => e.touches.iter()
+                    .find(|touch| touch.uid == uid)
+                    .map(|touch| (touch.abs, touch.state)),
+                _ => None,
+            };
+            if let Some((abs, state)) = pointer_update {
+                let list = self.view.portal_list(cx, ids!(list));
+                let row_index = (!matches!(state, TouchState::Cancel) && list.area().rect(cx).contains(abs))
+                    .then(|| (0..self.places.len()).find(|&index| self.places[index].1 != RowState::Unpopulated
+                        && list.get_item(index).is_some_and(|(_, row)| row.area().rect(cx).contains(abs))
+                    ))
+                    .flatten();
+                if row_index != self.dragged_over_index {
+                    for (index, hover_state) in [(self.dragged_over_index, ids!(hover.off)), (row_index, ids!(hover.on))] {
+                        if let Some((_, row)) = index.and_then(|index| list.get_item(index))
+                            && let Some(mut button) = row.button(cx, ids!(button)).borrow_mut()
+                        {
+                            button.animator_play(cx, hover_state);
+                        }
+                    }
+                    self.dragged_over_index = row_index;
+                }
+                if matches!(state, TouchState::Stop | TouchState::Cancel) {
+                    self.held_pointer = None;
+                    if matches!(state, TouchState::Stop) && let Some(index) = row_index {
+                        self.go_to_place(cx, index);
+                        return;
+                    }
+                }
+            }
         }
         // Background updates can change a row's avatar, e.g., when a space's preview or an image loads.
         if let Event::Signal | Event::Actions(_) = event {
@@ -211,12 +269,7 @@ impl Widget for NavHistoryMenu {
         let clicked_index = self.view.portal_list(cx, ids!(list)).items_with_actions(actions).into_iter()
             .find_map(|(index, row)| row.button(cx, ids!(button)).clicked(actions).then_some(index));
         if let Some(index) = clicked_index {
-            let steps = index + 1;
-            match self.direction {
-                NavHistoryDirection::Back => cx.action(GoBackAction { steps }),
-                NavHistoryDirection::Forward => cx.action(GoForwardAction { steps }),
-            }
-            self.close(cx);
+            self.go_to_place(cx, index);
         }
     }
 }
@@ -225,12 +278,12 @@ impl NavHistoryMenu {
     fn show(
         &mut self,
         cx: &mut Cx,
-        direction: NavHistoryDirection,
+        action: &ShowNavHistoryMenuAction,
         current: Option<SelectedRoom>,
         places: Vec<Option<SelectedRoom>>,
-        anchor: Rect,
         container_rect: Rect,
     ) {
+        let anchor = action.anchor;
         // A title bar button is above the container, so the menu can't start any higher than the container.
         let anchor_pos = dvec2(anchor.pos.x, (anchor.pos.y + anchor.size.y).max(container_rect.pos.y));
         let one_row_height = BUTTON_HEIGHT + 2.0 * MENU_PADDING;
@@ -250,18 +303,36 @@ impl NavHistoryMenu {
             list.bounce_at_end = can_scroll;
         }
         list.set_first_id_and_scroll(0, 0.0);
-        self.direction = direction;
+        self.direction = action.direction;
         self.current = current;
         self.places = places.into_iter().map(|place| (place, RowState::Unpopulated)).collect();
+        // The press may have already ended before this menu could be shown.
+        self.held_pointer = Some(action.held_pointer).filter(|held_pointer| match held_pointer {
+            HeldPointer::Mouse => cx.fingers.first_mouse_button.is_some(),
+            HeldPointer::Touch(uid) => cx.fingers.touch_capture_area(*uid).is_some(),
+        });
+        self.dragged_over_index = None;
         self.visible = true;
         self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
     }
 
+    /// Goes back or forward to the place at the given `index` in this menu, and closes it.
+    fn go_to_place(&mut self, cx: &mut Cx, index: usize) {
+        let steps = index + 1;
+        match self.direction {
+            NavHistoryDirection::Back => cx.action(GoBackAction { steps }),
+            NavHistoryDirection::Forward => cx.action(GoForwardAction { steps }),
+        }
+        self.close(cx);
+    }
+
     fn close(&mut self, cx: &mut Cx) {
         self.visible = false;
         self.places.clear();
+        self.held_pointer = None;
+        self.dragged_over_index = None;
         self.cancel_scope = None;
         cx.revert_key_focus();
         cx.unblock_scrolling();
@@ -294,34 +365,50 @@ pub fn show_nav_history_menu(cx: &mut Cx, ui: &WidgetRef, app_state: &AppState, 
     ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
     let container_rect = ui.view(cx, ids!(overlay_container)).area().rect(cx);
     if let Some(mut menu) = ui.nav_history_menu(cx, ids!(nav_history_menu)).borrow_mut() {
-        menu.show(cx, action.direction, current.cloned(), places, action.anchor, container_rect);
+        menu.show(cx, action, current.cloned(), places, container_rect);
     }
+}
+
+/// Asks to show the nav history menu beneath the given button, which the `held_pointer` is still pressing.
+pub fn request_nav_history_menu(cx: &mut Cx, direction: NavHistoryDirection, button: &ButtonRef, held_pointer: HeldPointer) {
+    // The menu follows the rest of this press, so the button must not get its release, e.g., as a click.
+    cx.switch_finger_capture(button.area(), Area::Empty, Area::Empty);
+    button.reset_hover(cx);
+    cx.action(ShowNavHistoryMenuAction { direction, anchor: button.area().rect(cx), held_pointer });
 }
 
 /// Handles a long click/press on a button, both native long presses and mouse buttons held down.
 #[derive(Default)]
 pub struct LongPressWatcher {
     timer: Timer,
-    /// The button being pressed, until it's released or its long press is reported.
-    pressed_button: Option<WidgetUid>,
+    /// The button being pressed and the mouse or touch pressing it, until it's released or its long press is reported.
+    pressed_button: Option<(WidgetUid, HeldPointer)>,
     /// Where the mouse was last pressed down.
     mouse_down_pos: DVec2,
+    /// The touch that started most recently.
+    touch_start_uid: u64,
 }
 
 impl LongPressWatcher {
-    /// Returns the UID of the button that was just long pressed, out of the buttons that `is_button` accepts.
+    /// Returns the UID of the button that was just long pressed, out of the buttons that `is_button` accepts,
+    /// along with the mouse or touch that's still pressing it.
     pub fn handle_event(
         &mut self,
         cx: &mut Cx,
         event: &Event,
         mut is_button: impl FnMut(&mut Cx, WidgetUid) -> bool,
-    ) -> Option<WidgetUid> {
+    ) -> Option<(WidgetUid, HeldPointer)> {
         if self.timer.is_event(event).is_some() {
             // A disabled button doesn't report its release, so we check that the mouse is still held.
             return self.pressed_button.take().filter(|_| cx.fingers.first_mouse_button.is_some());
         }
         match event {
             Event::MouseDown(e) => self.mouse_down_pos = e.abs,
+            Event::TouchUpdate(e) => {
+                if let Some(touch) = e.touches.iter().rev().find(|touch| matches!(touch.state, TouchState::Start)) {
+                    self.touch_start_uid = touch.uid;
+                }
+            }
             // Here we copy web browser behavior: dragging the mouse down on a held button immediately shows the popup menu.
             Event::MouseMove(e) if self.pressed_button.is_some()
                 && cx.fingers.first_mouse_button.is_some()
@@ -340,16 +427,18 @@ impl LongPressWatcher {
             match action.cast::<ButtonAction>() {
                 ButtonAction::Pressed(_) if is_button(cx, uid) => {
                     cx.stop_timer(self.timer);
-                    self.pressed_button = Some(uid);
                     if cx.fingers.first_mouse_button.is_some() {
+                        self.pressed_button = Some((uid, HeldPointer::Mouse));
                         self.timer = cx.start_timeout(TAP_COUNT_TIME);
+                    } else {
+                        self.pressed_button = Some((uid, HeldPointer::Touch(self.touch_start_uid)));
                     }
                 }
-                ButtonAction::LongPressed if self.pressed_button == Some(uid) => {
+                ButtonAction::LongPressed if self.pressed_button.is_some_and(|(pressed, _)| pressed == uid) => {
                     cx.stop_timer(self.timer);
                     long_pressed_button = self.pressed_button.take();
                 }
-                ButtonAction::Clicked(_) | ButtonAction::Released(_) if self.pressed_button == Some(uid) => {
+                ButtonAction::Clicked(_) | ButtonAction::Released(_) if self.pressed_button.is_some_and(|(pressed, _)| pressed == uid) => {
                     cx.stop_timer(self.timer);
                     self.pressed_button = None;
                 }
