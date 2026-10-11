@@ -150,10 +150,10 @@ impl Widget for MainDesktopUI {
             && (matches!(event, Event::BackPressed { .. }) || matches!(event, Event::MouseUp(e) if e.button.is_back()))
         {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
-            if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), can_show(cx))
+            if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), 1, can_show(cx))
                 && (event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back()))
             {
-                self.go_back_to(cx, &mut app_state.nav_history, previous_place);
+                self.go_back_to(cx, &mut app_state.nav_history, 1, previous_place);
             }
         }
     }
@@ -294,10 +294,11 @@ impl MainDesktopUI {
         self.focus_or_create_tab(cx, screen);
     }
 
-    /// Goes back from the current screen to its `previous_place`, or the home tab if `None`.
-    fn go_back_to(&mut self, cx: &mut Cx, nav_history: &mut NavHistory, previous_place: Option<SelectedRoom>) {
+    /// Goes back N `steps` in the nav history from the current screen
+    /// to its `previous_place` (or the home tab if `previous_place` is `None`).
+    fn go_back_to(&mut self, cx: &mut Cx, nav_history: &mut NavHistory, steps: usize, previous_place: Option<SelectedRoom>) {
         let current_screen = self.most_recently_selected_room.clone();
-        nav_history.record_going_back_from(current_screen.clone(), can_show(cx));
+        nav_history.record_going_back_from(current_screen.clone(), steps, can_show(cx));
         // We show the previous place first so that if its tab was closed,
         // its new tab takes the current tab's spot.
         self.show_place(cx, previous_place);
@@ -679,18 +680,18 @@ impl WidgetMatchEvent for MainDesktopUI {
                 continue;
             }
 
-            if action.downcast_ref::<GoBackAction>().is_some() {
+            if let Some(GoBackAction { steps }) = action.downcast_ref() {
                 let app_state = scope.data.get_mut::<AppState>().unwrap();
-                if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), can_show(cx)) {
-                    self.go_back_to(cx, &mut app_state.nav_history, previous_place);
+                if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), *steps, can_show(cx)) {
+                    self.go_back_to(cx, &mut app_state.nav_history, *steps, previous_place);
                 }
                 continue;
             }
 
-            if action.downcast_ref::<GoForwardAction>().is_some() {
+            if let Some(GoForwardAction { steps }) = action.downcast_ref() {
                 let app_state = scope.data.get_mut::<AppState>().unwrap();
-                if let Some(next_place) = app_state.nav_history.next_place(can_show(cx)) {
-                    app_state.nav_history.record_going_forward_from(self.most_recently_selected_room.clone(), can_show(cx));
+                if let Some(next_place) = app_state.nav_history.next_place(self.most_recently_selected_room.as_ref(), *steps, can_show(cx)) {
+                    app_state.nav_history.record_going_forward_from(self.most_recently_selected_room.clone(), *steps, can_show(cx));
                     self.show_place(cx, next_place);
                     should_save_dock_action = true;
                 }

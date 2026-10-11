@@ -13,11 +13,11 @@ use matrix_sdk::{RoomState, encryption::recovery::RecoveryState, ruma::{OwnedEve
 use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
-    avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::clear_room_preview_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+    avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::{clear_room_preview_cache, process_room_preview_updates}, home::{
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -91,6 +91,7 @@ script_mod! {
                         // but behind verification modals.
                         new_message_context_menu := NewMessageContextMenu { }
                         room_context_menu := RoomContextMenu { }
+                        nav_history_menu := NavHistoryMenu { }
 
                         // A modal to confirm sending out an invite to a room.
                         invite_confirmation_modal := Modal {
@@ -258,6 +259,7 @@ impl MatchEvent for App {
         // Apply background updates to these caches before any widget sees this Signal.
         process_user_profile_updates(cx);
         process_avatar_updates(cx);
+        process_room_preview_updates(cx);
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -399,6 +401,11 @@ impl MatchEvent for App {
                 continue;
             }
 
+            if let Some(action) = action.downcast_ref::<ShowNavHistoryMenuAction>() {
+                show_nav_history_menu(cx, &self.ui, &self.app_state, action);
+                continue;
+            }
+
             // If a room screen or another screen was just restored, it may have taken over
             // the cancel gesture scope, so renew that scope for any modal that's still open.
             if action.downcast_ref::<ScreenRestoredAction>().is_some() {
@@ -410,8 +417,7 @@ impl MatchEvent for App {
 
             // If the view mode switched, hide any context menu since they're now atop something else.
             if action.downcast_ref::<MainViewVariantChangedAction>().is_some() {
-                self.ui.new_message_context_menu(cx, ids!(new_message_context_menu)).close(cx);
-                self.ui.room_context_menu(cx, ids!(room_context_menu)).close(cx);
+                close_context_menus(cx, &self.ui);
                 continue;
             }
 
@@ -840,7 +846,7 @@ impl AppMain for App {
             && e.button.is_forward()
             && can_navigate_history(cx, &self.ui, &self.app_state)
         {
-            cx.action(GoForwardAction);
+            cx.action(GoForwardAction { steps: 1 });
         }
 
         // Forward events to the MatchEvent trait implementation.
@@ -848,6 +854,17 @@ impl AppMain for App {
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
         self.handle_lifecycle_event(cx, event);
+
+        // Clicking the window caption bar should also close overlays like context menus.
+        match event {
+            Event::WindowDragQuery(dq) if is_context_menu_shown(cx, &self.ui) => {
+                dq.response.set(WindowDragQueryResponse::Client);
+            }
+            Event::MouseDown(e) if self.ui.view(cx, ids!(caption_bar)).area().rect(cx).contains(e.abs) => {
+                close_context_menus(cx, &self.ui);
+            }
+            _ => {}
+        }
 
         // Now that the rest of the app has handled these actions, we can
         // enable/disable the nav buttons in the title bar based on nav history state.
@@ -1059,7 +1076,10 @@ impl App {
 
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
-        if !show_login {
+        if show_login {
+            // Context menus are in front of the login screen, e.g., when a session expires.
+            close_context_menus(cx, &self.ui);
+        } else {
             self.ui
                 .modal(cx, ids!(login_screen_view.login_screen.login_status_modal))
                 .close(cx);

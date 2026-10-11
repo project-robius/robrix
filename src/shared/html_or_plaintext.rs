@@ -410,11 +410,11 @@ struct PillBase {
 
 impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
-        if matches!(event, Event::Signal) {
-            room_preview_cache::process_room_preview_updates(cx);
-            if self.is_waiting_for_data && !matches!(self.matrix_id, None | Some(MatrixId::User(_))) {
-                self.redraw(cx);
-            }
+        if matches!(event, Event::Signal)
+            && self.is_waiting_for_data
+            && !matches!(self.matrix_id, None | Some(MatrixId::User(_)))
+        {
+            self.redraw(cx);
         }
 
         // A reapply or reload puts the DSL sizes back (a reload may even change them),

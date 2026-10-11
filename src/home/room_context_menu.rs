@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::context_menu::{ContextMenuClosed, expected_menu_size}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::context_menu::{ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 /// Nothing here is conditionally shown, so keep these matching the DSL below.
 const NUM_BUTTONS: usize = 7;
@@ -14,19 +14,7 @@ script_mod! {
     use mod.widgets.*
 
     mod.widgets.RoomContextMenu = set_type_default() do #(RoomContextMenu::register_widget(vm)) {
-        ..mod.widgets.SolidView
-
-        visible: false,
-        flow: Overlay,
-        width: Fill,
-        height: Fill,
-        cursor: MouseCursor.Default,
-        align: Align{x: 0, y: 0}
-
-        show_bg: true
-        draw_bg +: {
-            color: #0000004d
-        }
+        ..mod.widgets.ContextMenuBackdrop
 
         main_content := mod.widgets.ContextMenuContent {
             mark_unread_button := mod.widgets.ContextMenuButton {
@@ -132,21 +120,9 @@ impl Widget for RoomContextMenu {
         self.view.handle_event(cx, event, scope);
 
         // Close logic similar to NewMessageContextMenu
-        let area = self.view.area();
-        let close_menu = {
-            (self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
-                && (event.back_pressed()
-                    || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape)
-                    || matches!(event, Event::MouseUp(e) if e.button.is_back())
-                )
-            )
-            || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::FingerUp(fue) if fue.is_over => {
-                     !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
-                }
-                _ => false,
-            }
-        };
+        let hit = event.hits_with_capture_overload(cx, self.view.area(), true);
+        let close_menu = is_context_menu_cancelled(cx, event, self.cancel_scope.as_ref())
+            || is_tap_outside(cx, &hit, self.view(cx, ids!(main_content)).area());
 
         if close_menu {
             self.close(cx);
