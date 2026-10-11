@@ -272,7 +272,7 @@ script_mod! {
                         width: 40, height: 40,
                         draw_bg +: {
                             color: #FFF
-                            border_size: 3.0
+                            stroke_width: 3.0
                         }
                     }
                 }

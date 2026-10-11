@@ -59,7 +59,7 @@ script_mod! {
                 height: 20,
                 draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
-                    border_size: 3.0
+                    stroke_width: 3.0
                 }
             }
 
