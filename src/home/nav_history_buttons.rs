@@ -6,7 +6,7 @@ use crate::{
     app::AppState,
     home::{
         nav_history::{GoBackAction, GoForwardAction, can_navigate_history, can_show, current_place},
-        nav_history_menu::{LongPressWatcher, NavHistoryDirection, NavHistoryMenuWidgetRefExt, ShowNavHistoryMenuAction},
+        nav_history_menu::{LongPressWatcher, NavHistoryDirection, NavHistoryMenuWidgetRefExt, request_nav_history_menu},
     },
     room::room_action_bar::RoomActionTooltip,
     shared::styles::{COLOR_FG_DISABLED, COLOR_TEXT},
@@ -79,14 +79,14 @@ impl Widget for NavHistoryButtons {
             [ids!(go_back_button), ids!(go_forward_button)].into_iter()
                 .any(|button_id| self.view.button(cx, button_id).widget_uid() == uid)
         });
-        if let Some(uid) = long_pressed_button {
+        if let Some((uid, held_pointer)) = long_pressed_button {
             let back_button = self.view.button(cx, ids!(go_back_button));
             let (direction, button) = if back_button.widget_uid() == uid {
                 (NavHistoryDirection::Back, back_button)
             } else {
                 (NavHistoryDirection::Forward, self.view.button(cx, ids!(go_forward_button)))
             };
-            cx.action(ShowNavHistoryMenuAction { direction, anchor: button.area().rect(cx) });
+            request_nav_history_menu(cx, direction, &button, held_pointer);
         }
         match event {
             Event::Actions(actions) => {
