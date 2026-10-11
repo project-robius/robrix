@@ -324,7 +324,6 @@ impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Signal = event {
             // We use the room preview cache to fetch and display info about the invited room/space.
-            room_preview_cache::process_room_preview_updates(cx);
             self.update_room_preview(cx);
 
             // Otherwise, a Signal just means that the room might've been received from the homeserver.

@@ -41,7 +41,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     },
-    home::home_screen::effective_is_desktop,
+    home::{home_screen::effective_is_desktop, spaces_bar::SpacesBarWidgetExt},
     settings::app_preferences::{AppPreferencesAction, ViewModeOverride},
     shared::{
         avatar::{AvatarState, AvatarWidgetExt},
@@ -474,6 +474,7 @@ impl ScriptHook for NavigationTabBar {
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             self.apply_selected_tab(cx, None);
+            cx.set_global(self.view.spaces_bar(cx, ids!(root_spaces_bar)));
         });
     }
 

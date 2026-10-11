@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::ScrollPhase;
-use crate::{app::SelectedRoom, home::rooms_list::RoomsListRef, room::FetchedRoomAvatar, shared::avatar::AvatarWidgetRefExt};
+use crate::{app::SelectedRoom, room::FetchedRoomAvatar, shared::avatar::AvatarWidgetRefExt};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -209,11 +209,7 @@ impl RoomTabHoverCard {
         let Some(tab_id) = self.tab_id else { return };
         let Some(room) = rooms.get(&tab_id) else { return };
         let name = room.display_name();
-        let avatar_data = if cx.has_global::<RoomsListRef>() {
-            cx.get_global::<RoomsListRef>().get_room_avatar(room.room_id())
-        } else {
-            None
-        };
+        let avatar_data = room.get_or_fetch_avatar(cx);
         let content_changed = self.drawn_content.as_ref() != Some(&(tab_id, name.clone(), avatar_data.clone()));
         let tab_rect = dock.widget(cx, &[TabBar::tab_node_name(tab_id)]).area().clipped_rect(cx);
 
@@ -238,15 +234,7 @@ impl RoomTabHoverCard {
         let tooltip = self.view.tooltip(cx, ids!(tooltip));
         if content_changed {
             tooltip.view(cx, ids!(name_scroll)).set_scroll_pos(cx, Vec2d::default());
-            let avatar = tooltip.avatar(cx, ids!(avatar));
-            let avatar_name = match &avatar_data {
-                Some(FetchedRoomAvatar::Text(text)) => text.clone(),
-                _ => room.room_name().to_string(),
-            };
-            avatar.show_text(cx, None, None, &avatar_name);
-            if let Some(FetchedRoomAvatar::Image(image)) = &avatar_data {
-                let _ = avatar.show_image(cx, None, |cx, img| crate::utils::load_avatar_image(&img, cx, image));
-            }
+            tooltip.avatar(cx, ids!(avatar)).show_room_avatar(cx, avatar_data.as_ref(), room.room_name());
             self.drawn_content = Some((tab_id, name.clone(), avatar_data));
         }
 

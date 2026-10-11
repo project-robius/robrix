@@ -4,7 +4,10 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    home::{home_screen::effective_is_desktop, nav_history::{GoBackAction, GoForwardAction, can_navigate_history, can_show}},
+    home::{
+        nav_history::{GoBackAction, GoForwardAction, can_navigate_history, can_show, current_place},
+        nav_history_menu::{LongPressWatcher, NavHistoryDirection, NavHistoryMenuWidgetRefExt, ShowNavHistoryMenuAction},
+    },
     room::room_action_bar::RoomActionTooltip,
     shared::styles::{COLOR_FG_DISABLED, COLOR_TEXT},
 };
@@ -54,25 +57,44 @@ pub struct NavHistoryButtons {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[rust] tooltip: RoomActionTooltip,
+    #[rust] long_press: LongPressWatcher,
+    #[rust] are_tooltips_hidden: bool,
     #[rust] can_go_back: bool,
     #[rust] can_go_forward: bool,
 }
 
 impl Widget for NavHistoryButtons {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // This is lazy, as the tooltip only looks at the buttons for the few events that can show it.
-        let buttons = [(id!(go_back_button), "Go back"), (id!(go_forward_button), "Go forward")]
-            .into_iter()
-            .map(|(id, text)| (self.view.child(id), text));
-        self.tooltip.handle_event(cx, event, buttons, TooltipPosition::Bottom);
+        // Long-pressing these buttons shows the nav history popup menu, not tooltips.
+        if !self.are_tooltips_hidden && !matches!(event, Event::Actions(_)) {
+            let buttons_iter = [(id!(go_back_button), "Go back"), (id!(go_forward_button), "Go forward")]
+                .into_iter()
+                .map(|(id, text)| (self.view.child(id), text));
+            self.tooltip.handle_event(cx, event, buttons_iter, TooltipPosition::Bottom);
+        }
+
         self.view.handle_event(cx, event, scope);
+
+        let long_pressed_button = self.long_press.handle_event(cx, event, |cx, uid| {
+            [ids!(go_back_button), ids!(go_forward_button)].into_iter()
+                .any(|button_id| self.view.button(cx, button_id).widget_uid() == uid)
+        });
+        if let Some(uid) = long_pressed_button {
+            let back_button = self.view.button(cx, ids!(go_back_button));
+            let (direction, button) = if back_button.widget_uid() == uid {
+                (NavHistoryDirection::Back, back_button)
+            } else {
+                (NavHistoryDirection::Forward, self.view.button(cx, ids!(go_forward_button)))
+            };
+            cx.action(ShowNavHistoryMenuAction { direction, anchor: button.area().rect(cx) });
+        }
         match event {
             Event::Actions(actions) => {
                 if self.view.button(cx, ids!(go_back_button)).clicked(actions) {
-                    cx.action(GoBackAction);
+                    cx.action(GoBackAction { steps: 1 });
                 }
                 if self.view.button(cx, ids!(go_forward_button)).clicked(actions) {
-                    cx.action(GoForwardAction);
+                    cx.action(GoForwardAction { steps: 1 });
                 }
             }
             // A reapply resets the buttons to their DSL defaults, so we enable them again.
@@ -116,6 +138,15 @@ impl NavHistoryButtons {
 }
 
 impl NavHistoryButtonsRef {
+    /// Hides (or shows) the buttons' tooltips and keeps them hidden (or shown).
+    pub fn hide_tooltips(&self, cx: &mut Cx, hide: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if hide && !inner.are_tooltips_hidden {
+            inner.tooltip.hide(cx);
+        }
+        inner.are_tooltips_hidden = hide;
+    }
+
     /// See [`NavHistoryButtons::enable_buttons()`].
     pub fn enable_buttons(&self, cx: &mut Cx, can_go_back: bool, can_go_forward: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
@@ -125,21 +156,27 @@ impl NavHistoryButtonsRef {
     }
 }
 
-/// Enables or disables the title bar's go-back and go-forward buttons, depending on where we can go right now.
+/// Enables or disables the title bar's go-back and go-forward buttons,
+/// depending on the nav history and where we can currently go right now.
 pub fn enable_nav_history_buttons(cx: &mut Cx, ui: &WidgetRef, app_state: &AppState) {
+    let buttons = ui.nav_history_buttons(cx, ids!(nav_history_buttons));
+    // While one of the buttons shows its nav history menu, they keep their look,
+    // but their tooltips would cover the menu.
+    let is_menu_shown = ui.nav_history_menu(cx, ids!(nav_history_menu)).is_currently_shown();
+    buttons.hide_tooltips(cx, is_menu_shown);
+    if is_menu_shown {
+        return;
+    }
     let (can_go_back, can_go_forward) = if can_navigate_history(cx, ui, app_state) {
         let can_show = can_show(cx);
         let nav_history = &app_state.nav_history;
-        let can_go_back = if effective_is_desktop(cx) {
-            nav_history.previous_place(app_state.selected_room.as_ref(), &can_show).is_some()
-        } else {
-            // Mobile view mode goes back from any shown screen, or from the rooms list to a previous screen.
-            ui.stack_navigation(cx, ids!(view_stack)).destination_view().is_some()
-                || matches!(nav_history.previous_place(None, &can_show), Some(Some(_)))
-        };
-        (can_go_back, nav_history.next_place(&can_show).is_some())
+        let current = current_place(cx, ui, app_state);
+        (
+            nav_history.previous_place(current, 1, &can_show).is_some(),
+            nav_history.next_place(current, 1, &can_show).is_some(),
+        )
     } else {
         (false, false)
     };
-    ui.nav_history_buttons(cx, ids!(nav_history_buttons)).enable_buttons(cx, can_go_back, can_go_forward);
+    buttons.enable_buttons(cx, can_go_back, can_go_forward);
 }

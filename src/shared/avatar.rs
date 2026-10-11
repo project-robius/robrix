@@ -14,11 +14,15 @@ use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use ruma::OwnedMxcUri;
 
 use crate::{
+    app::SelectedRoom,
     avatar_cache::{self, AvatarCacheEntry},
+    home::{rooms_list::RoomsListRef, spaces_bar::SpacesBarRef},
     profile::{user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, user_profile_cache},
+    room::FetchedRoomAvatar,
+    room_preview_cache::{self, CachedRoomPreview},
     shared::styles::COLOR_AVATAR_BG,
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
-    utils,
+    utils::{self, RoomNameId},
 };
 
 script_mod! {
@@ -441,6 +445,22 @@ impl AvatarRef {
         self.borrow_mut().is_none_or(|mut inner| inner.show_user(cx, avatar_url, name))
     }
 
+    /// Shows the given avatar of a room/space, or the first letter of its name like the rooms list does.
+    pub fn show_room_avatar(&self, cx: &mut Cx, room_avatar: Option<&FetchedRoomAvatar>, room_name: &RoomNameId) {
+        let name_avatar = utils::avatar_from_room_name(room_name.name_for_avatar());
+        // The name's letter shows until an image loads, or if it can't.
+        let text_avatar = match room_avatar {
+            Some(text_avatar @ FetchedRoomAvatar::Text(_)) => text_avatar,
+            _ => &name_avatar,
+        };
+        if let FetchedRoomAvatar::Text(text) = text_avatar {
+            self.show_text(cx, None, None, text);
+        }
+        if let Some(FetchedRoomAvatar::Image(image)) = room_avatar {
+            let _ = self.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, image));
+        }
+    }
+
     /// See [`Avatar::show_text()`].
     pub fn show_text<T: AsRef<str>>(
         &self,
@@ -492,6 +512,26 @@ impl AvatarRef {
         } else {
             (avatar_user_id.to_string(), false)
         }
+    }
+}
+
+impl SelectedRoom {
+    /// Returns the avatar to be shown for this room/space, if it's known.
+    pub fn get_or_fetch_avatar(&self, cx: &mut Cx) -> Option<FetchedRoomAvatar> {
+        let room_id = self.room_id();
+        if !matches!(self, SelectedRoom::Space { .. }) {
+            return cx.has_global::<RoomsListRef>()
+                .then(|| cx.get_global::<RoomsListRef>().get_room_avatar(room_id))
+                .flatten();
+        }
+        // Spaces aren't in the rooms list, but the spaces bar knows the top-level joined ones.
+        cx.has_global::<SpacesBarRef>()
+            .then(|| cx.get_global::<SpacesBarRef>().get_space_avatar(room_id))
+            .flatten()
+            .or_else(|| match room_preview_cache::get_or_fetch_room_preview(cx, (&**room_id).into(), &[]) {
+                CachedRoomPreview::Loaded { preview, .. } => Some(preview.room_avatar.clone()),
+                CachedRoomPreview::Requested => None,
+            })
     }
 }
 

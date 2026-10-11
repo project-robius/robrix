@@ -351,9 +351,14 @@ impl Widget for RoomActionBar {
         }
         if !self.is_desktop_mode {
             // This is lazy, as the tooltip only looks at the buttons for the few events that can show it.
+            // A long press on the back button shows the nav history menu instead of a tooltip,
+            // and the tooltip only looks at actions for a long press.
+            let is_actions = matches!(event, Event::Actions(_));
             let buttons = ACTIONS.iter()
                 .map(|(id, label, _)| (self.view.child(*id), *label))
-                .chain(std::iter::once_with(|| (self.view.child(id!(button_container)).child(id!(left_button)), "Back")));
+                .chain(std::iter::once_with(|| (self.view.child(id!(button_container)).child(id!(left_button)), "Back"))
+                    .filter(|_| !is_actions)
+                );
             self.icon_tooltip.handle_event(cx, event, buttons, TooltipPosition::Bottom);
         }
         self.view.handle_event(cx, event, scope);

@@ -2,9 +2,11 @@
 
 use makepad_widgets::*;
 
+use crate::home::{nav_history_menu::NavHistoryMenuWidgetRefExt, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt};
+
 pub const BUTTON_HEIGHT: f64 = 38.0;
-const MENU_WIDTH: f64 = 235.0;
-const MENU_PADDING: f64 = 6.0;
+pub const MENU_WIDTH: f64 = 235.0;
+pub const MENU_PADDING: f64 = 6.0;
 const MENU_SPACING: f64 = 2.0;
 const DIVIDER_MARGIN: f64 = 3.0;
 const DIVIDER_HEIGHT: f64 = 2.0 + 2.0 * DIVIDER_MARGIN; // a `LineH` is 2pt tall
@@ -54,6 +56,24 @@ script_mod! {
         margin: Inset{top: #(DIVIDER_MARGIN), bottom: #(DIVIDER_MARGIN)}
     }
 
+    // The dimmed backdrop that a context menu's content is shown in front of.
+    mod.widgets.ContextMenuBackdrop = mod.widgets.SolidView {
+        visible: false,
+        flow: Overlay,
+        width: Fill,
+        height: Fill,
+        cursor: MouseCursor.Default,
+        // Align to top-left such that our coordinate adjustment
+        // when showing this menu pane will work correctly.
+        align: Align{x: 0, y: 0}
+
+        // Show a slightly darkened translucent background to make the menu stand out.
+        show_bg: true
+        draw_bg +: {
+            color: #0000004d
+        }
+    }
+
     // Deliberately has no children, since those don't inherit; each menu declares its own.
     mod.widgets.ContextMenuContent = RoundedView {
         flow: Down
@@ -83,6 +103,37 @@ pub fn expected_menu_size(num_buttons: usize, num_dividers: usize) -> DVec2 {
         + (num_buttons + num_dividers).saturating_sub(1) as f64 * MENU_SPACING
         + 2.0 * MENU_PADDING;
     dvec2(MENU_WIDTH, height)
+}
+
+/// Returns whether the given event is an Escape or Back press that a context menu's `cancel_scope` owns.
+pub fn is_context_menu_cancelled(cx: &mut Cx, event: &Event, cancel_scope: Option<&CancelScope>) -> bool {
+    cancel_scope.is_some_and(|scope| cx.owns_cancel(scope))
+        && (event.back_pressed()
+            || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape)
+            || matches!(event, Event::MouseUp(e) if e.button.is_back())
+        )
+}
+
+/// Returns whether the given hit on a context menu's backdrop is a tap that starts and ends outside of its content,
+/// so a drag that starts on its content (e.g., to scroll it) doesn't close it.
+pub fn is_tap_outside(cx: &mut Cx, hit: &Hit, content_area: Area) -> bool {
+    let Hit::FingerUp(fue) = hit else { return false };
+    let content_rect = content_area.rect(cx);
+    fue.is_over && !content_rect.contains(fue.abs_start) && !content_rect.contains(fue.abs)
+}
+
+/// Returns whether any of the app's context menus is shown.
+pub fn is_context_menu_shown(cx: &mut Cx, ui: &WidgetRef) -> bool {
+    ui.new_message_context_menu(cx, ids!(new_message_context_menu)).is_currently_shown(cx)
+        || ui.room_context_menu(cx, ids!(room_context_menu)).is_currently_shown(cx)
+        || ui.nav_history_menu(cx, ids!(nav_history_menu)).is_currently_shown()
+}
+
+/// Closes any of the app's context menus that are shown.
+pub fn close_context_menus(cx: &mut Cx, ui: &WidgetRef) {
+    ui.new_message_context_menu(cx, ids!(new_message_context_menu)).close(cx);
+    ui.room_context_menu(cx, ids!(room_context_menu)).close(cx);
+    ui.nav_history_menu(cx, ids!(nav_history_menu)).close(cx);
 }
 
 /// Returns a margin that positions the context menu at `anchor_pos`,

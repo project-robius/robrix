@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeContent, MsgLikeKind, TimelineEventItemId};
 
-use crate::{home::send_status_indicator::is_send_error_retryable, shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, sliding_sync::UserPowerLevels};
+use crate::{home::send_status_indicator::is_send_error_retryable, shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside}, sliding_sync::UserPowerLevels};
 
 use super::room_screen::MessageAction;
 
@@ -15,22 +15,7 @@ script_mod! {
     use mod.widgets.*
 
     mod.widgets.NewMessageContextMenu = set_type_default() do #(NewMessageContextMenu::register_widget(vm)) {
-        ..mod.widgets.SolidView
-
-        visible: false,
-        flow: Overlay,
-        width: Fill,
-        height: Fill,
-        cursor: MouseCursor.Default,
-        // Align to top-left such that our coordinate adjustment
-        // when showing this menu pane will work correctly.
-        align: Align{x: 0, y: 0}
-
-        // Show a slightly darkened translucent background to make the menu stand out.
-        show_bg: true
-        draw_bg +: {
-            color: #0000004D
-        }
+        ..mod.widgets.ContextMenuBackdrop
 
         main_content := mod.widgets.ContextMenuContent {
             retry_send_button := mod.widgets.ContextMenuButton {
@@ -305,34 +290,22 @@ impl Widget for NewMessageContextMenu {
         self.view.handle_event(cx, event, scope);
 
         let area = self.view.area();
+        let hit = event.hits_with_capture_overload(cx, area, true);
+        if let Hit::FingerDown(fde) = &hit {
+            let reaction_text_input = self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input));
+            if reaction_text_input.area().rect(cx).contains(fde.abs) {
+                reaction_text_input.set_key_focus(cx);
+            } else {
+                cx.set_key_focus(area);
+            }
+        }
 
         // Close the menu if:
         // 1. The back navigational gesture/action occurs (e.g., Back on Android),
         // 2. An `Escape` press this menu owns was released,
         // 3. The user clicks/touches outside the main_content view area.
-        let close_menu = {
-            (self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
-                && (event.back_pressed()
-                    || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape)
-                    || matches!(event, Event::MouseUp(e) if e.button.is_back())
-                )
-            )
-            || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::FingerDown(fde) => {
-                    let reaction_text_input = self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input));
-                    if reaction_text_input.area().rect(cx).contains(fde.abs) {
-                        reaction_text_input.set_key_focus(cx);
-                    } else {
-                        cx.set_key_focus(area);
-                    }
-                    false
-                }
-                Hit::FingerUp(fue) if fue.is_over => {
-                    !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
-                }
-                _ => false,
-            }
-        };
+        let close_menu = is_context_menu_cancelled(cx, event, self.cancel_scope.as_ref())
+            || is_tap_outside(cx, &hit, self.view(cx, ids!(main_content)).area());
         if close_menu {
             self.close(cx);
             return;

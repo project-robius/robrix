@@ -798,3 +798,10 @@ impl SpacesBar {
         self.redraw(cx);
     }
 }
+
+impl SpacesBarRef {
+    /// Returns the avatar of the given space, if it's a joined top-level space in this bar.
+    pub fn get_space_avatar(&self, space_id: &OwnedRoomId) -> Option<FetchedRoomAvatar> {
+        self.borrow()?.all_joined_spaces.get(space_id).map(|space| space.space_avatar.clone())
+    }
+}
