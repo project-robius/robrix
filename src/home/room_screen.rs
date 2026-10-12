@@ -808,6 +808,9 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Whether this screen was revealed beneath another view due to a swipe gesture,
+    /// in which case it doesn't yet count as having opened that room (for marking it as read).
+    #[rust] is_revealed_by_swipe: bool,
     /// A flag to set key focus for the text input after it has been drawn.
     #[rust] focus_input_bar_on_show: bool,
     /// The timeline's `user_scroll_travel()` as of the last event, to tell which way the user scrolls.
@@ -3180,12 +3183,8 @@ impl RoomScreen {
             if matches!(tl_state.kind, TimelineKind::MainRoom { .. }) {
                 let show_typing_notices = cx.global::<AppPreferencesGlobal>().0.show_typing_notices;
                 subscribe_to_room_updates(&tl_state.kind, true, show_typing_notices);
-                // The matrix spec says that opening a room should clear the marked-as-unread flag.
-                if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior != MarkAsReadBehavior::Manual {
-                    submit_async_request(MatrixRequest::SetUnreadFlag {
-                        room_id: room_id.clone(),
-                        mark_as_unread: false,
-                    });
+                if !self.is_revealed_by_swipe {
+                    clear_unread_flag_on_open(cx, &room_id);
                 }
             }
         }
@@ -3543,6 +3542,7 @@ impl RoomScreen {
         self.pinned_events.clear();
         self.is_loaded = false;
         self.all_rooms_loaded = false;
+        self.is_revealed_by_swipe = false;
         self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
         self.redraw(cx);
     }
@@ -3710,6 +3710,27 @@ impl RoomScreenRef {
     pub fn hide_displayed_room(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide_displayed_room(cx);
+    }
+
+    /// Marks this room as having been opened by the backwards swipe gesture,
+    /// meaning that it isn't yet fully visible or considered "open".
+    pub fn mark_as_revealed_by_swipe(&self) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.is_revealed_by_swipe = true;
+    }
+
+    /// Mark this screen's room as fully opened now (e.g., after a swipe gesture completed),
+    /// for purposes of clearing the unread flag on this room.
+    pub fn mark_as_opened(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if !std::mem::take(&mut inner.is_revealed_by_swipe) {
+            return;
+        }
+        if inner.is_loaded
+            && let Some(TimelineKind::MainRoom { room_id }) = inner.timeline_kind.as_ref()
+        {
+            clear_unread_flag_on_open(cx, room_id);
+        }
     }
 
     pub fn handle_room_action_bar_action(&self, cx: &mut Cx, action: RoomActionBarAction) {
@@ -6629,6 +6650,16 @@ pub fn invalidate_entire_room_timeline_states(cx: &mut Cx, room_id: &RoomId) {
 /// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
 pub fn drop_docked_pane_data(cx: &mut Cx, kind: &TimelineKind) {
     timeline_state_store::drop_pane_data(cx, kind);
+}
+
+fn clear_unread_flag_on_open(cx: &mut Cx, room_id: &OwnedRoomId) {
+    // The matrix spec says that opening a room should clear the marked-as-unread flag.
+    if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior != MarkAsReadBehavior::Manual {
+        submit_async_request(MatrixRequest::SetUnreadFlag {
+            room_id: room_id.clone(),
+            mark_as_unread: false,
+        });
+    }
 }
 
 /// A pending "Reply In Thread" request to focus a thread's input bar once its RoomScreen is

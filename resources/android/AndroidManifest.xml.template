@@ -50,6 +50,7 @@
         android:supportsRtl="true"
         android:debuggable="{debuggable}"
         android:largeHeap="true"
+        android:enableOnBackInvokedCallback="true"
         tools:targetApi="{target_sdk_version}">
 
         <meta-data android:name="android.max_aspect" android:value="2.1" />
