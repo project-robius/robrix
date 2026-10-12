@@ -95,7 +95,7 @@ pub struct PaneLayout {
 
 impl Default for PaneLayout {
     fn default() -> Self {
-        Self { side: PaneSide::Right, edge_size: 300.0 }
+        Self { side: PaneSide::Right, edge_size: 275.0 }
     }
 }
 
