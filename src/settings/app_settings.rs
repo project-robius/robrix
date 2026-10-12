@@ -75,11 +75,12 @@ script_mod! {
     mod.widgets.SettingsSectionDescription = Html {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
-        margin: Inset{left: 14, top: 0, bottom: 0, right: 5}
+        margin: Inset{left: 14, top: 0, bottom: 6, right: 5}
         padding: 0,
         font_size: 11,
         font_color: #666,
         text_style_normal: MESSAGE_TEXT_STYLE { font_size: 11 },
+        list_item_walk: Walk{width: Fill, height: Fit, margin: Inset{bottom: 3}}
     }
 
     // A DropDown2 styled to match other Robrix settings controls.
@@ -239,7 +240,7 @@ script_mod! {
 
     // An on/off toggle styled to match other Robrix settings controls.
     mod.widgets.RobrixSettingsToggle = ToggleFlat {
-        margin: Inset{left: 0.5, top: 5, bottom: 10}
+        margin: Inset{left: 0.5, top: 15, bottom: 10}
         padding: Inset { left: 15}
         draw_bg +: { size: 21 }
         draw_text +: {
@@ -259,6 +260,7 @@ script_mod! {
 
         View {
             width: Fill, height: Fit
+            margin: Inset{bottom: 5}
             flow: Flow.Right{wrap: true}
             align: Align{y: 0.5}
 
@@ -280,6 +282,7 @@ script_mod! {
 
         View {
             width: Fill, height: Fit
+            margin: Inset{top: 5, bottom: 6}
             flow: Flow.Right{wrap: true}
             align: Align{y: 0.5}
             spacing: 6
@@ -335,11 +338,12 @@ script_mod! {
 
 
         SubsectionLabel {
+            margin: Inset{top: 10}
             text: "Keyboard Shortcut to Send Message"
         }
 
         send_on_cmd_enter_toggle := mod.widgets.RobrixSettingsToggle {
-            margin: Inset{left: 6.5, top: 5, bottom: 10}
+            margin: Inset{left: 6.5, top: 10, bottom: 10}
             active: false,
             text: "" // we set this text dynamically based on the toggle state and target platform
         }
@@ -354,6 +358,7 @@ script_mod! {
         }
 
         SubsectionLabel {
+            margin: Inset{top: 10}
             text: "Maximum Height of Thumbnails"
         }
 
@@ -409,6 +414,7 @@ script_mod! {
         }
 
         SubsectionLabel {
+            margin: Inset{top: 10}
             text: "Read Receipts"
         }
 
@@ -427,7 +433,7 @@ script_mod! {
 
             View {
                 width: Fill, height: Fit
-                margin: Inset{top: 6}
+                margin: Inset{top: 5, bottom: 5}
                 // `row_align` (not `align.y`) is what centers items within a wrapping row.
                 flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
 
@@ -447,7 +453,7 @@ script_mod! {
 
             View {
                 width: Fill, height: Fit
-                margin: Inset{top: 6}
+                margin: Inset{top: 5, bottom: 5}
                 // `row_align` (not `align.y`) is what centers items within a wrapping row.
                 flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
 
@@ -468,6 +474,7 @@ script_mod! {
         }
 
         SubsectionLabel {
+            margin: Inset{top: 10}
             text: "Typing Notifications"
         }
 

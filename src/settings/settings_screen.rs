@@ -60,16 +60,16 @@ script_mod! {
 
                 LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
-                // The recovery and encryption identity section.
-                encryption_settings := EncryptionSettings {}
-
-                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
-
                 // The Robrix app settings section.
                 app_settings := AppSettings {}
 
                 // The privacy settings section.
                 privacy_settings := PrivacySettings {}
+
+                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
+
+                // The recovery and encryption identity section.
+                encryption_settings := EncryptionSettings {}
 
                 // The TSP wallet settings section.
                 tsp_settings_screen := TspSettingsScreen {}
