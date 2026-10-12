@@ -160,6 +160,14 @@ pub struct GoForwardAction {
     pub steps: usize,
 }
 
+/// Returns whether two places are the same.
+///
+/// This considers their variant, not just their RoomId.
+/// So an invite and the joined room with the same room ID are not the same place.
+pub fn is_same_place(place: Option<&SelectedRoom>, other: Option<&SelectedRoom>) -> bool {
+    place == other && place.map(std::mem::discriminant) == other.map(std::mem::discriminant)
+}
+
 /// Returns whether going back or forward from the `current` place can go to the given place,
 /// which must be another place that `can_show` accepts.
 fn can_return_to(place: Option<&SelectedRoom>, current: Option<&SelectedRoom>, can_show: impl Fn(&SelectedRoom) -> bool) -> bool {

@@ -1285,6 +1285,8 @@ impl RoomPaneEdge {
             }
             // A drag belongs to the finger that started it, so another finger can't restart or move it.
             Hit::FingerDown(fe) if self.drag.is_none() && fe.is_primary_hit() => {
+                // This drag is for resizing the pane, so don't treat it like a swipe backwards gesture.
+                cx.claim_finger_drag(fe.digit_id);
                 let drag = match divider {
                     Divider::Border => Drag::Border {
                         start: if vertical { fe.abs.x } else { fe.abs.y },
