@@ -155,6 +155,7 @@ script_mod! {
 
         View {
             width: Fill, height: Fit
+            margin: Inset{bottom: 5}
             flow: Flow.Right{wrap: true},
             align: Align{y: 0.5},
             spacing: 10,
