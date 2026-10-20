@@ -170,9 +170,7 @@ impl RoomTabs {
             if clip.size.x <= 0.0 || clip.size.y <= 0.0 {
                 continue;
             }
-            let color = if tab.is_active() { vec4(1.0, 1.0, 1.0, 1.0) } else { vec4(0.0, 0.0, 0.0, 1.0) };
-            let hover_color = if tab.is_active() { vec4(1.0, 1.0, 1.0, 0.2) } else { vec4(0.0, 0.0, 0.0, 31.0 / 255.0) };
-            let down_color = if tab.is_active() { vec4(1.0, 1.0, 1.0, 0.3) } else { vec4(0.0, 0.0, 0.0, 0.2) };
+            let is_active = tab.is_active();
             let controls = self.controls.entry(*tab_id).or_insert_with(|| {
                 cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.room_tab_actions.as_object().into()))
             });
@@ -181,10 +179,17 @@ impl RoomTabs {
             controls.widget(cx, ids!(collapse_room_actions_button)).set_visible(cx, expanded);
             for button_id in [id!(expand_room_actions_button), id!(collapse_room_actions_button)] {
                 let mut button = controls.widget(cx, &[button_id]);
-                script_apply_eval!(cx, button, {
-                    draw_icon +: {color: #(color)}
-                    draw_bg +: {color_hover: #(hover_color), color_down: #(down_color)}
-                });
+                if is_active {
+                    script_apply_eval!(cx, button, {
+                        draw_icon +: {color: mod.widgets.COLOR_PRIMARY}
+                        draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_DOWN}
+                    });
+                } else {
+                    script_apply_eval!(cx, button, {
+                        draw_icon +: {color: mod.widgets.ROOM_NAME_TEXT_COLOR}
+                        draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_DOWN}
+                    });
+                }
             }
             let controls_rect = Rect {
                 pos: dvec2(rect.pos.x + rect.size.x - 33.0, rect.pos.y),

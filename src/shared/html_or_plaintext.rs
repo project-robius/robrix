@@ -8,9 +8,6 @@ use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache,
 
 use super::avatar::{AvatarImage, AvatarState, AvatarWidgetExt};
 
-/// The color of the text used to print the spoiler reason before the hidden text.
-const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
-
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -35,7 +32,7 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: #000
+                color: (COLOR_LINK_PILL_BG)
                 border_radius: 6.0
             }
 
@@ -78,6 +75,7 @@ script_mod! {
         align: Align{ y: 0.5 },
 
         html_link := HtmlLink {
+            color: (COLOR_LINK)
             hover_color: (COLOR_LINK_HOVER)
             grab_key_focus: false,
             padding: Inset{left: 1.0, right: 1.5},
@@ -96,6 +94,7 @@ script_mod! {
     mod.widgets.MatrixHtmlSpan = #(MatrixHtmlSpan::register_widget(vm)) {
         width: Fit, height: Fit,
         align: Align{x: 0., y: 0.}
+        spoiler_reason_color: (COLOR_SPOILER_REASON_TEXT)
     }
 
 
@@ -515,9 +514,9 @@ impl MatrixLinkPill {
         {
             let mut pill_bg = self.view(cx, ids!(pill_bg));
             if is_room_mention || is_self_mention {
-                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: #d91b38 } });
+                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: mod.widgets.COLOR_LINK_PILL_BG_MENTION } });
             } else {
-                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: #000 } });
+                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: mod.widgets.COLOR_LINK_PILL_BG } });
             }
         }
 
@@ -652,6 +651,8 @@ struct MatrixHtmlSpan {
     #[live] text: ArcStringMut,
     /// The current display state of the spoiler.
     #[rust] spoiler: SpoilerDisplay,
+    /// The color of the text used to print the spoiler reason before the hidden text.
+    #[live] spoiler_reason_color: Vec4,
     /// Foreground (text) color: the `data-mx-color` or `color` attributes.
     #[rust] fg_color: Option<Vec4>,
     /// Background color: the `data-mx-bg-color` attribute.
@@ -773,7 +774,7 @@ impl Widget for MatrixHtmlSpan {
             SpoilerDisplay::Hidden { reason }
             | SpoilerDisplay::Revealed { reason } => {
                 // Draw the spoiler reason text in an italic gray font.
-                tf.font_colors.push(COLOR_SPOILER_REASON);
+                tf.font_colors.push(self.spoiler_reason_color);
                 tf.italic.push();
                 // tf.push_size_rel_scale(0.8);
                 if reason.is_empty() {

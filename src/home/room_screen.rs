@@ -33,7 +33,7 @@ use crate::{
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, TextAvatarBgColor, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -85,19 +85,12 @@ const RETRY_PAGINATION_AFTER_ERROR_DELAY: Duration = Duration::from_secs(3);
 
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
-/// #FFF4E5
-const COLOR_THREAD_SUMMARY_BG: Vec4 = vec4(1.0, 0.957, 0.898, 1.0);
-/// #FFEACC
-const COLOR_THREAD_SUMMARY_BG_HOVER: Vec4 = vec4(1.0, 0.918, 0.8, 1.0);
-
-
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
 
     mod.widgets.COLOR_BG = #xfff8ee
-    mod.widgets.COLOR_OVERLAY_BG = #x000000d8
     mod.widgets.COLOR_READ_MARKER = #xeb2733
 
     mod.widgets.REACTION_TEXT_COLOR = #4c00b0
@@ -5164,7 +5157,7 @@ fn populate_message_view(
         else {
             // Server notices are drawn with a red color avatar background and username.
             let avatar = item.avatar(cx, ids!(header.avatar));
-            avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
+            avatar.show_text(cx, Some(TextAvatarBgColor::Alert), None, "⚠");
             username_label.set_text(cx, "Server notice");
             script_apply_eval!(cx, username_label, {
                 draw_text +: {
@@ -6300,34 +6293,40 @@ impl Widget for Message {
         // Handle clicks on the thread summary shown beneath a thread-root message.
         if let Some(thread_root_event_id) = thread_root_event_id.as_ref() {
             let thread_root_summary = self.thread_root_summary_view(cx);
-            let apply_hover = |cx: &mut Cx, bg_color: Vec4| {
+            let apply_hover = |cx: &mut Cx, is_hovered: bool| {
                 let mut thread_root_summary_ref = thread_root_summary.clone();
-                script_apply_eval!(cx, thread_root_summary_ref, {
-                    draw_bg.color: #(bg_color)
-                });
+                if is_hovered {
+                    script_apply_eval!(cx, thread_root_summary_ref, {
+                        draw_bg.color: mod.widgets.COLOR_THREAD_SUMMARY_BG_HOVER
+                    });
+                } else {
+                    script_apply_eval!(cx, thread_root_summary_ref, {
+                        draw_bg.color: mod.widgets.COLOR_THREAD_SUMMARY_BG
+                    });
+                }
             };
             let summary_hit = event.hits(cx, thread_root_summary.area());
             match summary_hit {
                 Hit::FingerDown(_) => {
                     self.animator_play(cx, ids!(bg_hover.on));
-                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
+                    apply_hover(cx, true);
                 }
                 Hit::FingerHoverIn(_) => {
                     self.animator_play(cx, ids!(bg_hover.on));
-                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
+                    apply_hover(cx, true);
                 }
                 Hit::FingerHoverOut(_) => {
-                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
+                    apply_hover(cx, false);
                 }
                 Hit::FingerMove(fe) if !fe.is_over => {
-                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
+                    apply_hover(cx, false);
                 }
                 Hit::FingerLongPress(_) => {
-                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
+                    apply_hover(cx, true);
                 }
                 Hit::FingerUp(fe) => {
                     let still_hovered = fe.device.has_hovers() && fe.is_over;
-                    apply_hover(cx, if still_hovered { COLOR_THREAD_SUMMARY_BG_HOVER } else { COLOR_THREAD_SUMMARY_BG });
+                    apply_hover(cx, still_hovered);
                     // Same as the reply preview: this press never reaches the body's
                     // hit test, so settle the message highlight here too.
                     if !self.is_context_menu_open {
@@ -6389,7 +6388,7 @@ impl Widget for Message {
         if let Event::ClearHover = event && thread_root_event_id.is_some() {
             let mut summary = self.thread_root_summary_view(cx);
             script_apply_eval!(cx, summary, {
-                draw_bg.color: #(COLOR_THREAD_SUMMARY_BG)
+                draw_bg.color: mod.widgets.COLOR_THREAD_SUMMARY_BG
             });
         }
 
@@ -6468,9 +6467,9 @@ impl Widget for Message {
         if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             script_apply_eval!(cx, self, {
                 draw_bg +: {
-                    color: #ffffd1,
-                    color_hover: #fff9c2,
-                    mentions_bar_color: #ffd54f
+                    color: mod.widgets.COLOR_MENTION_HIGHLIGHT_BG,
+                    color_hover: mod.widgets.COLOR_MENTION_HIGHLIGHT_BG_HOVER,
+                    mentions_bar_color: mod.widgets.COLOR_MENTION_HIGHLIGHT_BAR
                 }
             });
         }

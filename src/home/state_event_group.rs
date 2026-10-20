@@ -16,7 +16,7 @@ use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use crate::{
     LivePtr, widget_ref_from_live_ptr,
     home::room_read_receipt::{AvatarRowRef, AvatarRowWidgetRefExt},
-    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, expand_arrow::ExpandArrow, hover_highlight::handle_hover_hit, styles::{COLOR_ROBRIX_PURPLE, SMALL_STATE_TEXT_COLOR}},
+    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, expand_arrow::ExpandArrow, hover_highlight::handle_hover_hit},
     sliding_sync::TimelineKind,
 };
 
@@ -34,6 +34,8 @@ script_mod! {
         width: Fit, height: Fit
         flow: Right,
         spacing: 1.5
+        color: (SMALL_STATE_TEXT_COLOR)
+        color_highlighted: (COLOR_ROBRIX_PURPLE)
 
         toggle_arrow := mod.widgets.ExpandArrow {
             width: 16, height: 16,
@@ -1109,6 +1111,8 @@ where
 #[derive(Script, ScriptHook, Widget)]
 pub struct GroupToggle {
     #[deref] view: View,
+    #[live] color: Vec4f,
+    #[live] color_highlighted: Vec4f,
     #[rust] highlighted: bool,
 }
 
@@ -1118,7 +1122,7 @@ impl Widget for GroupToggle {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let color = if self.highlighted { COLOR_ROBRIX_PURPLE } else { SMALL_STATE_TEXT_COLOR };
+        let color = if self.highlighted { self.color_highlighted } else { self.color };
         self.view.label(cx, ids!(toggle_label)).set_text_color(cx, color);
         if let Some(mut arrow) = self.view.widget(cx, ids!(toggle_arrow)).borrow_mut::<ExpandArrow>() {
             arrow.set_color(cx, color);

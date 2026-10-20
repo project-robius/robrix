@@ -2,7 +2,6 @@ use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
 use crate::{
-    shared::styles::{COLOR_FG_ACCEPT_GREEN, COLOR_FG_DANGER_RED},
     sliding_sync::get_client,
     verification::VerificationStateAction,
 };
@@ -109,6 +108,8 @@ script_mod! {
         width: Fit, height: Fit
         flow: Overlay
         align: Align{ x: 1.0, y: 0 }
+        tooltip_bg_verified: (COLOR_FG_ACCEPT_GREEN)
+        tooltip_bg_unverified: (COLOR_FG_DANGER_RED)
 
         verification_icons := View {
             flow: Overlay
@@ -128,6 +129,10 @@ pub struct VerificationBadge {
     view: View,
     #[rust(VerificationState::Unknown)]
     verification_state: VerificationState,
+    #[live]
+    tooltip_bg_verified: Vec4,
+    #[live]
+    tooltip_bg_unverified: Vec4,
 }
 
 impl ScriptHook for VerificationBadge {
@@ -184,14 +189,15 @@ impl VerificationBadge {
 impl VerificationBadgeRef {
     /// Returns verification-related string content and background color for a tooltip.
     pub fn tooltip_content(&self) -> (&'static str, Option<Vec4>) {
-        match self.borrow().map(|v| v.verification_state) {
-            Some(VerificationState::Verified) => (
+        let Some(inner) = self.borrow() else { return ("", None) };
+        match inner.verification_state {
+            VerificationState::Verified => (
                 "and verified ",
-                Some(COLOR_FG_ACCEPT_GREEN),
+                Some(inner.tooltip_bg_verified),
             ),
-            Some(VerificationState::Unverified) => (
+            VerificationState::Unverified => (
                 "but not verified ",
-                Some(COLOR_FG_DANGER_RED),
+                Some(inner.tooltip_bg_unverified),
             ),
             _ => (
                 "",

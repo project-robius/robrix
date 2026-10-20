@@ -9,7 +9,6 @@ use crate::{
         nav_history_menu::{LongPressWatcher, NavHistoryDirection, NavHistoryMenuWidgetRefExt, request_nav_history_menu},
     },
     room::room_action_bar::RoomActionTooltip,
-    shared::styles::{COLOR_FG_DISABLED, COLOR_TEXT},
 };
 
 script_mod! {
@@ -123,15 +122,19 @@ impl NavHistoryButtons {
         self.can_go_forward = can_go_forward;
         for (button_id, enable) in [(ids!(go_back_button), can_go_back), (ids!(go_forward_button), can_go_forward)] {
             let mut button = self.view.button(cx, button_id);
-            // A button that we disable while it's hovered shouldn't stay highlighted.
-            if !enable {
+            if enable {
+                script_apply_eval!(cx, button, {
+                    enabled: true,
+                    draw_icon.color: mod.widgets.COLOR_TEXT,
+                });
+            } else {
+                // A button that we disable while it's hovered shouldn't stay highlighted.
                 button.reset_hover(cx);
+                script_apply_eval!(cx, button, {
+                    enabled: false,
+                    draw_icon.color: mod.widgets.COLOR_FG_DISABLED,
+                });
             }
-            let icon_color = if enable { COLOR_TEXT } else { COLOR_FG_DISABLED };
-            script_apply_eval!(cx, button, {
-                enabled: #(enable),
-                draw_icon.color: #(icon_color),
-            });
         }
         self.view.redraw(cx);
     }

@@ -484,7 +484,7 @@ impl RobrixPopupNotification {
             PopupKind::Warning => {
                 script_apply_eval!(cx, popup_icon, {
                     draw_icon.svg: mod.widgets.ICON_WARNING,
-                    draw_icon.color: #000000,
+                    draw_icon.color: mod.widgets.COLOR_POPUP_WARNING_ICON,
                 });
             }
             PopupKind::Blank => {}
@@ -498,32 +498,18 @@ impl RobrixPopupNotification {
                 });
                 script_apply_eval!(cx, close_button, {
                     draw_bg +: {
-                        color: #FFFFFF22,
-                        color_hover: #FFFFFF30,
-                        color_down: #FFFFFF42,
-                        border_color: #FFFFFF2C,
-                        border_color_hover: #FFFFFF38,
-                        border_color_down: #FFFFFF4A,
+                        color:              mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR,
+                        color_hover:        mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_HOVER,
+                        color_down:         mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_DOWN,
+                        border_color:       mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR,
+                        border_color_hover: mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_HOVER,
+                        border_color_down:  mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_DOWN,
                     },
-                    draw_icon +: { color: #FFFFFFFA }
+                    draw_icon +: { color: mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_COLOR }
                 });
             }
-            PopupKind::Warning | PopupKind::Blank => {
-                script_apply_eval!(cx, popup_label, {
-                    draw_text +: { color: #000000 },
-                });
-                script_apply_eval!(cx, close_button, {
-                    draw_bg +: {
-                        color: #00000014,
-                        color_hover: #00000022,
-                        color_down: #x0000002E,
-                        border_color: #00000020,
-                        border_color_hover: #0000002C,
-                        border_color_down: #00000038,
-                    },
-                    draw_icon +: { color: #000000D0 }
-                });
-            }
+            // These keep the template's dark text and close button.
+            PopupKind::Warning | PopupKind::Blank => {}
         }
 
         // Set the background color of the popup based on its kind.

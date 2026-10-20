@@ -15,7 +15,7 @@ use crate::{
     avatar_cache::{get_or_fetch_avatar, AvatarCacheEntry},
     home::rooms_list::RoomsListRef,
     room::FetchedRoomAvatar,
-    shared::{avatar::{AvatarImage, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::*},
+    shared::{avatar::{AvatarImage, TextAvatarBgColor, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand},
     utils::{self, RoomNameId},
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
@@ -40,6 +40,7 @@ script_mod! {
         flow: Overlay
         align: Align{x: 0.0, y: 0.0}
 
+        color: (COLOR_TRANSPARENT)
         color_focus: #xB6D3F2
         color_hover: (COLOR_LIST_ITEM_BG_HOVER)
 
@@ -139,6 +140,7 @@ pub struct MentionablePopup {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
+    #[live] color: Vec4f,
     #[live] color_focus: Vec4f,
     #[live] color_hover: Vec4f,
 
@@ -243,7 +245,7 @@ impl Widget for MentionablePopup {
                         } else if self.pointer_hover_index == Some(index) {
                             self.color_hover
                         } else {
-                            Vec4f::default()
+                            self.color
                         };
                         script_apply_eval!(cx, row_widget, { draw_bg.color: #(color) });
                         row_widget
@@ -559,7 +561,7 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             new_widget.label(cx, ids!(info.title)).set_text(cx, "Notify the entire room");
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, "@room");
             let first = room_name.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "@".into());
-            new_widget.avatar(cx, ids!(avatar)).show_text(cx, Some(COLOR_ROBRIX_PURPLE), None, &first);
+            new_widget.avatar(cx, ids!(avatar)).show_text(cx, Some(TextAvatarBgColor::Accent), None, &first);
             new_widget
         }
         MentionItem::Room(candidate) => {
@@ -601,6 +603,6 @@ fn set_room_avatar(cx: &mut Cx, row: &WidgetRef, room_id: &OwnedRoomId, avatar_u
         return;
     }
     if let FetchedRoomAvatar::Text(fallback) = utils::avatar_from_room_name(name_for_avatar) {
-        avatar.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &fallback);
+        avatar.show_text(cx, Some(TextAvatarBgColor::UnknownRoom), None, &fallback);
     }
 }

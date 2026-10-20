@@ -42,7 +42,7 @@ script_mod! {
         max_lines: 1
         text_overflow: Ellipsis
         draw_text +: {
-            color: #000,
+            color: (ROOM_NAME_TEXT_COLOR),
             text_style: USERNAME_TEXT_STYLE { font_size: 10. }
         }
         text: "[Room name unknown]"
@@ -65,6 +65,14 @@ script_mod! {
         padding: 10,
         width: Fill, height: Fit
         cursor: MouseCursor.Default,
+
+        room_name_color: (ROOM_NAME_TEXT_COLOR)
+        timestamp_color: (TIMESTAMP_TEXT_COLOR)
+        preview_text_color: (COLOR_ROOM_PREVIEW_TEXT)
+        preview_code_bg_color: (COLOR_ROOM_PREVIEW_CODE_BG)
+        preview_link_color: (COLOR_LINK)
+        selected_text_color: (COLOR_PRIMARY)
+        selected_code_bg_color: (COLOR_ROOM_PREVIEW_CODE_BG_SELECTED)
 
         show_bg: true
         draw_bg +: {
@@ -254,11 +262,19 @@ impl Widget for RoomsListEntry {
     }
 }
 
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct RoomsListEntryContent {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+
+    #[live] room_name_color: Vec4f,
+    #[live] timestamp_color: Vec4f,
+    #[live] preview_text_color: Vec4f,
+    #[live] preview_code_bg_color: Vec4f,
+    #[live] preview_link_color: Vec4f,
+    #[live] selected_text_color: Vec4f,
+    #[live] selected_code_bg_color: Vec4f,
 
     #[rust] room_id: Option<OwnedRoomId>,
 
@@ -275,6 +291,15 @@ pub struct RoomsListEntryContent {
 
     /// The avatar content that was last drawn for this room.
     #[rust] last_avatar: Option<FetchedRoomAvatar>,
+}
+
+impl ScriptHook for RoomsListEntryContent {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // A reapply resets the preview colors to their DSL defaults, so we must set them again.
+        if apply.is_reload() {
+            self.last_selection_drawn = None;
+        }
+    }
 }
 
 impl Widget for RoomsListEntryContent {
@@ -450,7 +475,7 @@ impl RoomsListEntryContent {
             if is_selected {
                 None
             } else {
-                Some(HTML_LINK_COLOR)
+                Some(self.preview_link_color)
             });
 
         // Skip redrawing if nothing changed.
@@ -464,17 +489,16 @@ impl RoomsListEntryContent {
         let timestamp_color;
         let code_bg_color;
 
-        // TODO: use script-defined theme color instead of redefining constants below
         if is_selected {
-            message_text_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
-            room_name_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
-            timestamp_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
-            code_bg_color = vec4(0.3, 0.3, 0.3, 1.0); // a darker gray used for the background of code blocks and quote blocks
+            message_text_color = self.selected_text_color;
+            room_name_color = self.selected_text_color;
+            timestamp_color = self.selected_text_color;
+            code_bg_color = self.selected_code_bg_color;
         } else {
-            message_text_color = vec4(0.267, 0.267, 0.267, 1.0); // MESSAGE_TEXT_COLOR
-            room_name_color = vec4(0., 0., 0., 1.0);
-            timestamp_color = vec4(0.6, 0.6, 0.6, 1.0);
-            code_bg_color = vec4(0.929, 0.929, 0.929, 1.0); // #EDEDED
+            message_text_color = self.preview_text_color;
+            room_name_color = self.room_name_color;
+            timestamp_color = self.timestamp_color;
+            code_bg_color = self.preview_code_bg_color;
         }
 
         // Toggle the background color via the animator (handles selected/deselected bg).

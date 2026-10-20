@@ -33,6 +33,10 @@ script_mod! {
         flow: Right,
         spacing: 3,
 
+        tooltip_bg_color_syncing: (COLOR_ACTIVE_PRIMARY)
+        tooltip_bg_color_offline: (COLOR_FG_DANGER_RED)
+        tooltip_bg_color_synced: (COLOR_FG_ACCEPT_GREEN)
+
         header_title := Label {
             width: Fill,
             height: Fit,
@@ -93,6 +97,10 @@ script_mod! {
 #[derive(Script, ScriptHook, Widget)]
 pub struct RoomsListHeader {
     #[deref] view: View,
+
+    #[live] tooltip_bg_color_syncing: Vec4f,
+    #[live] tooltip_bg_color_offline: Vec4f,
+    #[live] tooltip_bg_color_synced: Vec4f,
 
     #[rust(State::Idle)] sync_state: State,
 
@@ -187,9 +195,9 @@ impl Widget for RoomsListHeader {
 
         // Show tooltips for the sync status icons.
         for (view, text, bg_color) in [
-            (self.view.view(cx, ids!(loading_spinner)), "Syncing...",   vec4(0.059, 0.533, 0.996, 1.0)), // COLOR_ACTIVE_PRIMARY #0f88fe
-            (self.view.view(cx, ids!(offline_icon)),    "Offline",      vec4(0.863, 0.0, 0.020, 1.0)),   // COLOR_FG_DANGER_RED #DC0005
-            (self.view.view(cx, ids!(synced_icon)),     "Fully synced", vec4(0.075, 0.533, 0.031, 1.0)), // COLOR_FG_ACCEPT_GREEN #138808
+            (self.view.view(cx, ids!(loading_spinner)), "Syncing...",   self.tooltip_bg_color_syncing),
+            (self.view.view(cx, ids!(offline_icon)),    "Offline",      self.tooltip_bg_color_offline),
+            (self.view.view(cx, ids!(synced_icon)),     "Fully synced", self.tooltip_bg_color_synced),
         ] {
             if !view.visible() {
                 continue;
@@ -202,7 +210,6 @@ impl Widget for RoomsListHeader {
                             text: text.to_string(),
                             widget_rect: view.area().rect(cx),
                             options: CalloutTooltipOptions {
-                                text_color: vec4(1.0, 1.0, 1.0, 1.0), // COLOR_PRIMARY
                                 bg_color,
                                 position: TooltipPosition::Left,
                                 ..Default::default()

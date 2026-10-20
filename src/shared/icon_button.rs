@@ -45,7 +45,7 @@ script_mod! {
 
             color: (COLOR_ACTIVE_PRIMARY)
             color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
-            color_down: #0C5DAA
+            color_down: (COLOR_ACTIVE_PRIMARY_DOWN)
             color_disabled: (COLOR_BG_DISABLED)
 
             border_color: #0000
@@ -79,8 +79,8 @@ script_mod! {
             border_color_hover: (COLOR_FG_ACCEPT_GREEN)
             border_color_down: (COLOR_FG_ACCEPT_GREEN)
             color: (COLOR_BG_ACCEPT_GREEN)
-            color_hover: #D4EED4
-            color_down: #B8E0B8
+            color_hover: (COLOR_BG_ACCEPT_GREEN_HOVER)
+            color_down: (COLOR_BG_ACCEPT_GREEN_DOWN)
         }
         draw_icon.color: (COLOR_FG_ACCEPT_GREEN)
         draw_text +: {
@@ -97,8 +97,8 @@ script_mod! {
             border_color_hover: (COLOR_FG_DANGER_RED)
             border_color_down: (COLOR_FG_DANGER_RED)
             color: (COLOR_BG_DANGER_RED)
-            color_hover: #F0D4D4
-            color_down: #E0B8B8
+            color_hover: (COLOR_BG_DANGER_RED_HOVER)
+            color_down: (COLOR_BG_DANGER_RED_DOWN)
         }
         draw_icon.color: (COLOR_FG_DANGER_RED)
         draw_text +: {
@@ -115,8 +115,8 @@ script_mod! {
             border_color_hover: (COLOR_BG_DISABLED)
             border_color_down: (COLOR_BG_DISABLED)
             color: (COLOR_SECONDARY)
-            color_hover: #D0D0D0
-            color_down: #C0C0C0
+            color_hover: (COLOR_SECONDARY_HOVER)
+            color_down: (COLOR_SECONDARY_DOWN)
         }
         draw_icon.color: (COLOR_TEXT)
         draw_text +: {

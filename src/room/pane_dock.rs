@@ -12,7 +12,6 @@ use matrix_sdk::room::RoomMember;
 
 use crate::{
     app::AppStateAction,
-    shared::styles::COLOR_ROBRIX_PURPLE,
     sliding_sync::{MatrixRequest, TimelineKind, submit_async_request},
     utils::{self, RoomNameId},
     LivePtr, widget_ref_from_live_ptr,
@@ -143,7 +142,7 @@ script_mod! {
         width: Fit, height: Fit
         draw_bg +: { color: #0000 }
         draw_handle +: {
-            color: #4D4D4D
+            color: (COLOR_PANE_DIVIDER)
             // The grab handle: a soft capsule with dots that is quiet until you get near it.
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
@@ -176,7 +175,7 @@ script_mod! {
         }
         draw_grab +: { color: #00000001 }
         draw_divider +: {
-            color: #4D4D4D
+            color: (COLOR_PANE_DIVIDER)
             // Rounded end caps, like a dock splitter's.
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
@@ -188,6 +187,8 @@ script_mod! {
         // Panes slide in and out from this edge's side of the dock.
         slide: 1.0
         // Like a dock splitter, the dividers and grab handles turn purple when hovered or dragged.
+        color_divider: (COLOR_PANE_DIVIDER)
+        color_divider_hover: (COLOR_ROBRIX_PURPLE)
         hover: 0.0
         split_hover: 0.0
         animator: Animator {
@@ -1032,8 +1033,6 @@ const GRAB_TOUCH_SLOP: f64 = 8.0;
 const EDGE_MIN_SIZE: f64 = 60.0;
 /// The thickness of the dividers beside and between panes.
 const DIVIDER_THICKNESS: f64 = 2.0;
-/// The dark gray of a dock splitter (#4D4D4D), which the dividers and grab handles share.
-const DIVIDER_COLOR: Vec4 = Vec4 { x: 0.302, y: 0.302, z: 0.302, w: 1.0 };
 
 /// Widget actions emitted by a [`RoomPaneDock`].
 #[derive(Clone, Debug, Default)]
@@ -1159,6 +1158,8 @@ pub struct RoomPaneEdge {
     #[live] draw_grab: DrawColor,
     /// The lines along our inner border and between our panes.
     #[live] draw_divider: DrawColor,
+    #[live] color_divider: Vec4,
+    #[live] color_divider_hover: Vec4,
     #[rust] side: PaneSide,
     #[rust] panes: Vec<EdgePane>,
     #[rust(300.0)] size: f64,
@@ -1200,12 +1201,7 @@ impl RoomPaneEdge {
             Divider::Split(index) if index == self.hovered_split => self.split_hover,
             Divider::Split(_) => 0.0,
         }.clamp(0.0, 1.0);
-        Vec4 {
-            x: DIVIDER_COLOR.x + (COLOR_ROBRIX_PURPLE.x - DIVIDER_COLOR.x) * t,
-            y: DIVIDER_COLOR.y + (COLOR_ROBRIX_PURPLE.y - DIVIDER_COLOR.y) * t,
-            z: DIVIDER_COLOR.z + (COLOR_ROBRIX_PURPLE.z - DIVIDER_COLOR.z) * t,
-            w: 1.0,
-        }
+        Vec4::from_lerp(self.color_divider, self.color_divider_hover, t)
     }
 
     /// Handles resizing via the grab handles, which our dock calls before any other widget handles the event.

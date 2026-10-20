@@ -4,7 +4,7 @@ use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::encryption::{identities::Device, VerificationState};
 use url::Url;
 
-use crate::{app::ConfirmDeleteAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::{PopulateMode, is_settings_screen_shown}, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
+use crate::{app::ConfirmDeleteAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::{PopulateMode, is_settings_screen_shown}, shared::{avatar::{AvatarState, TextAvatarBgColor, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -312,6 +312,13 @@ pub enum AccountManagementUrl {
     Unavailable,
     /// The URL of the homeserver's account management page is known.
     Known(Url),
+}
+
+/// The colors that an account settings button shows while it's enabled.
+enum EnabledColors {
+    Primary,
+    Accept,
+    Danger,
 }
 
 /// The view containing all user account-related settings.
@@ -695,7 +702,7 @@ impl AccountSettings {
         if !drew_avatar {
             our_own_avatar.show_text(
                 cx,
-                Some(COLOR_ROBRIX_PURPLE),
+                Some(TextAvatarBgColor::Accent),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 own_profile.displayable_name(),
             );
@@ -837,25 +844,7 @@ impl AccountSettings {
         enable: bool,
         delete_avatar_button: &ButtonRef,
     ) {
-        let (delete_button_fg_color, delete_button_bg_color) = if enable {
-            (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
-        } else {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-        };
-        let mut delete_avatar_button = delete_avatar_button.clone();
-        script_apply_eval!(cx, delete_avatar_button, {
-            enabled: #(enable),
-            draw_bg +: {
-                color: #(delete_button_bg_color),
-                border_color: #(delete_button_fg_color),
-            }
-            draw_icon +: {
-                color: #(delete_button_fg_color),
-            }
-            draw_text +: {
-                color: #(delete_button_fg_color),
-            }
-        });
+        Self::enable_button(cx, enable, delete_avatar_button, EnabledColors::Danger);
     }
 
     /// Enable or disable the upload avatar button.
@@ -864,25 +853,7 @@ impl AccountSettings {
         enable: bool,
         upload_avatar_button: &ButtonRef,
     ) {
-        let (upload_button_fg_color, upload_button_bg_color) = if enable {
-            (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
-        } else {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-        };
-        let mut upload_avatar_button = upload_avatar_button.clone();
-        script_apply_eval!(cx, upload_avatar_button, {
-            enabled: #(enable),
-            draw_bg +: {
-                color: #(upload_button_bg_color),
-                border_color: #(upload_button_fg_color),
-            }
-            draw_icon +: {
-                color: #(upload_button_fg_color),
-            }
-            draw_text +: {
-                color: #(upload_button_fg_color),
-            }
-        });
+        Self::enable_button(cx, enable, upload_avatar_button, EnabledColors::Primary);
     }
 
     /// Enable or disable the display name accept and cancel buttons.
@@ -892,45 +863,72 @@ impl AccountSettings {
         accept_display_name_button: &ButtonRef,
         cancel_display_name_button: &ButtonRef,
     ) {
-        let (accept_button_fg_color, accept_button_bg_color) = if enable {
-            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
-        } else {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-        };
-        let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
-            (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
-        } else {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-        };
+        Self::enable_button(cx, enable, accept_display_name_button, EnabledColors::Accept);
+        Self::enable_button(cx, enable, cancel_display_name_button, EnabledColors::Danger);
+    }
 
-        let mut accept_display_name_button = accept_display_name_button.clone();
-        script_apply_eval!(cx, accept_display_name_button, {
-            enabled: #(enable),
-            draw_bg +: {
-                color: #(accept_button_bg_color),
-                border_color: #(accept_button_fg_color),
-            },
-            draw_text +: {
-                color: #(accept_button_fg_color),
-            },
-            draw_icon +: {
-                color: #(accept_button_fg_color),
-            }
-        });
-        let mut cancel_display_name_button = cancel_display_name_button.clone();
-        script_apply_eval!(cx, cancel_display_name_button, {
-            enabled: #(enable),
-            draw_bg +: {
-                color: #(cancel_button_bg_color),
-                border_color: #(cancel_button_fg_color),
-            },
-            draw_text +: {
-                color: #(cancel_button_fg_color),
-            },
-            draw_icon +: {
-                color: #(cancel_button_fg_color),
-            }
-        });
+    /// Enable or disable the given button, which shows the given colors while it's enabled.
+    fn enable_button(
+        cx: &mut Cx,
+        enable: bool,
+        button: &ButtonRef,
+        enabled_colors: EnabledColors,
+    ) {
+        let mut button = button.clone();
+        match (enable, enabled_colors) {
+            (false, _) => script_apply_eval!(cx, button, {
+                enabled: false,
+                draw_bg +: {
+                    color: mod.widgets.COLOR_BG_DISABLED,
+                    border_color: mod.widgets.COLOR_FG_DISABLED,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_FG_DISABLED,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_FG_DISABLED,
+                }
+            }),
+            (true, EnabledColors::Primary) => script_apply_eval!(cx, button, {
+                enabled: true,
+                draw_bg +: {
+                    color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                    border_color: mod.widgets.COLOR_PRIMARY,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_PRIMARY,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_PRIMARY,
+                }
+            }),
+            (true, EnabledColors::Accept) => script_apply_eval!(cx, button, {
+                enabled: true,
+                draw_bg +: {
+                    color: mod.widgets.COLOR_BG_ACCEPT_GREEN,
+                    border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                }
+            }),
+            (true, EnabledColors::Danger) => script_apply_eval!(cx, button, {
+                enabled: true,
+                draw_bg +: {
+                    color: mod.widgets.COLOR_BG_DANGER_RED,
+                    border_color: mod.widgets.COLOR_FG_DANGER_RED,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_FG_DANGER_RED,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_FG_DANGER_RED,
+                }
+            }),
+        }
     }
 }
 

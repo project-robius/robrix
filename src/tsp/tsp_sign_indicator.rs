@@ -2,8 +2,6 @@
 
 use makepad_widgets::*;
 
-use crate::shared::styles::*;
-
 script_mod! {
     link tsp_enabled
 
@@ -17,6 +15,13 @@ script_mod! {
         flow: Right,
         padding: 0,
         margin: Inset{ top: 5 }
+
+        font_color_unknown: (COLOR_MESSAGE_NOTICE_TEXT)
+        font_color_verified: (COLOR_FG_ACCEPT_GREEN)
+        font_color_wrong_signature: (COLOR_FG_DANGER_RED)
+        tooltip_bg_color_unknown: (COLOR_FG_DISABLED)
+        tooltip_bg_color_verified: (COLOR_FG_ACCEPT_GREEN)
+        tooltip_bg_color_wrong_signature: (COLOR_FG_DANGER_RED)
 
         // TODO: re-enable this once we have implemented the ability
         // to click on the indicator to show the user's profile and TSP info.
@@ -62,6 +67,14 @@ pub enum TspSignState {
 #[derive(Script, ScriptHook, Widget)]
 pub struct TspSignIndicator {
     #[deref] view: View,
+
+    #[live] font_color_unknown: Vec4f,
+    #[live] font_color_verified: Vec4f,
+    #[live] font_color_wrong_signature: Vec4f,
+    #[live] tooltip_bg_color_unknown: Vec4f,
+    #[live] tooltip_bg_color_verified: Vec4f,
+    #[live] tooltip_bg_color_wrong_signature: Vec4f,
+
     #[rust] state: TspSignState,
 }
 
@@ -88,15 +101,15 @@ impl Widget for TspSignIndicator {
             let (text, bg_color) = match self.state {
                 TspSignState::Unknown => (
                     "The sender's TSP signature is unknown.\n\nClick on their avatar to verify their TSP identity.",
-                    COLOR_FG_DISABLED,
+                    self.tooltip_bg_color_unknown,
                 ),
                 TspSignState::Verified => (
                     "This message was signed with the user's verified TSP identity.",
-                    COLOR_FG_ACCEPT_GREEN, 
+                    self.tooltip_bg_color_verified,
                 ),
                 TspSignState::WrongSignature => (
                     "Warning: this message's TSP signature does NOT match the expected sender signature.",
-                    COLOR_FG_DANGER_RED,
+                    self.tooltip_bg_color_wrong_signature,
                 ),
             };
             cx.widget_action(
@@ -125,13 +138,13 @@ impl TspSignIndicator {
         if let Some(mut tsp_html) = tsp_html_ref.borrow_mut() {
             let (text, font_color) = match state {
                 TspSignState::Unknown => {
-                    ("TSP ❔", COLOR_MESSAGE_NOTICE_TEXT)
+                    ("TSP ❔", self.font_color_unknown)
                 }
                 TspSignState::Verified => {
-                    ("TSP ✅", COLOR_FG_ACCEPT_GREEN)
+                    ("TSP ✅", self.font_color_verified)
                 }
                 TspSignState::WrongSignature => {
-                    ("❗TSP❗", COLOR_FG_DANGER_RED)
+                    ("❗TSP❗", self.font_color_wrong_signature)
                 }
             };
             tsp_html.set_text(cx, text);

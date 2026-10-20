@@ -43,12 +43,12 @@ script_mod! {
                 icon_walk: Walk{width: 18, height: 18}
                 draw_icon +: {
                     svg: crate_resource("self://resources/icons/microphone.svg")
-                    color: #555
+                    color: (COLOR_SPEECH_BUTTON_ICON)
                 }
                 draw_bg +: {
-                    color: #0000
-                    color_hover: #xE0E8F0
-                    color_down: #xD0D8E8
+                    color: (COLOR_TRANSPARENT)
+                    color_hover: (COLOR_SPEECH_BUTTON_BG_HOVER)
+                    color_down: (COLOR_SPEECH_BUTTON_BG_DOWN)
                     // Set from Rust: 1.0 while recording, plus the three
                     // most recent microphone levels, each normalized 0..=1.
                     recording: instance(0.0)
@@ -372,21 +372,30 @@ impl SpeechTextInput {
         // a phase change only affects the tooltip, so only that needs redrawing.
         let is_active = new_phase.is_some();
         if is_active != self.shown_phase.is_some() {
-            let bg = if is_active { vec4(0.08, 0.08, 0.08, 1.0) } else { vec4(0.0, 0.0, 0.0, 0.0) };
-            let hover = if is_active { vec4(0.25, 0.25, 0.25, 1.0) } else { vec4(0.88, 0.91, 0.94, 1.0) };
-            let down = if is_active { hover } else { vec4(0.82, 0.85, 0.91, 1.0) };
-            // The soundwave animation replaces the icon rather than sitting beside it,
-            // so we just hide the microphone icon while recording.
-            let icon = if is_active { vec4(0.0, 0.0, 0.0, 0.0) } else { vec4(0.2, 0.2, 0.2, 1.0) };
-            let recording = if is_active { 1.0 } else { 0.0 };
             let mut button = self.speech_button();
-            script_apply_eval!(cx, button, {
-                draw_icon +: {color: #(icon)}
-                draw_bg +: {
-                    color: #(bg), color_hover: #(hover), color_down: #(down),
-                    recording: #(recording)
-                }
-            });
+            if is_active {
+                // The soundwave animation replaces the icon rather than sitting beside it,
+                // so we just hide the microphone icon while recording.
+                script_apply_eval!(cx, button, {
+                    draw_icon +: {color: mod.widgets.COLOR_TRANSPARENT}
+                    draw_bg +: {
+                        color: mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING,
+                        color_hover: mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING_HOVER,
+                        color_down: mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING_HOVER,
+                        recording: 1.0
+                    }
+                });
+            } else {
+                script_apply_eval!(cx, button, {
+                    draw_icon +: {color: mod.widgets.COLOR_SPEECH_BUTTON_ICON}
+                    draw_bg +: {
+                        color: mod.widgets.COLOR_TRANSPARENT,
+                        color_hover: mod.widgets.COLOR_SPEECH_BUTTON_BG_HOVER,
+                        color_down: mod.widgets.COLOR_SPEECH_BUTTON_BG_DOWN,
+                        recording: 0.0
+                    }
+                });
+            }
             self.redraw(cx);
         }
         if new_phase != self.shown_phase {

@@ -232,7 +232,7 @@ script_mod! {
             height: Fill
             visible: false,
             show_bg: true
-            draw_bg.color: #000000BB
+            draw_bg.color: (COLOR_OVERLAY_BG)
         }
 
         main_content := SolidView {
@@ -259,6 +259,7 @@ script_mod! {
         }
 
         slide: 1.0,
+        overlay_bg_color: (COLOR_OVERLAY_BG)
 
         animator: Animator {
             panel: {
@@ -381,6 +382,7 @@ pub struct UserProfileSlidingPane {
     #[deref] view: View,
     #[apply_default] animator: Animator,
     #[live] slide: f32,
+    #[live] overlay_bg_color: Vec4f,
 
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_animating_out: bool,
@@ -573,8 +575,8 @@ impl Widget for UserProfileSlidingPane {
         // Also derive the bg_view overlay alpha from `slide`.
         // The animator can only interpolate struct fields, not child view properties,
         // so we compute the bg color here from the smoothly-animated `slide` value.
-        let bg_alpha = (1.0 - self.slide) * 0.733; // 0.733 ≈ 0xBB/0xFF
-        let bg_color = vec4(0.0, 0.0, 0.0, bg_alpha);
+        let mut bg_color = self.overlay_bg_color;
+        bg_color.w *= 1.0 - self.slide;
         let mut bg_view = self.view(cx, ids!(bg_view));
         script_apply_eval!(cx, bg_view, {
             draw_bg +: { color: #(bg_color) }
