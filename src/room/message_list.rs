@@ -38,7 +38,7 @@ script_mod! {
         // Tapping a row shouldn't take key focus away from a text input.
         grab_key_focus: false
         show_bg: true
-        draw_bg +: { color: #0000, border_radius: 5.0 }
+        draw_bg +: { color: (COLOR_TRANSPARENT), border_radius: 5.0 }
 
         message := View {
             width: Fill, height: Fit
@@ -97,7 +97,7 @@ script_mod! {
                 off: AnimatorState{
                     redraw: true
                     from: {all: Snap}
-                    apply: { draw_bg: { color: #0000 } }
+                    apply: { draw_bg: { color: (COLOR_TRANSPARENT) } }
                 }
                 on: AnimatorState{
                     redraw: true
@@ -114,7 +114,7 @@ script_mod! {
         margin: Inset{right: #(FRAME_PADDING)}
         padding: Inset{left: 4, right: 4}
         max_lines: 1, text_overflow: Ellipsis
-        draw_text +: { color: #737373, text_style: REGULAR_TEXT {font_size: 8.5} }
+        draw_text +: { color: (COLOR_TEXT_SUBTLE), text_style: REGULAR_TEXT {font_size: 8.5} }
         text: ""
     }
 
@@ -150,7 +150,7 @@ pub enum MessageListRowAction {
 
 /// A row in a list of messages, which handles clicks and hovers on the whole row
 /// before its children, so that a click on a link in its preview still counts as a click on the row.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct MessageListRow {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -162,6 +162,19 @@ pub struct MessageListRow {
     #[rust] timestamp_width: f64,
     /// Whether the timestamp is shown beneath the preview, as it'd cut off the sender's name beside it.
     #[rust] is_timestamp_below: bool,
+}
+
+impl ScriptHook for MessageListRow {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        // A reload keeps the hover color from the old template (or drops it), so we cut to our hover state again.
+        vm.with_cx_mut(|cx| {
+            if self.animator_in_state(cx, ids!(bg_hover.on)) {
+                self.animator_cut(cx, ids!(bg_hover.on));
+            } else {
+                self.animator_cut(cx, ids!(bg_hover.off));
+            }
+        });
+    }
 }
 
 impl Widget for MessageListRow {

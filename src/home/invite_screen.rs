@@ -73,7 +73,7 @@ script_mod! {
                     text_style: TITLE_TEXT {
                         font_size: 15,
                     },
-                    color: #000
+                    color: (COLOR_TEXT_TITLE)
                 }
             }
 
@@ -87,7 +87,7 @@ script_mod! {
                     text_style: TITLE_TEXT {
                         font_size: 10,
                     },
-                    color: #888
+                    color: (COLOR_TEXT_FAINT)
                 }
             }
 
@@ -107,7 +107,7 @@ script_mod! {
                 text_style: REGULAR_TEXT {
                     font_size: 15,
                 },
-                color: #000
+                color: (COLOR_TEXT_BODY)
             }
         }
 
@@ -140,7 +140,7 @@ script_mod! {
                     text_style: TITLE_TEXT {
                         font_size: 18,
                     },
-                    color: #000
+                    color: (ROOM_NAME_TEXT_COLOR)
                 }
             }
 
@@ -154,7 +154,7 @@ script_mod! {
                     text_style: TITLE_TEXT {
                         font_size: 11,
                     },
-                    color: #888
+                    color: (COLOR_TEXT_FAINT)
                 }
             }
 
@@ -167,7 +167,7 @@ script_mod! {
                     text_style: REGULAR_TEXT {
                         font_size: 11,
                     },
-                    color: #737373
+                    color: (COLOR_TEXT_SUBTLE)
                 }
             }
 
@@ -183,7 +183,7 @@ script_mod! {
                     text_style: REGULAR_TEXT {
                         font_size: 12,
                     },
-                    color: #444
+                    color: (COLOR_INVITE_SCREEN_TOPIC_TEXT)
                 }
             }
         }

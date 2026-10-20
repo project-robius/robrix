@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use makepad_widgets::*;
 use tokio::sync::Notify;
-use crate::home::home_screen::effective_is_desktop;
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::{home::home_screen::effective_is_desktop, shared::styles::{apply_danger_button_style, apply_negative_button_style}, sliding_sync::{submit_async_request, MatrixRequest}};
 use super::logout_state_machine::is_logout_past_point_of_no_return;
 
 script_mod! {
@@ -197,11 +196,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
                         confirm_button.set_text(cx, "Restart now");
-                        script_apply_eval!(cx, confirm_button, {
-                            draw_bg +: {
-                                color: mod.widgets.COLOR_FG_DANGER_RED
-                            }
-                        });
+                        apply_danger_button_style(cx, &mut confirm_button);
                         confirm_button.set_enabled(cx, true);
 
                         cancel_button.set_visible(cx, false);
@@ -222,11 +217,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                     self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
 
                     confirm_button.set_text(cx, "Restart now");
-                    script_apply_eval!(cx, confirm_button, {
-                        draw_bg +: {
-                            color: mod.widgets.COLOR_FG_DANGER_RED
-                        }
-                    });
+                    apply_danger_button_style(cx, &mut confirm_button);
                     confirm_button.set_enabled(cx, true);
                     cancel_button.set_visible(cx, false);
 
@@ -263,8 +254,12 @@ impl LogoutConfirmModal {
 
     fn reset_state(&mut self, cx: &mut Cx) {
         let cancel_button = self.button(cx, ids!(cancel_button));
-        let confirm_button = self.button(cx, ids!(confirm_button));
+        let mut confirm_button = self.button(cx, ids!(confirm_button));
+        if self.final_success == Some(false) {
+            apply_negative_button_style(cx, &mut confirm_button);
+        }
         self.final_success = None;
+        self.label(cx, ids!(title)).set_text(cx, "Confirm Logout");
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);
         confirm_button.set_text(cx, "Log out now");

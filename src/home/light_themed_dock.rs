@@ -15,6 +15,8 @@ script_mod! {
             color: COLOR_SECONDARY
             color_hover: COLOR_ROBRIX_PURPLE
             color_drag: COLOR_ROBRIX_PURPLE
+            color_bg: COLOR_PANE_DIVIDER
+            color_grab_hover: uniform(COLOR_TEXT_ON_ACCENT)
 
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
@@ -23,7 +25,7 @@ script_mod! {
                 // `color_bg_app`), transitions to purple on hover/drag.
                 // Mildly rounded corners soften the edges where panels meet.
                 let body_color = mix(
-                    #4D4D4D
+                    self.color_bg
                     mix(self.color_hover, self.color_drag, self.drag)
                     self.hover
                 )
@@ -57,7 +59,7 @@ script_mod! {
                 }
 
                 // Grab bar: white when hovered/dragged, otherwise matches body
-                let grab_color = mix(self.color, #fff, self.hover)
+                let grab_color = mix(self.color, self.color_grab_hover, self.hover)
                 return sdf.fill_keep(grab_color)
             }
         }
@@ -103,13 +105,15 @@ script_mod! {
         width: 30.0
         margin: Inset{left: -34, right: 4}
         draw_button +: {
-            color: #0
+            color: COLOR_DOCK_TAB_FG
             color_active: COLOR_PRIMARY
+            color_bg_hover: uniform(COLOR_ROOM_TAB_BUTTON_BG_HOVER)
+            color_bg_active_hover: uniform(COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER)
 
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, 4.0)
-                sdf.fill(mix(#0000001f, #ffffff33, self.active) * self.hover)
+                sdf.fill(mix(self.color_bg_hover, self.color_bg_active_hover, self.active) * self.hover)
 
                 let mid = self.rect_size * 0.5
                 let radius = 4.0
@@ -158,7 +162,7 @@ script_mod! {
             max_lines: 1
             text_overflow: TextOverflow.Ellipsis
 
-            color: #000
+            color: COLOR_DOCK_TAB_FG
             color_active: COLOR_PRIMARY
             get_color: fn() {
                 return self.color.mix(self.color_active, self.active)
@@ -167,15 +171,15 @@ script_mod! {
 
         draw_bg +: {
             // Light blue-ish color, de-saturated from COLOR_ACTIVE_PRIMARY
-            color: #E1EEFA
-            color_2: #E1EEFA
+            color: COLOR_DOCK_TAB_BG
+            color_2: COLOR_DOCK_TAB_BG
             // A slightly darker shade of the tab color for hover visibility
-            color_hover: #C8DDEF
-            color_2_hover: #C8DDEF
+            color_hover: COLOR_DOCK_TAB_BG_HOVER
+            color_2_hover: COLOR_DOCK_TAB_BG_HOVER
             // Active (selected) tabs are a deeper blue, with a vertical gradient
             // to a slightly lighter blue.
-            color_active: #0660FE
-            color_2_active: #398CFE
+            color_active: COLOR_DOCK_TAB_BG_ACTIVE
+            color_2_active: COLOR_DOCK_TAB_BG_ACTIVE_BOTTOM
             // Remove the border and rounded corners from the default Tab style
             border_size: 0.0
             border_radius: 3.0
@@ -239,13 +243,13 @@ script_mod! {
 
         draw_drag +: {
             draw_depth: 10
-            color: #x0
+            color: COLOR_DOCK_TAB_BAR_BG_DRAG
         }
         draw_fill +: {
-            color: COLOR_PRIMARY * 0.96
+            color: COLOR_DOCK_TAB_BAR_BG
         }
         draw_bg +: {
-            color: COLOR_PRIMARY * 0.96
+            color: COLOR_DOCK_TAB_BAR_BG
         }
 
         width: Fill
@@ -297,7 +301,7 @@ script_mod! {
         padding: Inset{left: theme.dock_border_size, top: 0, right: theme.dock_border_size, bottom: theme.dock_border_size}
         drag_target_preview +: {
             draw_depth: 10.0
-            color: mix(COLOR_ACTIVE_PRIMARY, #FFFFFF00, 0.5)
+            color: mix(COLOR_ACTIVE_PRIMARY, COLOR_DOCK_DROP_PREVIEW_MIX, 0.5)
         }
         tab_bar: mod.widgets.RobrixTabBar {}
         splitter: mod.widgets.RobrixSplitter {}

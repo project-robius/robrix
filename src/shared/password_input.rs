@@ -21,7 +21,7 @@ script_mod! {
             color: (COLOR_SECONDARY * 1.05)
         }
         draw_icon +: {
-            color: #8C8C8C,
+            color: (COLOR_TEXT_HINT),
         }
         icon_walk: Walk{width: 18, height: 18, margin: 0}
         text: ""
@@ -31,6 +31,8 @@ script_mod! {
         width: Fill, height: Fit
         flow: Overlay
         align: Align{x: 1.0, y: 0.5}
+        icon_eye_open: (mod.widgets.ICON_EYE_OPEN)
+        icon_eye_closed: (mod.widgets.ICON_EYE_CLOSED)
 
         text_input := RobrixTextInput {
             width: Fill, height: Fit
@@ -63,6 +65,9 @@ script_mod! {
 pub struct PasswordTextInput {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+
+    #[live] icon_eye_open: Option<ScriptHandleRef>,
+    #[live] icon_eye_closed: Option<ScriptHandleRef>,
 
     /// Whether the input is currently showing regular text (`true`) or hidden text (`false`).
     #[rust] is_text_shown: bool,
@@ -138,15 +143,8 @@ impl PasswordTextInput {
         }
         self.is_text_shown = is_shown;
         self.view.text_input(cx, ids!(text_input)).toggle_is_password(cx);
-        let mut eye_button = self.view.button(cx, ids!(eye_button));
-        if is_shown {
-            script_apply_eval!(cx, eye_button, {
-                draw_icon.svg: mod.widgets.ICON_EYE_OPEN,
-            });
-        } else {
-            script_apply_eval!(cx, eye_button, {
-                draw_icon.svg: mod.widgets.ICON_EYE_CLOSED,
-            });
+        if let Some(mut eye_button) = self.view.button(cx, ids!(eye_button)).borrow_mut() {
+            eye_button.draw_icon.svg = if is_shown { self.icon_eye_open.clone() } else { self.icon_eye_closed.clone() };
         }
         self.redraw(cx);
     }

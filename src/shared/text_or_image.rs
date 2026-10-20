@@ -19,7 +19,7 @@ script_mod! {
             visible: true,
             width: Fill, height: Fit,
             show_bg: true,
-            draw_bg.color: #dddddd
+            draw_bg.color: (COLOR_IMAGE_PLACEHOLDER_BG)
 
             label := Label {
                 width: Fill, height: Fit,

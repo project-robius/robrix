@@ -10,6 +10,8 @@ script_mod! {
         width: Fill,
         height: 8,
         show_bg: true,
+        fill_color: (COLOR_ACTIVE_PRIMARY)
+        fill_color_failed: (COLOR_FG_DANGER_RED)
 
         draw_bg +: {
             progress: instance(0.0)
@@ -58,8 +60,12 @@ pub struct ProgressBar {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
+    #[live] fill_color: Vec4f,
+    #[live] fill_color_failed: Vec4f,
+
     /// Current progress value between 0.0 and 1.0
     #[rust] progress: f32,
+    #[rust] is_failed: bool,
 }
 
 impl Widget for ProgressBar {
@@ -68,11 +74,11 @@ impl Widget for ProgressBar {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // Update the progress uniform before drawing
+        // Update the progress and its color before drawing
         let progress = self.progress.clamp(0.0, 1.0);
-        script_apply_eval!(cx, self.view, {
-            draw_bg.progress: #(progress as f64),
-        });
+        let color = if self.is_failed { self.fill_color_failed } else { self.fill_color };
+        self.view.draw_bg.set_dyn_instance(cx, id!(progress), &[progress]);
+        self.view.draw_bg.set_dyn_instance(cx, id!(progress_color), &[color.x, color.y, color.z, color.w]);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -86,16 +92,10 @@ impl ProgressBar {
 
     /// Marks this progress bar as failed or not, which also sets its color.
     pub fn set_failed(&mut self, cx: &mut Cx, failed: bool) {
-        if failed {
-            script_apply_eval!(cx, self.view, {
-                draw_bg +: { progress_color: mod.widgets.COLOR_FG_DANGER_RED }
-            });
-        } else {
-            script_apply_eval!(cx, self.view, {
-                draw_bg +: { progress_color: mod.widgets.COLOR_ACTIVE_PRIMARY }
-            });
+        if self.is_failed != failed {
+            self.is_failed = failed;
+            self.redraw(cx);
         }
-        self.redraw(cx);
     }
 }
 

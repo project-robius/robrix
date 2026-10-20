@@ -89,7 +89,7 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: #F6F8F9
+                color: (COLOR_SETTINGS_LIST_BG)
                 border_radius: 4.0
             }
 

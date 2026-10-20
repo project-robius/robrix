@@ -123,7 +123,7 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             highlight: instance(0.0)
-            color_highlight: instance(#c5d6fa)
+            color_highlight: instance((COLOR_TIMELINE_ITEM_BG_HIGHLIGHT))
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
@@ -958,7 +958,7 @@ fn grouped_event_ids<I: GroupItems>(items: &I, range: Range<usize>) -> impl Iter
 
 
 /// The avatars of the (distinct) people involved in a group of state events.
-#[derive(Script, ScriptHook, WidgetRef, WidgetSet, WidgetRegister)]
+#[derive(Script, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct AvatarStack {
     #[uid] uid: WidgetUid,
     #[rust] area: Area,
@@ -983,6 +983,15 @@ struct StackedAvatar {
     avatar: AvatarRef,
     /// Whether its image is fully drawn yet.
     is_drawn: bool,
+}
+
+impl ScriptHook for AvatarStack {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        // A reload never reaches the avatars we built from the template,
+        // so we drop them and let the next `set_users()` rebuild them.
+        self.avatars.clear();
+        vm.cx_mut().widget_tree_mark_dirty(self.uid);
+    }
 }
 
 impl WidgetNode for AvatarStack {

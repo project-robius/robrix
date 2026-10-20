@@ -22,7 +22,7 @@ script_mod! {
             align: Align{x: 0.5}
             draw_text +: {
                 text_style: REGULAR_TEXT {font_size: 30},
-                color: #000
+                color: (COLOR_TEXT_BODY)
             }
         }
         description := Label {
@@ -31,7 +31,7 @@ script_mod! {
             align: Align{x: 0.5}
             draw_text +: {
                 text_style: REGULAR_TEXT {font_size: 9},
-                color: #000
+                color: (COLOR_TEXT_BODY)
             }
         }
     }

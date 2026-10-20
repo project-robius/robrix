@@ -47,7 +47,7 @@ script_mod! {
             text_overflow: Ellipsis,
             text: "All Rooms"
             draw_text +: {
-                color: #x0
+                color: (COLOR_TEXT_TITLE)
                 text_style: TITLE_TEXT {}
             }
         },
@@ -210,7 +210,7 @@ impl Widget for RoomsListHeader {
                             text: text.to_string(),
                             widget_rect: view.area().rect(cx),
                             options: CalloutTooltipOptions {
-                                bg_color,
+                                bg_color: Some(bg_color),
                                 position: TooltipPosition::Left,
                                 ..Default::default()
                             },

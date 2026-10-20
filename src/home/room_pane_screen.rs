@@ -97,7 +97,7 @@ impl Drop for RoomPaneScreen {
 impl Widget for RoomPaneScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // A reapply resets the title's padding that we set, so we set it again.
-        if let Event::ScriptReapply = event
+        if matches!(event, Event::LiveEdit | Event::ScriptReapply)
             && let Some((_, kind)) = self.displayed.as_ref()
         {
             set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), kind);

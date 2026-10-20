@@ -78,11 +78,11 @@ script_mod! {
         draw_bg +: {
             active: instance(0.0)
             hover: instance(0.0)
-            color: instance(#0000)
+            color: instance(COLOR_TRANSPARENT)
             color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
             color_selected: instance(COLOR_ACTIVE_PRIMARY)
             color_selected_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color: instance(#0000)
+            border_color: instance(COLOR_TRANSPARENT)
             border_size: uniform(0.0)
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(0.0))

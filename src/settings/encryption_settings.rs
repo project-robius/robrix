@@ -54,7 +54,7 @@ script_mod! {
         autocorrect: Disabled,
         draw_text +: {
             text_style: REGULAR_TEXT {font_size: 12},
-            color: #000
+            color: (COLOR_MODAL_INPUT_TEXT)
         }
     }
 
@@ -159,7 +159,7 @@ script_mod! {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    color: #000
+                    color: (COLOR_TEXT_BODY)
                     text_style: theme.font_regular { font_size: 12 }
                 }
                 text: ""
@@ -182,7 +182,7 @@ script_mod! {
             text_input +: {
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 12},
-                    color: #000
+                    color: (COLOR_MODAL_INPUT_TEXT)
                 }
             }
         }

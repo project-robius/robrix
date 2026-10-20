@@ -52,7 +52,7 @@ script_mod! {
                     color: (COLOR_PRIMARY_DARKER)
                     border_radius: 4.0
                     border_size: 0.0
-                    shadow_color: #0005
+                    shadow_color: (COLOR_HEADER_SHADOW)
                     shadow_radius: 12.0
                     shadow_offset: vec2(0.0, 0.0)
 

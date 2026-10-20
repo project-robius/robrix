@@ -33,14 +33,14 @@ script_mod! {
             main_window := Window {
                 window.inner_size: vec2(1280, 800)
                 window.title: "Robrix"
-                pass.clear_color: #FFFFFF00
+                pass.clear_color: (COLOR_WINDOW_CLEAR)
                 caption_bar +: {
-                    draw_bg.color: #F3F3F3
+                    draw_bg.color: (COLOR_CAPTION_BAR_BG)
                     caption_label +: {
                         // Overlaying the nav history buttons keeps them from pushing the title off-center.
                         flow: Overlay
                         label +: {
-                            draw_text +: { color: #0 }
+                            draw_text +: { color: (COLOR_TEXT_TITLE) }
                             text: "Robrix"
                         }
                         View {
@@ -159,7 +159,10 @@ script_mod! {
                         // since they can be shown as a hover atop any other widget.
                         // This tooltip widget handles TooltipActions directly by itself,
                         // so we don't need to call show/hide ourselves.
-                        app_tooltip := CalloutTooltip {}
+                        app_tooltip := CalloutTooltip {
+                            text_color: (COLOR_TOOLTIP_TEXT)
+                            bg_color: (COLOR_TOOLTIP_BG)
+                        }
                     }
                 } // end of body
             }
@@ -372,10 +375,9 @@ impl MatchEvent for App {
                 // the context menu relative to the body area, which excludes the caption bar.
                 let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
                 let margin = menu_position_margin(rect, abs_pos, expected_dimensions);
-                let mut main_content_view = new_message_context_menu.view(cx, ids!(main_content));
-                script_apply_eval!(cx, main_content_view, {
-                    margin: #(margin)
-                });
+                if let Some(mut main_content) = new_message_context_menu.view(cx, ids!(main_content)).borrow_mut() {
+                    main_content.walk.margin = margin;
+                }
                 self.ui.redraw(cx);
                 continue;
             }
@@ -389,10 +391,9 @@ impl MatchEvent for App {
                 // the context menu relative to the body area, which excludes the caption bar.
                 let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
                 let margin = menu_position_margin(rect, pos, expected_dimensions);
-                let mut main_content_view = room_context_menu.view(cx, ids!(main_content));
-                script_apply_eval!(cx, main_content_view, {
-                    margin: #(margin)
-                });
+                if let Some(mut main_content) = room_context_menu.view(cx, ids!(main_content)).borrow_mut() {
+                    main_content.walk.margin = margin;
+                }
                 self.ui.redraw(cx);
                 continue;
             }

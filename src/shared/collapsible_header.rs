@@ -19,10 +19,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.COLOR_HEADER_FG = #F;
-
-    mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
-
     mod.widgets.CollapsibleHeader = set_type_default() do #(CollapsibleHeader::register_widget(vm)) {
         ..mod.widgets.RoundedView
 

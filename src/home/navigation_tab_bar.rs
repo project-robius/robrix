@@ -375,13 +375,11 @@ impl Widget for ProfileIcon {
                     || String::from("Not logged in (or disconnected).\n\nClick/tap to access all settings."),
                     |p| format!("Logged in {verification_str}as \"{}\".\n\nClick/tap to access all settings.", p.displayable_name()),
                 );
-                let mut options = CalloutTooltipOptions {
+                let options = CalloutTooltipOptions {
                     position: if effective_is_desktop(cx) { TooltipPosition::Right } else { TooltipPosition::Top },
+                    bg_color,
                     ..Default::default()
                 };
-                if let Some(c) = bg_color {
-                    options.bg_color = c;
-                }
                 cx.widget_action(
                     self.widget_uid(),
                     TooltipAction::HoverIn {

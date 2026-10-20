@@ -16,12 +16,16 @@ script_mod! {
     mod.widgets.InviteModal = set_type_default() do #(InviteModal::register_widget(vm)) {
         ..mod.widgets.SmallModal
 
+        status_color_error: (COLOR_FG_DANGER_RED)
+        status_color_pending: (COLOR_ACTIVE_PRIMARY_DARKER)
+        status_color_success: (COLOR_FG_ACCEPT_GREEN)
+
         title := ModalTitle {}
 
         user_id_input := RobrixTextInput {
             draw_text +: {
                 text_style: REGULAR_TEXT {font_size: 11},
-                color: #000
+                color: (COLOR_MODAL_INPUT_TEXT)
             }
             empty_text: "@user:example.org",
             autocapitalize: None,
@@ -72,7 +76,7 @@ script_mod! {
                 margin: Inset{top: 10}
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 11},
-                    color: #000
+                    color: (COLOR_TEXT_BODY)
                 }
                 text: ""
             }
@@ -106,6 +110,11 @@ enum InviteModalState {
 #[derive(Script, ScriptHook, Widget)]
 pub struct InviteModal {
     #[deref] view: View,
+
+    #[live] status_color_error: Vec4f,
+    #[live] status_color_pending: Vec4f,
+    #[live] status_color_success: Vec4f,
+
     #[rust] state: InviteModalState,
     #[rust] room_name_id: Option<RoomNameId>,
 }
@@ -149,7 +158,7 @@ impl WidgetMatchEvent for InviteModal {
         let confirm_button = self.view.button(cx, ids!(confirm_button));
         let user_id_input = self.view.text_input(cx, ids!(user_id_input));
         let status_view = self.view.view(cx, ids!(status_label_view));
-        let mut status_label = self.view.label(cx, ids!(status_label_view.status_label));
+        let status_label = self.view.label(cx, ids!(status_label_view.status_label));
 
         // Handle return key or invite button click.
         if let Some(user_id_str) = confirm_button.clicked(actions)
@@ -158,12 +167,8 @@ impl WidgetMatchEvent for InviteModal {
         {
             // Validate the user ID
             if user_id_str.is_empty() {
-                script_apply_eval!(cx, status_label, {
-                    text: "Please enter a user ID.",
-                    draw_text +: {
-                        color: mod.widgets.COLOR_FG_DANGER_RED,
-                    },
-                });
+                status_label.set_text(cx, "Please enter a user ID.");
+                status_label.set_text_color(cx, self.status_color_error);
                 status_view.set_visible(cx, true);
                 self.view.redraw(cx);
                 return;
@@ -178,24 +183,16 @@ impl WidgetMatchEvent for InviteModal {
                             user_id: user_id.clone(),
                         });
                         self.state = InviteModalState::WaitingForInvite(user_id);
-                        script_apply_eval!(cx, status_label, {
-                            text: "Sending invite...",
-                            draw_text +: {
-                                color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
-                            },
-                        });
+                        status_label.set_text(cx, "Sending invite...");
+                        status_label.set_text_color(cx, self.status_color_pending);
                         status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, false);
                         user_id_input.set_is_read_only(cx, true);
                     }
                 }
                 Err(_) => {
-                    script_apply_eval!(cx, status_label, {
-                        text: "Invalid User ID. Expected format: @user:server.xyz",
-                        draw_text +: {
-                            color: mod.widgets.COLOR_FG_DANGER_RED,
-                        },
-                    });
+                    status_label.set_text(cx, "Invalid User ID. Expected format: @user:server.xyz");
+                    status_label.set_text_color(cx, self.status_color_error);
                     status_view.set_visible(cx, true);
                     user_id_input.set_key_focus(cx);
                 }
@@ -212,12 +209,8 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Successfully invited {user_id}!");
-                        script_apply_eval!(cx, status_label, {
-                            text: #(status),
-                            draw_text +: {
-                                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
-                            }
-                        });
+                        status_label.set_text(cx, &status);
+                        status_label.set_text_color(cx, self.status_color_success);
                         status_view.set_visible(cx, true);
                         confirm_button.set_visible(cx, false);
                         cancel_button.set_visible(cx, false);
@@ -229,12 +222,8 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Failed to send invite: {error}");
-                        script_apply_eval!(cx, status_label, {
-                            text: #(status),
-                            draw_text +: {
-                                color: mod.widgets.COLOR_FG_DANGER_RED,
-                            }
-                        });
+                        status_label.set_text(cx, &status);
+                        status_label.set_text_color(cx, self.status_color_error);
                         status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, true);
                         user_id_input.set_is_read_only(cx, false);

@@ -33,7 +33,7 @@ use crate::{
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, TextAvatarBgColor, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -88,12 +88,6 @@ static UNNAMED_ROOM: &str = "Unnamed Room";
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-
-
-    mod.widgets.COLOR_BG = #xfff8ee
-    mod.widgets.COLOR_READ_MARKER = #xeb2733
-
-    mod.widgets.REACTION_TEXT_COLOR = #4c00b0
 
     // An empty item that takes up no space in the portal list.
     mod.widgets.ZeroHeightItem = #(ZeroHeightItem::register_widget(vm)) {
@@ -238,36 +232,48 @@ script_mod! {
         padding: 0.0,
         spacing: 0.0
 
+        thread_summary_bg_color: (COLOR_THREAD_SUMMARY_BG)
+        thread_summary_bg_color_hover: (COLOR_THREAD_SUMMARY_BG_HOVER)
+
         show_bg: true
         draw_bg +: {
             highlight: instance(0.0)
             hover: instance(0.0)
+            mention: instance(0.0)
             color: instance((COLOR_PRIMARY)) // default color)
             color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
+            color_mention: uniform(COLOR_MENTION_HIGHLIGHT_BG)
+            color_mention_hover: uniform(COLOR_MENTION_HIGHLIGHT_BG_HOVER)
+            color_highlight: uniform((COLOR_TIMELINE_ITEM_BG_HIGHLIGHT))
 
-            mentions_bar_color: instance(#0000)
+            mentions_bar_color: uniform(COLOR_MENTION_HIGHLIGHT_BAR)
             mentions_bar_width: instance(4.0)
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
             pixel: fn() {
+                let mut fill_color = self.color;
+                let mut fill_color_hover = self.color_hover;
+                if self.mention > 0.5 {
+                    fill_color = self.color_mention;
+                    fill_color_hover = self.color_mention_hover;
+                }
                 let base_color = mix(
-                    self.color,
-                    self.color_hover,
+                    fill_color,
+                    fill_color_hover,
                     self.hover
                 );
 
                 let with_highlight = mix(
                     base_color,
-                    #c5d6fa,
+                    self.color_highlight,
                     self.highlight
                 );
 
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
 
                 // A mention's highlight covers the full width, while other highlights are inset.
-                let not_mention = 1.0 - step(0.001, self.mentions_bar_color.w);
-                let inset = self.border_inset * not_mention;
+                let inset = self.border_inset * (1.0 - self.mention);
 
                 // draw bg
                 sdf.box(
@@ -282,7 +288,7 @@ script_mod! {
                 // draw the left vertical line
                 sdf.rect(inset.x, 0., self.mentions_bar_width, self.rect_size.y);
                 sdf.intersect(); // clip it to the bg's rounded corners
-                sdf.fill(self.mentions_bar_color);
+                sdf.fill(self.mentions_bar_color * self.mention);
 
                 return sdf.result;
             }
@@ -496,6 +502,73 @@ script_mod! {
         }
     }
 
+    // The view used for a notice message, which is sent by an automated bot,
+    // so we show it in a different font color.
+    mod.widgets.NoticeMessage = mod.widgets.Message {
+        header +: { username +: { draw_text +: { color: (COLOR_MESSAGE_NOTICE_TEXT) } } }
+        body +: { content +: { message +: {
+            html_view +: { html +: {
+                font_color: (COLOR_MESSAGE_NOTICE_TEXT)
+                draw_block +: { quote_fg_color: (COLOR_MESSAGE_NOTICE_TEXT) }
+            } }
+            plaintext_view +: { pt_label +: { draw_text +: { color: (COLOR_MESSAGE_NOTICE_TEXT) } } }
+        } } }
+    }
+
+    // The condensed version of `NoticeMessage`.
+    mod.widgets.CondensedNoticeMessage = mod.widgets.CondensedMessage {
+        body +: { content +: { message +: {
+            html_view +: { html +: {
+                font_color: (COLOR_MESSAGE_NOTICE_TEXT)
+                draw_block +: { quote_fg_color: (COLOR_MESSAGE_NOTICE_TEXT) }
+            } }
+            plaintext_view +: { pt_label +: { draw_text +: { color: (COLOR_MESSAGE_NOTICE_TEXT) } } }
+        } } }
+    }
+
+    // The view used for a server notice, which always has the same red header.
+    mod.widgets.ServerNoticeMessage = mod.widgets.Message {
+        header +: {
+            avatar +: { text_view +: { draw_bg.color: (COLOR_FG_DANGER_RED), text +: { text: "⚠" } } }
+            username +: {
+                draw_text +: { color: (COLOR_FG_DANGER_RED) }
+                text: "Server notice"
+            }
+        }
+        body +: { content +: { message +: { html_view +: { html +: {
+            font_color: (COLOR_FG_DANGER_RED)
+            draw_text +: { color: (COLOR_FG_DANGER_RED) }
+            draw_block +: {
+                line_color: (COLOR_FG_DANGER_RED)
+                quote_fg_color: (COLOR_FG_DANGER_RED)
+            }
+        } } } } }
+    }
+
+    // The view used for a redacted (deleted) message, which has a smaller font size.
+    mod.widgets.RedactedMessage = mod.widgets.Message {
+        body +: { content +: { message +: { html_view +: { html +: {
+            font_size: (REDACTED_MESSAGE_FONT_SIZE)
+            text_style_normal +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_italic +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_bold +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_bold_italic +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_fixed +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+        } } } } }
+    }
+
+    // The condensed version of `RedactedMessage`.
+    mod.widgets.CondensedRedactedMessage = mod.widgets.CondensedMessage {
+        body +: { content +: { message +: { html_view +: { html +: {
+            font_size: (REDACTED_MESSAGE_FONT_SIZE)
+            text_style_normal +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_italic +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_bold +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_bold_italic +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+            text_style_fixed +: { font_size: (REDACTED_MESSAGE_FONT_SIZE) }
+        } } } } }
+    }
+
 
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
@@ -548,7 +621,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0}
         flow: Right,
         show_bg: true,
-        draw_bg.color: #xDAF5E5F0, // mostly opaque light green
+        draw_bg.color: (COLOR_TIMELINE_LOADING_BG), // mostly opaque light green
 
         label := Label {
             width: Fill,
@@ -597,6 +670,11 @@ script_mod! {
             CondensedMessage := mod.widgets.CondensedMessage {}
             ImageMessage := mod.widgets.ImageMessage {}
             CondensedImageMessage := mod.widgets.CondensedImageMessage {}
+            NoticeMessage := mod.widgets.NoticeMessage {}
+            CondensedNoticeMessage := mod.widgets.CondensedNoticeMessage {}
+            ServerNoticeMessage := mod.widgets.ServerNoticeMessage {}
+            RedactedMessage := mod.widgets.RedactedMessage {}
+            CondensedRedactedMessage := mod.widgets.CondensedRedactedMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
             GroupSummaryItem := mod.widgets.GroupSummaryItem {}
             ZeroHeightItem := mod.widgets.ZeroHeightItem {}
@@ -1630,10 +1708,9 @@ impl RoomScreen {
                 + 9.0
         };
 
-        let mut main_content = popup_menu.view(cx, ids!(main_content));
-        script_apply_eval!(cx, main_content, {
-            margin: #(margin)
-        });
+        if let Some(mut main_content) = popup_menu.view(cx, ids!(main_content)).borrow_mut() {
+            main_content.walk.margin = margin;
+        }
         popup_menu.show(cx);
         self.view.redraw(cx);
     }
@@ -4548,10 +4625,10 @@ fn populate_message_view(
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
 
-    let mut is_notice = false; // whether this message is a Notice (automated bot message)
     let mut is_server_notice = false; // whether this message is a Server Notice
 
-    let use_compact_view = uses_compact_view(prev_event, event_tl_item);
+    // Certain kinds of messages might set this to false anyway (to use the full Message) that.
+    let mut use_compact_view = uses_compact_view(prev_event, event_tl_item);
 
     let has_html_body: bool;
 
@@ -4570,12 +4647,17 @@ fn populate_message_view(
                 None
             };
             match msg.msgtype() {
-                MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
+                // A notice message is just a message sent by an automated bot,
+                // so we treat it just like a message but use a different font color.
+                MessageType::Text(TextMessageEventContent { body, formatted, .. })
+                | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-                    let template = if use_compact_view {
-                        id!(CondensedMessage)
-                    } else {
-                        id!(Message)
+                    let is_notice = matches!(msg.msgtype(), MessageType::Notice(_));
+                    let template = match (is_notice, use_compact_view) {
+                        (false, false) => id!(Message),
+                        (false, true) => id!(CondensedMessage),
+                        (true, false) => id!(NoticeMessage),
+                        (true, true) => id!(CondensedNoticeMessage),
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -4598,71 +4680,14 @@ fn populate_message_view(
                         (item, false)
                     }
                 }
-                // A notice message is just a message sent by an automated bot,
-                // so we treat it just like a message but use a different font color.
-                MessageType::Notice(NoticeMessageEventContent{body, formatted, ..}) => {
-                    is_notice = true;
-                    has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-                    let template = if use_compact_view {
-                        id!(CondensedMessage)
-                    } else {
-                        id!(Message)
-                    };
-                    let (item, existed) = list.item_with_existed(cx, item_id, template);
-                    if existed && item_drawn_status.content_drawn {
-                        (item, true)
-                    } else {
-                        let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        // Apply gray color to all text styles for notice messages.
-                        // This covers both rendering paths in HtmlOrPlaintext: the rich
-                        // `html_view.html` widget (used when the message has an HTML body)
-                        // and the `plaintext_view.pt_label` (used for plain-text notices).
-                        let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
-                        script_apply_eval!(cx, html_widget, {
-                            font_color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT,
-                            draw_block +: {
-                                quote_fg_color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT,
-                            }
-                        });
-                        let mut pt_label = html_or_plaintext_ref.label(cx, ids!(plaintext_view.pt_label));
-                        script_apply_eval!(cx, pt_label, {
-                            draw_text +: {
-                                color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT
-                            }
-                        });
-                        let mut link_preview_ref =
-                            item.link_preview(cx, ids!(content.link_preview_view));
-                        new_drawn_status.content_drawn = populate_text_message_content(
-                            cx,
-                            &html_or_plaintext_ref,
-                            body,
-                            formatted.as_ref(),
-                            room_mention_room_id,
-                            Some(&mut link_preview_ref),
-                            Some(media_cache),
-                            Some(link_preview_cache),
-                        );
-                        (item, false)
-                    }
-                }
                 MessageType::ServerNotice(sn) => {
                     is_server_notice = true;
                     has_html_body = false;
-                    let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
+                    let (item, existed) = list.item_with_existed(cx, item_id, id!(ServerNoticeMessage));
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
                         let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        // Apply red color to all text styles for server notices.
-                        let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
-                        script_apply_eval!(cx, html_widget, {
-                            font_color: mod.widgets.COLOR_FG_DANGER_RED
-                            draw_text +: { color: mod.widgets.COLOR_FG_DANGER_RED }
-                            draw_block +: {
-                                line_color: mod.widgets.COLOR_FG_DANGER_RED
-                                quote_fg_color: mod.widgets.COLOR_FG_DANGER_RED
-                            }
-                        });
                         let formatted = format!(
                             "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
                             sn.body,
@@ -4893,6 +4918,7 @@ fn populate_message_view(
                 }
                 MessageType::VerificationRequest(verification) => {
                     has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+                    use_compact_view = false;
                     let template = id!(Message);
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -4931,14 +4957,15 @@ fn populate_message_view(
                 }
                 _ => {
                     has_html_body = false;
+                    use_compact_view = false;
                     let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
                         item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
-                        item.label(cx, ids!(content.message)).set_text(
+                        item.html_or_plaintext(cx, ids!(content.message)).show_plaintext(
                             cx,
-                            &format!("[Unsupported {:?}]", msg_like_content.kind),
+                            format!("[Unsupported {:?}]", msg_like_content.kind),
                         );
                         new_drawn_status.content_drawn = true;
                         (item, false)
@@ -4991,27 +5018,15 @@ fn populate_message_view(
         MsgLikeKind::Redacted => {
             has_html_body = false;
             let template = if use_compact_view {
-                id!(CondensedMessage)
+                id!(CondensedRedactedMessage)
             } else {
-                id!(Message)
+                id!(RedactedMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
                 let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                // Redacted messages have no link preview; clear any stale one from a reused row.
-                item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
-                // Apply a smaller font size for redacted messages.
-                let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
-                script_apply_eval!(cx, html_widget, {
-                    font_size: mod.widgets.REDACTED_MESSAGE_FONT_SIZE
-                    text_style_normal +: { font_size: mod.widgets.REDACTED_MESSAGE_FONT_SIZE }
-                    text_style_italic +: { font_size: mod.widgets.REDACTED_MESSAGE_FONT_SIZE }
-                    text_style_bold +: { font_size: mod.widgets.REDACTED_MESSAGE_FONT_SIZE }
-                    text_style_bold_italic +: { font_size: mod.widgets.REDACTED_MESSAGE_FONT_SIZE }
-                    text_style_fixed +: { font_size: mod.widgets.REDACTED_MESSAGE_FONT_SIZE }
-                });
                 new_drawn_status.content_drawn = populate_redacted_message_content(
                     cx,
                     &html_or_plaintext_ref,
@@ -5023,14 +5038,15 @@ fn populate_message_view(
         }
         other => {
             has_html_body = false;
+            use_compact_view = false;
             let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
                 item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
-                item.label(cx, ids!(content.message)).set_text(
+                item.html_or_plaintext(cx, ids!(content.message)).show_plaintext(
                     cx,
-                    &format!("[Unsupported {:?}] ", other),
+                    format!("[Unsupported {:?}] ", other),
                 );
                 new_drawn_status.content_drawn = true;
                 (item, false)
@@ -5126,46 +5142,24 @@ fn populate_message_view(
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
     let skip_draw_profile =
         use_compact_view || (used_cached_item && item_drawn_status.profile_drawn);
-    if skip_draw_profile {
+    // A server notice doesn't need a special header (it's fixed).
+    if skip_draw_profile || is_server_notice {
         // log!("\t --> populate_message_view(): SKIPPING profile draw for item_id: {item_id}");
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let mut username_label = item.label(cx, ids!(header.username));
-
-        if !is_server_notice { // the normal case
-            let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                item.avatar(cx, ids!(header.avatar)).set_avatar_and_get_username(
-                    cx,
-                    timeline_kind,
-                    event_tl_item.sender(),
-                    Some(event_tl_item.sender_profile()),
-                    event_tl_item.event_id(),
-                    true,
-                )
-            );
-            if is_notice {
-                script_apply_eval!(cx, username_label, {
-                    draw_text +: {
-                        color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT
-                    }
-                });
-            }
-            username_label.set_text(cx, &username);
-            new_drawn_status.profile_drawn = profile_drawn;
-        }
-        else {
-            // Server notices are drawn with a red color avatar background and username.
-            let avatar = item.avatar(cx, ids!(header.avatar));
-            avatar.show_text(cx, Some(TextAvatarBgColor::Alert), None, "⚠");
-            username_label.set_text(cx, "Server notice");
-            script_apply_eval!(cx, username_label, {
-                draw_text +: {
-                    color: (mod.widgets.COLOR_FG_DANGER_RED)
-                }
-            });
-            new_drawn_status.profile_drawn = true;
-        }
+        let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
+            item.avatar(cx, ids!(header.avatar)).set_avatar_and_get_username(
+                cx,
+                timeline_kind,
+                event_tl_item.sender(),
+                Some(event_tl_item.sender_profile()),
+                event_tl_item.event_id(),
+                true,
+            )
+        );
+        item.label(cx, ids!(header.username)).set_text(cx, &username);
+        new_drawn_status.profile_drawn = profile_drawn;
     }
 
     // If we've previously drawn the item content, skip all other steps.
@@ -6179,6 +6173,9 @@ pub struct Message {
     #[deref] view: View,
     #[apply_default] animator: Animator,
 
+    #[live] thread_summary_bg_color: Vec4f,
+    #[live] thread_summary_bg_color_hover: Vec4f,
+
     #[rust] details: Option<MessageDetails>,
     /// `True` while a context menu that we opened is being shown.
     #[rust] is_context_menu_open: bool,
@@ -6293,17 +6290,10 @@ impl Widget for Message {
         // Handle clicks on the thread summary shown beneath a thread-root message.
         if let Some(thread_root_event_id) = thread_root_event_id.as_ref() {
             let thread_root_summary = self.thread_root_summary_view(cx);
+            let bg_color = self.thread_summary_bg_color;
+            let bg_color_hover = self.thread_summary_bg_color_hover;
             let apply_hover = |cx: &mut Cx, is_hovered: bool| {
-                let mut thread_root_summary_ref = thread_root_summary.clone();
-                if is_hovered {
-                    script_apply_eval!(cx, thread_root_summary_ref, {
-                        draw_bg.color: mod.widgets.COLOR_THREAD_SUMMARY_BG_HOVER
-                    });
-                } else {
-                    script_apply_eval!(cx, thread_root_summary_ref, {
-                        draw_bg.color: mod.widgets.COLOR_THREAD_SUMMARY_BG
-                    });
-                }
+                set_view_bg_color(cx, &thread_root_summary, if is_hovered { bg_color_hover } else { bg_color });
             };
             let summary_hit = event.hits(cx, thread_root_summary.area());
             match summary_hit {
@@ -6386,10 +6376,8 @@ impl Widget for Message {
 
         // TODO: use regular animator states for the thread root summary hover too.
         if let Event::ClearHover = event && thread_root_event_id.is_some() {
-            let mut summary = self.thread_root_summary_view(cx);
-            script_apply_eval!(cx, summary, {
-                draw_bg.color: mod.widgets.COLOR_THREAD_SUMMARY_BG
-            });
+            let summary = self.thread_root_summary_view(cx);
+            set_view_bg_color(cx, &summary, self.thread_summary_bg_color);
         }
 
         if let Event::Actions(actions) = event {
@@ -6464,15 +6452,8 @@ impl Widget for Message {
         if self.animator.is_animating() {
             self.animator.next_frame = cx.new_next_frame();
         }
-        if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
-            script_apply_eval!(cx, self, {
-                draw_bg +: {
-                    color: mod.widgets.COLOR_MENTION_HIGHLIGHT_BG,
-                    color_hover: mod.widgets.COLOR_MENTION_HIGHLIGHT_BG_HOVER,
-                    mentions_bar_color: mod.widgets.COLOR_MENTION_HIGHLIGHT_BAR
-                }
-            });
-        }
+        let mention = if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) { 1.0 } else { 0.0 };
+        self.view.draw_bg.set_dyn_instance(cx, id!(mention), &[mention]);
 
         self.view.draw_walk(cx, scope, walk)
     }

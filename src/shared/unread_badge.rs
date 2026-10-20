@@ -16,6 +16,9 @@ script_mod! {
         // Let the badge's fade-out/glow effect render beyond its bounding rect
         clip_x: false,
         clip_y: false,
+        badge_color_mentions: (COLOR_UNREAD_BADGE_MENTIONS)
+        badge_color_marked: (COLOR_UNREAD_BADGE_MARKED)
+        badge_color_messages: (COLOR_UNREAD_BADGE_MESSAGES)
 
         rounded_view := View {
             width: Fill,
@@ -31,7 +34,7 @@ script_mod! {
                 border_size: instance(2.0)
                 // For unread mention badges only, we fade through a lighter color to reduce aliasing effects
                 // on lower-res screens, since red on purple looks blocky/pixellated otherwise.
-                fade_color: instance(#xFFC8B0)
+                fade_color: instance((COLOR_UNREAD_BADGE_MENTIONS_FADE))
                 fade_radius: uniform(5.0)
                 // Controls the transition of the outer border. 
                 // 0.0 is a crisp solid badge, 1.0 is a soft fading/dissolve transition.
@@ -80,7 +83,7 @@ script_mod! {
             flow: Flow.Right { wrap: false },
             text: "",
             draw_text +: {
-                color: #ffffff,
+                color: (COLOR_TEXT_ON_ACCENT),
                 text_style: theme.font_regular {font_size: 8.0},
             }
         }
@@ -92,6 +95,9 @@ script_mod! {
 pub struct UnreadBadge {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    #[live] badge_color_mentions: Vec4f,
+    #[live] badge_color_marked: Vec4f,
+    #[live] badge_color_messages: Vec4f,
     #[live] is_marked_unread: bool,
     #[live] unread_mentions: u64,
     #[live] unread_messages: u64,
@@ -101,7 +107,7 @@ pub struct UnreadBadge {
 
 impl ScriptHook for UnreadBadge {
     fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
-        if apply.is_script_reapply() {
+        if apply.is_reload() {
             self.last_drawn = None;
         }
     }
@@ -118,7 +124,7 @@ impl Widget for UnreadBadge {
         ///
         /// The rounded rectangle needs to be wider for longer text.
         /// It also adds a plus sign at the end if the unread count is greater than 99. 
-        fn format_border_and_truncation(count: u64) -> (f64, &'static str) {
+        fn format_border_and_truncation(count: u64) -> (f32, &'static str) {
             let (border_size, plus_sign) = if count > 99 {
                 (0.0, "+")
             } else if count > 9 {
@@ -129,8 +135,7 @@ impl Widget for UnreadBadge {
             (border_size, plus_sign)
         }
 
-        // Styling and label depend only on these counts; re-running the draw_bg
-        // eval every draw is costly, so skip it when they haven't changed.
+        // Styling and label depend only on these counts, so skip them when they haven't changed.
         let now = (self.is_marked_unread, self.unread_mentions, self.unread_messages);
         if self.last_drawn == Some(now) {
             return self.view.draw_walk(cx, scope, walk);
@@ -138,20 +143,12 @@ impl Widget for UnreadBadge {
         self.last_drawn = Some(now);
 
         // If there are unread mentions, show red badge and the number of unread mentions
-        if self.unread_mentions > 0 {
+        let style = if self.unread_mentions > 0 {
             let (border_size, plus_sign) = format_border_and_truncation(self.unread_mentions);
             self.label(cx, ids!(label_count))
                 .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_mentions, 99)));
-            let mut rounded_view = self.view(cx, ids!(rounded_view));
-            script_apply_eval!(cx, rounded_view, {
-                draw_bg +: {
-                    border_size: #(border_size),
-                    // Solid red core fading out through a lighter warm color.
-                    badge_color: mod.widgets.COLOR_UNREAD_BADGE_MENTIONS,
-                    soft: 1.0
-                }
-            });
-            self.visible = true;
+            // Solid red core fading out through a lighter warm color.
+            Some((border_size, self.badge_color_mentions, 1.0))
         }
         // If there are no unread mentions but there are unread messages, show the number
         // of unread messages, in the marked-unread color if the room is also marked unread.
@@ -159,43 +156,27 @@ impl Widget for UnreadBadge {
             let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages);
             self.label(cx, ids!(label_count))
                 .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_messages, 99)));
-            let mut rounded_view = self.view(cx, ids!(rounded_view));
-            if self.is_marked_unread {
-                script_apply_eval!(cx, rounded_view, {
-                    draw_bg +: {
-                        border_size: #(border_size),
-                        badge_color: mod.widgets.COLOR_UNREAD_BADGE_MARKED,
-                        soft: 0.0
-                    }
-                });
-            } else {
-                script_apply_eval!(cx, rounded_view, {
-                    draw_bg +: {
-                        border_size: #(border_size),
-                        badge_color: mod.widgets.COLOR_UNREAD_BADGE_MESSAGES,
-                        soft: 0.0
-                    }
-                });
-            }
-            self.visible = true;
+            let badge_color = if self.is_marked_unread { self.badge_color_marked } else { self.badge_color_messages };
+            Some((border_size, badge_color, 0.0))
         }
         // If this room is only marked as unread, show the badge as a dot.
         else if self.is_marked_unread {
             self.label(cx, ids!(label_count)).set_text(cx, "");
-            let mut rounded_view = self.view(cx, ids!(rounded_view));
-            script_apply_eval!(cx, rounded_view, {
-                draw_bg +: {
-                    border_size: 6.0, // larger value = smaller badge size
-                    badge_color: mod.widgets.COLOR_UNREAD_BADGE_MARKED,
-                    soft: 0.0
-                }
-            });
-            self.visible = true;
+            Some((6.0, self.badge_color_marked, 0.0)) // larger border size = smaller badge size
         }
+        // If there are no unreads of any kind, hide the badge
         else {
-            // If there are no unreads of any kind, hide the badge
-            self.visible = false;
+            None
+        };
+
+        if let Some((border_size, badge_color, soft)) = style
+            && let Some(mut rounded_view) = self.view(cx, ids!(rounded_view)).borrow_mut()
+        {
+            rounded_view.draw_bg.set_dyn_instance(cx, id!(border_size), &[border_size]);
+            rounded_view.draw_bg.set_dyn_instance(cx, id!(badge_color), &[badge_color.x, badge_color.y, badge_color.z, badge_color.w]);
+            rounded_view.draw_bg.set_dyn_instance(cx, id!(soft), &[soft]);
         }
+        self.visible = style.is_some();
 
         self.view.draw_walk(cx, scope, walk)
     }

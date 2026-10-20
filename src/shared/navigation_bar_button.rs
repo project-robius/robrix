@@ -57,7 +57,7 @@ script_mod! {
             color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
             color_active: instance((COLOR_NAVIGATION_TAB_BG_ACTIVE))
 
-            border_color: instance(#0000)
+            border_color: instance((COLOR_TRANSPARENT))
             border_size: uniform(0.0)
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(0.0))

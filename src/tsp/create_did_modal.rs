@@ -16,6 +16,10 @@ script_mod! {
         ..mod.widgets.SmallModal
         align: Align{x: 0.5}
 
+        status_color_error: (COLOR_FG_DANGER_RED)
+        status_color_pending: (COLOR_ACTIVE_PRIMARY_DARKER)
+        status_color_success: (COLOR_FG_ACCEPT_GREEN)
+
         title := ModalTitle {
             text: "Create New Identity (DID)"
         }
@@ -40,7 +44,7 @@ script_mod! {
                 padding: 10,
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 12},
-                    color: #000
+                    color: (COLOR_MODAL_INPUT_TEXT)
                 }
                 empty_text: "Identity Username",
                 autocapitalize: None,
@@ -53,7 +57,7 @@ script_mod! {
                 padding: 10,
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 12},
-                    color: #000
+                    color: (COLOR_MODAL_INPUT_TEXT)
                 }
                 empty_text: "Enter an alias (optional)",
             }
@@ -104,21 +108,21 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                     left_line := LineH {
-                        draw_bg.color: #C8C8C8
+                        draw_bg.color: (COLOR_LABELED_DIVIDER)
                     }
 
                     Label {
                         width: Fit, height: Fit
                         padding:  0
                         draw_text +: {
-                            color: #777777
+                            color: (COLOR_TSP_FIELD_CAPTION_TEXT)
                             text_style: REGULAR_TEXT {font_size: 9}
                         }
                         text: "Intermediary server domain"
                     }
 
                     right_line := LineH {
-                        draw_bg.color: #C8C8C8
+                        draw_bg.color: (COLOR_LABELED_DIVIDER)
                     }
                 }
             }
@@ -149,21 +153,21 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                     left_line := LineH {
-                        draw_bg.color: #C8C8C8
+                        draw_bg.color: (COLOR_LABELED_DIVIDER)
                     }
 
                     Label {
                         width: Fit, height: Fit
                         padding: 0
                         draw_text +: {
-                            color: #777777
+                            color: (COLOR_TSP_FIELD_CAPTION_TEXT)
                             text_style: REGULAR_TEXT {font_size: 9}
                         }
                         text: "DID server domain"
                     }
 
                     right_line := LineH {
-                        draw_bg.color: #C8C8C8
+                        draw_bg.color: (COLOR_LABELED_DIVIDER)
                     }
                 }
             }
@@ -228,6 +232,11 @@ enum CreateDidModalState {
 #[derive(Script, ScriptHook, Widget)]
 pub struct CreateDidModal {
     #[deref] view: View,
+
+    #[live] status_color_error: Vec4f,
+    #[live] status_color_pending: Vec4f,
+    #[live] status_color_success: Vec4f,
+
     #[rust] state: CreateDidModalState,
     #[rust] is_showing_error: bool,
 }
@@ -269,7 +278,7 @@ impl WidgetMatchEvent for CreateDidModal {
         let alias_input = self.view.text_input(cx, ids!(alias_input));
         let server_input = self.view.text_input(cx, ids!(server_input));
         let did_server_input = self.view.text_input(cx, ids!(did_server_input));
-        let mut status_label = self.view.label(cx, ids!(status_label));
+        let status_label = self.view.label(cx, ids!(status_label));
 
         // Handle clicking the accept button.
         let mut needs_redraw = false;
@@ -288,12 +297,8 @@ impl WidgetMatchEvent for CreateDidModal {
                     // Check to ensure that the user has entered all required fields.
                     if username.is_empty() {
                         self.is_showing_error = true;
-                        script_apply_eval!(cx, status_label, {
-                            text: "Please enter a DID username.",
-                            draw_text +: {
-                                color: mod.widgets.COLOR_FG_DANGER_RED,
-                            },
-                        });
+                        status_label.set_text(cx, "Please enter a DID username.");
+                        status_label.set_text_color(cx, self.status_color_error);
                     } else {
                         let alias = match alias_input.text().trim() {
                             "" => None,
@@ -318,12 +323,8 @@ impl WidgetMatchEvent for CreateDidModal {
 
                         self.state = CreateDidModalState::WaitingForIdentityCreation;
                         self.is_showing_error = false;
-                        script_apply_eval!(cx, status_label, {
-                            text: "Waiting for identity to be created and published...",
-                            draw_text +: {
-                                color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
-                            },
-                        });
+                        status_label.set_text(cx, "Waiting for identity to be created and published...");
+                        status_label.set_text_color(cx, self.status_color_pending);
                         accept_button.set_enabled(cx, false);
                         cancel_button.set_enabled(cx, false); // TODO: support canceling the identity creation request?
                         username_input.set_is_read_only(cx, true);
@@ -368,12 +369,8 @@ impl WidgetMatchEvent for CreateDidModal {
                     self.state = CreateDidModalState::IdentityCreated;
                     self.is_showing_error = false;
                     let message = format!("Successfully created and published DID: \"{}\"", did);
-                    script_apply_eval!(cx, status_label, {
-                        text: #(message),
-                        draw_text +: {
-                            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                        },
-                    });
+                    status_label.set_text(cx, &message);
+                    status_label.set_text_color(cx, self.status_color_success);
                     script_apply_eval!(cx, accept_button, {
                         enabled: true,
                         text: "Okay",
@@ -397,12 +394,8 @@ impl WidgetMatchEvent for CreateDidModal {
                     self.state = CreateDidModalState::IdentityCreationError;
                     self.is_showing_error = true;
                     let message = format!("Failed to create DID: {e}");
-                    script_apply_eval!(cx, status_label, {
-                        text: #(message),
-                        draw_text +: {
-                            color: mod.widgets.COLOR_FG_DANGER_RED,
-                        },
-                    });
+                    status_label.set_text(cx, &message);
+                    status_label.set_text_color(cx, self.status_color_error);
                     accept_button.set_enabled(cx, false);
                     cancel_button.set_enabled(cx, true);
                     username_input.set_is_read_only(cx, false);

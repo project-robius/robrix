@@ -13,21 +13,31 @@ script_mod! {
 }
 
 /// Handles dock tab buttons and tab mgmt for the main desktop UI.
-#[derive(Script, ScriptHook)]
+#[derive(Script)]
 pub struct RoomTabs {
     #[source] source: ScriptObjectRef,
     /// The template for each room tab's expand/collapse buttons.
     #[live] room_tab_actions: ScriptObjectRef,
     /// Used to measure the room name so we know how wide to make its tab.
     #[live] tab_title_measure: DrawText,
-    /// The set of each tab's buttons, so we don't recreate them on every draw.
-    #[rust] controls: HashMap<LiveId, WidgetRef>,
+    /// The set of each tab's buttons, so we don't recreate them on every draw,
+    /// and whether they were last drawn for an active tab (`None` if not yet drawn).
+    #[rust] controls: HashMap<LiveId, (WidgetRef, Option<bool>)>,
     /// Tabs that have visible buttons, which need to receive events.
     #[rust] visible_tabs: HashSet<LiveId>,
     /// State that tracks what a user is doing with a click/press on a tab button
     /// (basically are they clicking a button or just doing a drag that starts over a button).
     #[rust] interaction: TabButtonInteraction,
     #[rust] layout_redraw: NextFrame,
+}
+
+impl ScriptHook for RoomTabs {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // A reload never reaches the tab buttons we built, so we rebuild them from the new template,
+        // dropping any pending press on one of the old ones.
+        self.controls.clear();
+        self.interaction.pressed = None;
+    }
 }
 
 impl RoomTabs {
@@ -56,7 +66,7 @@ impl RoomTabs {
         let mut tab_buttons = Vec::new();
         for tab_id in &self.visible_tabs {
             if !rooms.contains_key(tab_id) { continue; }
-            if let Some(controls) = self.controls.get(tab_id) {
+            if let Some((controls, _)) = self.controls.get(tab_id) {
                 for button_id in [id!(expand_room_actions_button), id!(collapse_room_actions_button)] {
                     tab_buttons.push((*tab_id, controls.button(cx, &[button_id])));
                 }
@@ -65,7 +75,7 @@ impl RoomTabs {
         let actions = cx.capture_actions(|cx| {
             for tab_id in &self.visible_tabs {
                 if !rooms.contains_key(tab_id) { continue; }
-                if let Some(controls) = self.controls.get(tab_id) {
+                if let Some((controls, _)) = self.controls.get(tab_id) {
                     controls.handle_event(cx, event, scope);
                 }
             }
@@ -95,7 +105,7 @@ impl RoomTabs {
         let mut clicked = None;
         for tab_id in &self.visible_tabs {
             if !rooms.contains_key(tab_id) { continue; }
-            let Some(controls) = self.controls.get(tab_id) else { continue };
+            let Some((controls, _)) = self.controls.get(tab_id) else { continue };
             if controls.button(cx, ids!(expand_room_actions_button)).clicked(actions)
                 || controls.button(cx, ids!(collapse_room_actions_button)).clicked(actions)
             {
@@ -143,7 +153,7 @@ impl RoomTabs {
     ///
     /// Call this after the dock is drawn (when each tab's position is known),
     /// so it can properly place each button in the right spot.
-    /// Also restyles the overlaid buttons to match whether the tab is currently hovered over.
+    /// Also restyles the overlaid buttons whenever their tab becomes active or inactive.
     fn draw_tab_expand_collapse_buttons(
         &mut self,
         cx: &mut Cx2d,
@@ -171,24 +181,27 @@ impl RoomTabs {
                 continue;
             }
             let is_active = tab.is_active();
-            let controls = self.controls.entry(*tab_id).or_insert_with(|| {
-                cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.room_tab_actions.as_object().into()))
+            let (controls, was_active) = self.controls.entry(*tab_id).or_insert_with(|| {
+                (cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.room_tab_actions.as_object().into())), None)
             });
             let expanded = dock.item(*tab_id).room_action_bar(cx, ids!(room_actions)).is_expanded();
             controls.widget(cx, ids!(expand_room_actions_button)).set_visible(cx, !expanded);
             controls.widget(cx, ids!(collapse_room_actions_button)).set_visible(cx, expanded);
-            for button_id in [id!(expand_room_actions_button), id!(collapse_room_actions_button)] {
-                let mut button = controls.widget(cx, &[button_id]);
-                if is_active {
-                    script_apply_eval!(cx, button, {
-                        draw_icon +: {color: mod.widgets.COLOR_PRIMARY}
-                        draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_DOWN}
-                    });
-                } else {
-                    script_apply_eval!(cx, button, {
-                        draw_icon +: {color: mod.widgets.ROOM_NAME_TEXT_COLOR}
-                        draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_DOWN}
-                    });
+            if *was_active != Some(is_active) {
+                *was_active = Some(is_active);
+                for button_id in [id!(expand_room_actions_button), id!(collapse_room_actions_button)] {
+                    let mut button = controls.widget(cx, &[button_id]);
+                    if is_active {
+                        script_apply_eval!(cx, button, {
+                            draw_icon +: {color: mod.widgets.COLOR_PRIMARY}
+                            draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_DOWN}
+                        });
+                    } else {
+                        script_apply_eval!(cx, button, {
+                            draw_icon +: {color: mod.widgets.ROOM_NAME_TEXT_COLOR}
+                            draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_DOWN}
+                        });
+                    }
                 }
             }
             let controls_rect = Rect {

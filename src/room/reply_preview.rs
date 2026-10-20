@@ -105,22 +105,22 @@ script_mod! {
         width: Fit, height: Fit
         spacing: 4
         padding: Inset{ top: 4, bottom: 4, left: 8, right: 8 }
-        draw_icon +: { color: #666666 }
+        draw_icon +: { color: (COLOR_TEXT_MUTED) }
         icon_walk: Walk{ width: 10, height: 10 }
         draw_text +: {
             text_style: theme.font_regular { font_size: 10.0, line_spacing: 1.2 }
-            color: #666666
-            color_hover: #666666
-            color_down: #666666
+            color: (COLOR_TEXT_MUTED)
+            color_hover: (COLOR_TEXT_MUTED)
+            color_down: (COLOR_TEXT_MUTED)
         }
         draw_bg +: {
             color: (COLOR_BG_PREVIEW)
             color_hover: (COLOR_BG_PREVIEW_HOVER)
-            color_down: #A8DBBF
+            color_down: (COLOR_BG_PREVIEW_DOWN)
             border_size: 1.0
-            border_color: #CCCCCC
-            border_color_hover: #CCCCCC
-            border_color_down: #CCCCCC
+            border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+            border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+            border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
             border_radius: 4.0
         }
     }
@@ -190,7 +190,7 @@ script_mod! {
 
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE {},
-                    color: #222,
+                    color: (COLOR_INPUT_BAR_HEADER_TEXT),
                 }
                 text: "Replying to:"
             }

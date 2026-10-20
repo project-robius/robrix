@@ -17,7 +17,7 @@ script_mod! {
         show_bg: true, cursor: MouseCursor.Hand
         // Tapping a row shouldn't take key focus away from a text input.
         grab_key_focus: false
-        draw_bg +: { color: #00000000, border_radius: 5.0 }
+        draw_bg +: { color: (COLOR_TRANSPARENT), border_radius: 5.0 }
         avatar := Avatar { width: 30, height: 30 }
         info := View {
             width: Fill, height: Fit, flow: Down, spacing: 1
@@ -27,7 +27,7 @@ script_mod! {
             }
             subtitle := Label {
                 width: Fill, height: Fit, max_lines: 1, text_overflow: Ellipsis, padding: 0
-                draw_text +: { color: #555, text_style: theme.font_regular {font_size: 9.5, line_spacing: 1.0} }
+                draw_text +: { color: (COLOR_LIST_ROW_TEXT_MUTED), text_style: theme.font_regular {font_size: 9.5, line_spacing: 1.0} }
             }
         }
     }
@@ -42,7 +42,7 @@ script_mod! {
         }
         loading_label := Label {
             width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit, text_overflow: Ellipsis
-            draw_text +: { color: #555, text_style: theme.font_regular {font_size: 10.5} }
+            draw_text +: { color: (COLOR_LIST_ROW_TEXT_MUTED), text_style: theme.font_regular {font_size: 10.5} }
         }
     }
 
@@ -53,7 +53,7 @@ script_mod! {
         empty_label := Label {
             width: Fill, height: Fit
             align: Align{x: 0.5}
-            draw_text +: { color: #555, text_style: theme.font_regular {font_size: 10.5} }
+            draw_text +: { color: (COLOR_LIST_ROW_TEXT_MUTED), text_style: theme.font_regular {font_size: 10.5} }
         }
     }
 }
