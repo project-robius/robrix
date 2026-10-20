@@ -57,7 +57,7 @@
 
         <activity
             android:name=".{class_name}"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|touchscreen|uiMode|colorMode|locale|layoutDirection|fontScale|fontWeightAdjustment|mcc|mnc"
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustNothing|stateUnchanged"
