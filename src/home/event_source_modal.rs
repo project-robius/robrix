@@ -35,7 +35,7 @@ script_mod! {
 
         width: Fill { max: 1000 }
         height: Fit { max: FitBound.Rel{base: Base.Full, factor: 1.0} }
-        margin: 30,
+        margin: Inset { top: 30, bottom: 30, left: 15, right: 15 },
         align: Align{x: 0.5, y: 0}
         flow: Down
         padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
