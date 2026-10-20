@@ -23,6 +23,8 @@ script_mod! {
         flow: Down,
         padding: Inset { top: 10, bottom: 10, left: 15, right: 15 }
         spacing: 15,
+        status_color: (COLOR_TEXT)
+        status_color_failed: (COLOR_FG_DANGER_RED)
 
         show_bg: true,
         draw_bg +: {
@@ -130,6 +132,9 @@ enum UploadPhase {
 pub struct UploadProgressView {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+
+    #[live] status_color: Vec4f,
+    #[live] status_color_failed: Vec4f,
 
     #[rust] state: Option<UploadState>,
 }
@@ -315,20 +320,12 @@ impl UploadProgressView {
 
         self.set_visible(cx, true);
         self.label(cx, ids!(file_name_label)).set_text(cx, &file_name);
-        let mut status_label = self.label(cx, ids!(status_label));
+        let status_label = self.label(cx, ids!(status_label));
         status_label.set_text(cx, &status);
         self.button(cx, ids!(retry_button)).set_visible(cx, can_retry);
         let progress_bar = self.child_by_path(ids!(progress_bar)).as_progress_bar();
         progress_bar.set_progress(cx, fraction);
-        if is_failed {
-            script_apply_eval!(cx, status_label, {
-                draw_text +: { color: mod.widgets.COLOR_FG_DANGER_RED }
-            });
-        } else {
-            script_apply_eval!(cx, status_label, {
-                draw_text +: { color: mod.widgets.COLOR_TEXT }
-            });
-        }
+        status_label.set_text_color(cx, if is_failed { self.status_color_failed } else { self.status_color });
         progress_bar.set_failed(cx, is_failed);
         self.redraw(cx);
     }

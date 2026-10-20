@@ -27,7 +27,7 @@ script_mod! {
                 margin: Inset{bottom: 8},
                 draw_icon +: {
                     svg: (mod.widgets.ICO_JUMP_TO_BOTTOM),
-                    color: #888,
+                    color: (COLOR_TEXT_FAINT),
                     // TODO: once Makepad button support draw_icon hover/down animated states, reenable this.
                     // color: #BBB,
                     // color_hover: #000,
@@ -39,8 +39,8 @@ script_mod! {
                 icon_walk: Walk{width: 20, height: 20}
                 // draw a circular background for the button
                 draw_bg +: {
-                    background_color: #edededce,
-                    background_color_hover: #d0d0d0ce,
+                    background_color: (COLOR_JUMP_TO_BOTTOM_BG),
+                    background_color_hover: (COLOR_JUMP_TO_BOTTOM_BG_HOVER),
                     pixel: fn() {
                         let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
@@ -93,7 +93,7 @@ script_mod! {
                     flow: Flow.Right { wrap: false },
                     text: "",
                     draw_text +: {
-                        color: #ffffff,
+                        color: (COLOR_TEXT_ON_ACCENT),
                         text_style: theme.font_regular {font_size: 8.0},
                     }
                 }
@@ -194,10 +194,8 @@ impl JumpToBottomButton {
                     cx,
                     &format!("{}{plus_sign}", std::cmp::min(unread_message_count, 99))
                 );
-                let mut badge_view = self.view(cx, ids!(unread_message_badge.green_rounded_label));
-                script_apply_eval!(cx, badge_view, {
-                    draw_bg.border_size: #(border_size),
-                });
+                self.view(cx, ids!(unread_message_badge.green_rounded_label))
+                    .set_uniform(cx, id!(border_size), &[border_size]);
             }
         }
     }

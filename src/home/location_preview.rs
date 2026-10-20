@@ -80,8 +80,6 @@ script_mod! {
             }
 
             send_location_button := RobrixPositiveIconButton {
-                // disabled by default; will be enabled upon receiving valid location update.
-                enabled: false,
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 margin: 0

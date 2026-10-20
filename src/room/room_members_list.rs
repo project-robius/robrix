@@ -15,7 +15,7 @@ use crate::{
         user_profile_cache,
     },
     room::pane_dock::FRAME_PADDING,
-    shared::{avatar::AvatarWidgetRefExt, list_rows::{handle_row_actions, status_row}, room_filter_input_bar::RoomFilterInputBarWidgetRefExt},
+    shared::{avatar::AvatarWidgetRefExt, list_rows::{handle_row_actions, status_row}, room_filter_input_bar::RoomFilterInputBarWidgetRefExt, styles::set_view_bg_color},
     utils::RoomNameId,
 };
 
@@ -39,7 +39,7 @@ script_mod! {
             margin: Inset{right: #(FRAME_PADDING)}
             padding: Inset{left: 4, right: 4}
             max_lines: 1, text_overflow: Ellipsis
-            draw_text +: { color: #737373, text_style: REGULAR_TEXT {font_size: 8.5} }
+            draw_text +: { color: (COLOR_TEXT_SUBTLE), text_style: REGULAR_TEXT {font_size: 8.5} }
             text: ""
         }
 
@@ -152,7 +152,7 @@ pub struct SavedRoomMembersList {
     pub(super) members: Option<Arc<Vec<RoomMember>>>,
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomMembersList {
     #[deref] view: View,
     #[live] color: Vec4f,
@@ -172,10 +172,15 @@ pub struct RoomMembersList {
     #[rust] filter: String,
     #[rust] error: Option<String>,
     #[rust] hovered_index: Option<usize>,
-    /// The indices of the rows currently drawn with the hover color.
-    #[rust] hover_colored: HashSet<usize>,
     /// The indices of the rows whose content is up to date, which needn't be set again when drawn.
     #[rust] populated_rows: HashSet<usize>,
+}
+
+impl ScriptHook for RoomMembersList {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // Some reloads reset the rows' avatars to their template, so we populate every row again.
+        self.populated_rows.clear();
+    }
 }
 
 impl Widget for RoomMembersList {
@@ -227,9 +232,8 @@ impl Widget for RoomMembersList {
                     status_row(cx, &mut list, index, *is_loading, text)
                 } else {
                     let Some(entry) = self.filtered.get(index).and_then(|&i| self.entries.get(i)) else { continue };
-                    let (mut row, existed) = list.item_with_existed(cx, index, id!(member_row));
+                    let (row, existed) = list.item_with_existed(cx, index, id!(member_row));
                     if !existed {
-                        self.hover_colored.remove(&index);
                         self.populated_rows.remove(&index);
                     }
                     // Like the timeline, only set a row's content when it's new or has changed.
@@ -241,13 +245,8 @@ impl Widget for RoomMembersList {
                             self.populated_rows.insert(index);
                         }
                     }
-                    // Applying a color redraws the row, so only do so when its hover state changes.
-                    let is_hovered = self.hovered_index == Some(index);
-                    if is_hovered != self.hover_colored.contains(&index) {
-                        let color = if is_hovered { self.color_hover } else { self.color };
-                        script_apply_eval!(cx, row, { draw_bg.color: #(color) });
-                        if is_hovered { self.hover_colored.insert(index); } else { self.hover_colored.remove(&index); }
-                    }
+                    let color = if self.hovered_index == Some(index) { self.color_hover } else { self.color };
+                    set_view_bg_color(cx, &row.as_view(), color);
                     row
                 };
                 row.draw_all(cx, scope);
@@ -302,7 +301,6 @@ impl RoomMembersList {
         self.pending_scroll = None;
         self.error = None;
         self.hovered_index = None;
-        self.hover_colored.clear();
         self.populated_rows.clear();
         self.update_count_label(cx);
         self.view.child_by_path(ids!(member_filter_bar)).as_room_filter_input_bar().clear(cx);

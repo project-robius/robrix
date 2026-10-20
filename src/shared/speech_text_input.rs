@@ -24,6 +24,31 @@ script_mod! {
         scroll_bar_inset: (TEXT_INPUT_SCROLL_BAR_INSET)
         mic_tooltip: "Dictate"
 
+        draw_meter: mod.draw.DrawQuad {
+            // Set from Rust: the three most recent microphone levels, each normalized 0..=1.
+            levels: instance(vec3(0.0, 0.0, 0.0))
+            bar_color: instance((COLOR_SPEECH_BUTTON_LEVEL_BARS))
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                // Three bars, centred in the button and scaled to its size.
+                let unit = self.rect_size.y / 32.0
+                let bar = 3.0 * unit
+                let gap = 3.0 * unit
+                let x = (self.rect_size.x - (bar * 3.0 + gap * 2.0)) * 0.5
+                let middle = self.rect_size.y * 0.5
+                let h0 = (4.0 + self.levels.x * 13.0) * unit
+                let h1 = (4.0 + self.levels.y * 13.0) * unit
+                let h2 = (4.0 + self.levels.z * 13.0) * unit
+                sdf.box(x, middle - h0 * 0.5, bar, h0, 1.5 * unit)
+                sdf.fill(self.bar_color)
+                sdf.box(x + bar + gap, middle - h1 * 0.5, bar, h1, 1.5 * unit)
+                sdf.fill(self.bar_color)
+                sdf.box(x + (bar + gap) * 2.0, middle - h2 * 0.5, bar, h2, 1.5 * unit)
+                sdf.fill(self.bar_color)
+                return sdf.result
+            }
+        }
+
         text_input := RobrixTextInput {}
 
         speech_overlay := View {
@@ -33,7 +58,7 @@ script_mod! {
             // single-line input, so any would push it past the bottom edge.
             padding: Inset{top: 0, bottom: 0, left: 4, right: 3}
 
-            // One widget for both states: the icon at rest, a meter while recording.
+            // One widget for both states: the icon at rest, the face under `draw_meter` while recording.
             speech_button := RobrixIconButton {
                 width: 32, height: 32
                 padding: 7
@@ -49,13 +74,6 @@ script_mod! {
                     color: (COLOR_TRANSPARENT)
                     color_hover: (COLOR_SPEECH_BUTTON_BG_HOVER)
                     color_down: (COLOR_SPEECH_BUTTON_BG_DOWN)
-                    // Set from Rust: 1.0 while recording, plus the three
-                    // most recent microphone levels, each normalized 0..=1.
-                    recording: instance(0.0)
-                    level_0: instance(0.0)
-                    level_1: instance(0.0)
-                    level_2: instance(0.0)
-                    bar_color: instance(vec4(1.0, 1.0, 1.0, 1.0))
                     blend: fn(under: vec4, over: vec4) -> vec4 {
                         let alpha = over.w + under.w * (1.0 - over.w)
                         let color = over.xyz * over.w + under.xyz * under.w * (1.0 - over.w)
@@ -68,23 +86,6 @@ script_mod! {
                         let face = self.blend(self.blend(self.color, hovered), pressed)
                         sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, self.border_radius)
                         sdf.fill(face)
-                        if self.recording > 0.5 {
-                            // Three bars, centred in the button and scaled to its size.
-                            let unit = self.rect_size.y / 32.0
-                            let bar = 3.0 * unit
-                            let gap = 3.0 * unit
-                            let x = (self.rect_size.x - (bar * 3.0 + gap * 2.0)) * 0.5
-                            let middle = self.rect_size.y * 0.5
-                            let h0 = (4.0 + self.level_0 * 13.0) * unit
-                            let h1 = (4.0 + self.level_1 * 13.0) * unit
-                            let h2 = (4.0 + self.level_2 * 13.0) * unit
-                            sdf.box(x, middle - h0 * 0.5, bar, h0, 1.5 * unit)
-                            sdf.fill(self.bar_color)
-                            sdf.box(x + bar + gap, middle - h1 * 0.5, bar, h1, 1.5 * unit)
-                            sdf.fill(self.bar_color)
-                            sdf.box(x + (bar + gap) * 2.0, middle - h2 * 0.5, bar, h2, 1.5 * unit)
-                            sdf.fill(self.bar_color)
-                        }
                         return sdf.result
                     }
                 }
@@ -139,6 +140,8 @@ pub struct SpeechTextInput {
     /// Whether to drop the sentence punctuation that recognizers end each transcript with,
     /// e.g., for search filters that match names.
     #[live] drop_trailing_punctuation: bool,
+    /// The microphone level meter, drawn over the microphone button while recording.
+    #[live] draw_meter: DrawQuad,
 
     /// The currently-running speech-to-text dictation session.
     #[rust] speech: Option<SpeechInput>,
@@ -222,7 +225,12 @@ impl Widget for SpeechTextInput {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
+        self.view.draw_walk(cx, scope, walk)?;
+        if self.shown_phase.is_some() {
+            let rect = self.speech_button().area().rect(cx);
+            self.draw_meter.draw_abs(cx, rect);
+        }
+        DrawStep::done()
     }
 
     fn text(&self) -> String {
@@ -382,7 +390,6 @@ impl SpeechTextInput {
                         color: mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING,
                         color_hover: mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING_HOVER,
                         color_down: mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING_HOVER,
-                        recording: 1.0
                     }
                 });
             } else {
@@ -392,7 +399,6 @@ impl SpeechTextInput {
                         color: mod.widgets.COLOR_TRANSPARENT,
                         color_hover: mod.widgets.COLOR_SPEECH_BUTTON_BG_HOVER,
                         color_down: mod.widgets.COLOR_SPEECH_BUTTON_BG_DOWN,
-                        recording: 0.0
                     }
                 });
             }
@@ -405,10 +411,8 @@ impl SpeechTextInput {
         if levels != self.shown_levels {
             self.shown_levels = levels;
             if let Some(levels) = levels {
-                let mut button = self.speech_button();
-                script_apply_eval!(cx, button, {
-                    draw_bg +: {level_0: #(levels[0]), level_1: #(levels[1]), level_2: #(levels[2])}
-                });
+                self.draw_meter.set_dyn_instance(cx, id!(levels), &levels);
+                self.draw_meter.update_instance_area_value(cx, ids!(levels));
             }
         }
     }

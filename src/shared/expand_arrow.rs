@@ -11,7 +11,7 @@ script_mod! {
 
         draw_bg +: {
             opened: instance(0.0)
-            color: instance(#888)
+            color: instance((COLOR_TEXT_FAINT))
             border_radius: uniform(2.25)
 
             pixel: fn() {

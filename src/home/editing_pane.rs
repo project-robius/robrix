@@ -54,7 +54,7 @@ script_mod! {
                 margin: Inset{top: 3}
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE {},
-                    color: #222,
+                    color: (COLOR_INPUT_BAR_HEADER_TEXT),
                 }
                 text: "Editing:"
             }

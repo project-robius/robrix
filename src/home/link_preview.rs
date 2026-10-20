@@ -15,7 +15,7 @@ use url::Url;
 use crate::{
     home::room_screen::TimelineUpdate,
     media_cache::MediaCache,
-    shared::text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
+    shared::{styles::set_view_bg_color, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}},
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
@@ -55,6 +55,8 @@ script_mod! {
     mod.widgets.LinkPreview = #(LinkPreview::register_widget(vm)) {
         width: Fill, height: Fit,
         flow: Down,
+        card_bg_color: (COLOR_BG_PREVIEW_TRANSLUCENT)
+        card_bg_color_hover: (COLOR_BG_PREVIEW_HOVER)
 
         collapsible_buttons := View {
             width: Fill, height: Fit,
@@ -69,25 +71,25 @@ script_mod! {
                 padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
                 draw_icon +: {
                     svg: (ICON_TRIANGLE_DOWN)
-                    color: #666666
+                    color: (COLOR_TEXT_MUTED)
                 }
                 icon_walk: Walk{width: 10, height: 10}
                 draw_text +: {
                     text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                         font_size: 10.0,
                     },
-                    color: #666666,
-                    color_hover: #666666,
-                    color_down: #666666,
+                    color: (COLOR_TEXT_MUTED),
+                    color_hover: (COLOR_TEXT_MUTED),
+                    color_down: (COLOR_TEXT_MUTED),
                 }
                 draw_bg +: {
                     color: (COLOR_BG_PREVIEW)
                     color_hover: (COLOR_BG_PREVIEW_HOVER)
-                    color_down: #A8DBBF
+                    color_down: (COLOR_BG_PREVIEW_DOWN)
                     border_size: 1.0
-                    border_color: #CCCCCC
-                    border_color_hover: #CCCCCC
-                    border_color_down: #CCCCCC
+                    border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                    border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                    border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
                     border_radius: 4.0
                 }
                 text: "Show more links"
@@ -100,25 +102,25 @@ script_mod! {
                 padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
                 draw_icon +: {
                     svg: (ICON_TRIANGLE_UP)
-                    color: #666666
+                    color: (COLOR_TEXT_MUTED)
                 }
                 icon_walk: Walk{width: 10, height: 10}
                 draw_text +: {
                     text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                         font_size: 10.0,
                     },
-                    color: #666666,
-                    color_hover: #666666,
-                    color_down: #666666,
+                    color: (COLOR_TEXT_MUTED),
+                    color_hover: (COLOR_TEXT_MUTED),
+                    color_down: (COLOR_TEXT_MUTED),
                 }
                 draw_bg +: {
                     color: (COLOR_BG_PREVIEW)
                     color_hover: (COLOR_BG_PREVIEW_HOVER)
-                    color_down: #A8DBBF
+                    color_down: (COLOR_BG_PREVIEW_DOWN)
                     border_size: 1.0
-                    border_color: #CCCCCC
-                    border_color_hover: #CCCCCC
-                    border_color_down: #CCCCCC
+                    border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                    border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                    border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
                     border_radius: 4.0
                 }
                 text: "Show fewer links"
@@ -172,7 +174,7 @@ script_mod! {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
-                            color: #x0000EE,
+                            color: (COLOR_LINK),
                             color_hover: (COLOR_LINK_HOVER),
                         }
                     }
@@ -184,7 +186,7 @@ script_mod! {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
-                            color: #666666,
+                            color: (COLOR_TEXT_MUTED),
                         }
                     }
                 }
@@ -200,7 +202,7 @@ script_mod! {
                         text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                             font_size: 11.0,
                         },
-                        color: #666666,
+                        color: (COLOR_TEXT_MUTED),
                     }
                 }
             }
@@ -208,12 +210,16 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, WidgetRef, WidgetSet, WidgetRegister)]
+#[derive(Script, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct LinkPreview {
     #[deref]
     view: View,
     #[live]
     preview_template: Option<LivePtr>,
+    #[live]
+    card_bg_color: Vec4f,
+    #[live]
+    card_bg_color_hover: Vec4f,
     /// The list of all previews, one preview card per link.
     ///
     /// Each card is a widget instantiated from the above `preview_template`.
@@ -228,6 +234,17 @@ pub struct LinkPreview {
     /// The links that were last populated in this widget, to avoid unnecessary repopulation.
     #[rust]
     last_populated_links: Vec<Url>,
+}
+
+impl ScriptHook for LinkPreview {
+    fn on_after_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, scope: &mut Scope, _value: ScriptValue) {
+        // A reload never reaches our cards, so we re-apply the template to them ourselves.
+        if apply.is_reload() && let Some(template) = self.preview_template {
+            for card in self.cards.iter_mut() {
+                card.script_apply(vm, apply, scope, template);
+            }
+        }
+    }
 }
 
 impl WidgetNode for LinkPreview {
@@ -276,7 +293,7 @@ impl Widget for LinkPreview {
         // clear hovers on every link preview card and the show more/fewer buttons
         if let Event::ClearHover = event {
             for item in self.cards.iter() {
-                reset_hover(cx, item);
+                set_view_bg_color(cx, item, self.card_bg_color);
             }
             self.button(cx, ids!(collapsible_buttons.expand_button)).reset_hover(cx);
             self.button(cx, ids!(collapsible_buttons.collapse_button)).reset_hover(cx);
@@ -296,17 +313,14 @@ impl Widget for LinkPreview {
         for view in self.cards.iter() {
             match event.hits(cx, view.area()) {
                 Hit::FingerHoverIn(_) | Hit::FingerDown(_) => {
-                    let mut view = view.clone();
-                    script_apply_eval!(cx, view, {
-                        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW_HOVER
-                    });
+                    set_view_bg_color(cx, view, self.card_bg_color_hover);
                 }
                 Hit::FingerHoverOut(_) => {
-                    reset_hover(cx, view);
+                    set_view_bg_color(cx, view, self.card_bg_color);
                 }
                 Hit::FingerUp(fe) => {
                     // return to normal bg color
-                    reset_hover(cx, view);
+                    set_view_bg_color(cx, view, self.card_bg_color);
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                         if let Some(html_link) = view.link_label(cx, ids!(content_view.title_label)).borrow() {
                             if !html_link.url.is_empty() {
@@ -425,7 +439,7 @@ impl LinkPreviewRef {
                 // Reset each preview's per-link visual state: a reused one keeps its old
                 // hover color and image, and a new one shows TextOrImage's default view.
                 for item in inner.cards.iter() {
-                    reset_hover(cx, item);
+                    set_view_bg_color(cx, item, inner.card_bg_color);
                     item.text_or_image(cx, ids!(image)).clear(cx);
                 }
                 inner.last_populated_links = accepted_links;
@@ -443,13 +457,6 @@ impl LinkPreviewRef {
         }
         all_drawn
     }
-}
-
-fn reset_hover(cx: &mut Cx, item: &ViewRef) {
-    let mut item = item.clone();
-    script_apply_eval!(cx, item, {
-        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW_TRANSLUCENT
-    });
 }
 
 /// Populates a single link preview with whatever metadata has been fetched so far.

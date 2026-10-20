@@ -23,11 +23,11 @@ script_mod! {
                 padding: Inset{top: 12, left: 12, bottom: 12}
                 align: Align{y: 0.5}
                 draw_bg +: {
-                    color: #fff
+                    color: (COLOR_PRIMARY)
                     border_radius: 10
                     border_size: 1
-                    border_color: #x00000018
-                    shadow_color: #x00000033
+                    border_color: (COLOR_DIVIDER)
+                    shadow_color: (COLOR_SHADOW_SOFT)
                     shadow_radius: 4
                     shadow_offset: vec2(0, 3)
                 }

@@ -84,7 +84,7 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.ProgressBar = View {
+    mod.widgets.PopupProgressBar = View {
         width: Fill,
         height: 10,
         show_bg: true,
@@ -94,7 +94,7 @@ script_mod! {
             direction: uniform(0.0), // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
             border_radius:uniform(4.),
             border_size:uniform(1.0),
-            progress_bar_color: uniform(#00000080), //Black with 50% opacity.
+            progress_bar_color: uniform((COLOR_POPUP_PROGRESS_BAR)), //Black with 50% opacity.
             // Display progress bar when there is auto_dismissal_duration.
             display_progress_bar: instance(1.0)
             // Display progress bar even when progress.on is off.
@@ -160,7 +160,7 @@ script_mod! {
             width: Fill,
             height: Fit,
             draw_text +: {
-                color: #000
+                color: (COLOR_POPUP_TEXT)
                 text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: 10.5 },
             }
         }
@@ -193,16 +193,16 @@ script_mod! {
         draw_bg +: {
             border_radius: 4.0
             border_size: 1.0
-            color: #00000014
-            color_hover: #00000022
-            color_down: #x0000002E
-            border_color: #00000020
-            border_color_hover: #0000002C
-            border_color_down: #00000038
+            color: (COLOR_POPUP_CLOSE_BG)
+            color_hover: (COLOR_POPUP_CLOSE_BG_HOVER)
+            color_down: (COLOR_POPUP_CLOSE_BG_DOWN)
+            border_color: (COLOR_POPUP_CLOSE_BORDER)
+            border_color_hover: (COLOR_POPUP_CLOSE_BORDER_HOVER)
+            border_color_down: (COLOR_POPUP_CLOSE_BORDER_DOWN)
         }
         draw_icon +: {
             svg: (ICON_CLOSE),
-            color: #000000D0,
+            color: (COLOR_POPUP_CLOSE_ICON),
         }
     }
 
@@ -227,9 +227,10 @@ script_mod! {
         show_bg: true,
         draw_bg +: {
             border_radius: uniform(4.0)
-            border_color: instance(#000000)
+            border_color: instance((COLOR_POPUP_BORDER))
             border_size: uniform(2.0)
-            color: instance(#ffffff)
+            color: instance((COLOR_PRIMARY))
+            display_border: instance(1.0)
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(
@@ -241,8 +242,8 @@ script_mod! {
                 )
                 sdf.fill_keep(self.color)
 
-                // Only draw black border for white background (blank popups)
-                if length(self.color.rgb - vec3(1.0, 1.0, 1.0)) < 0.1 {
+                // Only draw black border for blank popups
+                if self.display_border > 0.5 {
                     sdf.stroke(
                         self.border_color,
                         self.border_size
@@ -270,7 +271,7 @@ script_mod! {
                 // Main content area
                 main_content := mod.widgets.MainContent {}
             }
-            progress_bar := mod.widgets.ProgressBar {}
+            progress_bar := mod.widgets.PopupProgressBar {}
             // Add a small gap between the progress bar and the end of the popup 
             // to ensure the progress bar is within the popup.
             View {
@@ -302,7 +303,7 @@ script_mod! {
                     padding: Inset{left: 0}
                 }
             }
-            progress_bar := mod.widgets.ProgressBar {
+            progress_bar := mod.widgets.PopupProgressBar {
                 width: 10,
                 height: Fill,
                 draw_bg +: {
@@ -323,6 +324,12 @@ script_mod! {
             color: (COLOR_TRANSPARENT)
         }
         content: mod.widgets.PopupDialogRightToLeftProgress {}
+        bg_color_blank: (COLOR_PRIMARY)
+        bg_color_error: (COLOR_FG_DANGER_RED)
+        bg_color_info: (COLOR_INFO_BLUE)
+        bg_color_success: (COLOR_FG_ACCEPT_GREEN)
+        bg_color_warning: (COLOR_WARNING_YELLOW)
+        text_color_on_color: (COLOR_PRIMARY)
     }
 
     mod.widgets.RobrixPopupNotificationTopToBottomProgress = mod.widgets.RobrixPopupNotificationRightToLeftProgress {
@@ -355,6 +362,8 @@ script_mod! {
 struct PopupEntry {
     view: View,
     close_timer: Timer,
+    kind: PopupKind,
+    has_progress: bool,
 }
 
 /// A widget that displays a vertical list of popups.
@@ -363,6 +372,13 @@ pub struct RobrixPopupNotification {
     #[uid] uid: WidgetUid,
     #[source] source: ScriptObjectRef,
     #[live] pub content: Option<LivePtr>,
+    #[live] bg_color_blank: Vec4f,
+    #[live] bg_color_error: Vec4f,
+    #[live] bg_color_info: Vec4f,
+    #[live] bg_color_success: Vec4f,
+    #[live] bg_color_warning: Vec4f,
+    /// The text color for popups with a strongly colored background (error, info, success).
+    #[live] text_color_on_color: Vec4f,
 
     #[rust] draw_list: Option<DrawList2d>,
     #[redraw] #[live] draw_bg: DrawQuad,
@@ -380,10 +396,22 @@ impl ScriptHook for RobrixPopupNotification {
     fn on_after_apply(
         &mut self,
         vm: &mut ScriptVm,
-        _apply: &Apply,
-        _scope: &mut Scope,
+        apply: &Apply,
+        scope: &mut Scope,
         _value: ScriptValue,
     ) {
+        // A reapply (e.g., a theme change) never reaches our popups, so we re-apply their template
+        // and restyle them. Other reloads would stop their progress animations, so we skip those.
+        if apply.is_script_reapply() && let Some(content) = self.content {
+            for popup in &mut self.popups {
+                popup.view.script_apply(vm, apply, scope, content);
+            }
+            vm.with_cx_mut(|cx| {
+                for index in 0..self.popups.len() {
+                    self.apply_popup_style(cx, index);
+                }
+            });
+        }
         vm.with_cx_mut(|cx| {
             if let Some(draw_list) = &self.draw_list {
                 draw_list.redraw(cx);
@@ -452,17 +480,40 @@ impl RobrixPopupNotification {
     /// The popup's content is a string given by the `PopupItem` parameter.
     /// New popup will be displayed below the previous ones.
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
-        let mut view = view_from_live_ptr(cx, self.content);
-        let left_side_view = view.view(cx, ids!(popup_content.inner.left_side_view));
+        let view = view_from_live_ptr(cx, self.content);
+        view.label(cx, ids!(popup_label)).set_text(cx, &popup_item.message);
+
+        let progress_bar = view.view(cx, ids!(popup_content.progress_bar));
+        progress_bar.animator_cut(cx, ids!(progress.off));
+        let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
+            progress_bar.animator_play_with(cx, ids!(progress.on), Play::Forward { duration });
+            cx.start_timeout(duration)
+        } else {
+            Timer::empty()
+        };
+        self.popups.push(PopupEntry {
+            view,
+            close_timer,
+            kind: popup_item.kind,
+            has_progress: popup_item.auto_dismissal_duration.is_some(),
+        });
+        self.apply_popup_style(cx, self.popups.len() - 1);
+        self.redraw_overlay(cx);
+    }
+
+    /// Styles the popup at the given index based on its kind.
+    ///
+    /// Its view must have just been built or re-applied from the `content` template.
+    fn apply_popup_style(&mut self, cx: &mut Cx, index: usize) {
+        let Some(popup) = self.popups.get_mut(index) else { return };
+        let view = &mut popup.view;
         let mut popup_icon = view.widget(cx, ids!(popup_content.inner.left_side_view.popup_icon));
         let mut close_button = view.button(cx, ids!(close_button));
-        let mut popup_label = view.label(cx, ids!(popup_label));
-        popup_label.set_text(cx, &popup_item.message);
 
         // Set the icon and icon color based on the popup kind.
-        let show_left_side_view = popup_item.kind != PopupKind::Blank;
-        left_side_view.set_visible(cx, show_left_side_view);
-        match popup_item.kind {
+        let show_left_side_view = popup.kind != PopupKind::Blank;
+        view.view(cx, ids!(popup_content.inner.left_side_view)).set_visible(cx, show_left_side_view);
+        match popup.kind {
             PopupKind::Error => {
                 script_apply_eval!(cx, popup_icon, {
                     draw_icon.svg: mod.widgets.ICON_FORBIDDEN,
@@ -491,11 +542,9 @@ impl RobrixPopupNotification {
         }
 
         // Set the text and close button color based on the popup kind.
-        match popup_item.kind {
+        match popup.kind {
             PopupKind::Error | PopupKind::Info | PopupKind::Success => {
-                script_apply_eval!(cx, popup_label, {
-                    draw_text +: { color: mod.widgets.COLOR_PRIMARY },
-                });
+                view.label(cx, ids!(popup_label)).set_text_color(cx, self.text_color_on_color);
                 script_apply_eval!(cx, close_button, {
                     draw_bg +: {
                         color:              mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR,
@@ -513,55 +562,21 @@ impl RobrixPopupNotification {
         }
 
         // Set the background color of the popup based on its kind.
-        match popup_item.kind {
-            PopupKind::Blank => {
-                script_apply_eval!(cx, view, {
-                    draw_bg.color: mod.widgets.COLOR_PRIMARY,
-                });
-            }
-            PopupKind::Error => {
-                script_apply_eval!(cx, view, {
-                    draw_bg.color: mod.widgets.COLOR_FG_DANGER_RED,
-                });
-            }
-            PopupKind::Info => {
-                script_apply_eval!(cx, view, {
-                    draw_bg.color: mod.widgets.COLOR_INFO_BLUE,
-                });
-            }
-            PopupKind::Success => {
-                script_apply_eval!(cx, view, {
-                    draw_bg.color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                });
-            }
-            PopupKind::Warning => {
-                script_apply_eval!(cx, view, {
-                    draw_bg.color: mod.widgets.COLOR_WARNING_YELLOW,
-                });
-            }
-        }
-
-        let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
-            let mut progress_bar = view.view(cx, ids!(popup_content.progress_bar));
-            script_apply_eval!(cx, progress_bar, {
-                draw_bg +: { display_progress_bar: 1.0 }
-            });
-            progress_bar.animator_cut(cx, ids!(progress.off));
-            progress_bar.animator_play_with(cx, ids!(progress.on), Play::Forward { duration });
-            cx.start_timeout(duration)
-        } else {
-            let mut progress_bar = view.view(cx, ids!(popup_content.progress_bar));
-            script_apply_eval!(cx, progress_bar, {
-                draw_bg +: { display_progress_bar: 0.0 }
-            });
-            progress_bar.animator_cut(cx, ids!(progress.off));
-            Timer::empty()
+        let bg_color = match popup.kind {
+            PopupKind::Blank => self.bg_color_blank,
+            PopupKind::Error => self.bg_color_error,
+            PopupKind::Info => self.bg_color_info,
+            PopupKind::Success => self.bg_color_success,
+            PopupKind::Warning => self.bg_color_warning,
         };
-        self.popups.push(PopupEntry {
-            view,
-            close_timer,
-        });
-        self.redraw_overlay(cx);
+        let display_border = if popup.kind == PopupKind::Blank { 1.0 } else { 0.0 };
+        view.draw_bg.set_dyn_instance(cx, id!(color), &[bg_color.x, bg_color.y, bg_color.z, bg_color.w]);
+        view.draw_bg.set_dyn_instance(cx, id!(display_border), &[display_border]);
+
+        if let Some(mut progress_bar) = view.view(cx, ids!(popup_content.progress_bar)).borrow_mut() {
+            let display_progress_bar = if popup.has_progress { 1.0 } else { 0.0 };
+            progress_bar.draw_bg.set_dyn_instance(cx, id!(display_progress_bar), &[display_progress_bar]);
+        }
     }
 
     /// Adds a new popup with a custom view to the right side of the screen.
@@ -589,6 +604,8 @@ impl RobrixPopupNotification {
         self.popups.push(PopupEntry {
             view,
             close_timer,
+            kind: popup_item.kind,
+            has_progress: popup_item.auto_dismissal_duration.is_some(),
         });
     }
 

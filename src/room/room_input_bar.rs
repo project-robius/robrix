@@ -96,8 +96,8 @@ script_mod! {
                     },
                     draw_bg +: {
                         color: (COLOR_BG_PREVIEW)
-                        color_hover: #xE0E8F0
-                        color_down: #xD0D8E8
+                        color_hover: (COLOR_INPUT_BAR_ADD_BUTTON_BG_HOVER)
+                        color_down: (COLOR_INPUT_BAR_ADD_BUTTON_BG_DOWN)
                     }
                     icon_walk: Walk{width: 21, height: 21}
                 }
@@ -787,6 +787,8 @@ impl RoomInputBar {
         self.is_send_enabled = enable;
         let mut send_message_button = self.view.button(cx, ids!(send_message_button));
         if !enable {
+            // A button that we disable while it's hovered shouldn't stay highlighted.
+            send_message_button.reset_hover(cx);
             script_apply_eval!(cx, send_message_button, {
                 enabled: false,
                 draw_icon.color: mod.widgets.COLOR_FG_DISABLED,

@@ -40,7 +40,7 @@ script_mod! {
             padding: 7
             width: Fill, height: Fit
             font_size: 10.
-            font_color: #3
+            font_color: (MESSAGE_TEXT_COLOR)
             body: "<p>You can enter a room/space address using either:</p>
                 <ul>
                   <li> An <i>alias</i>, starting with <code>#</code>, like <code>#robrix:matrix.org</code>.</li>

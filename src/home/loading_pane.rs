@@ -20,7 +20,7 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: #000000b2
+            color: (COLOR_LOADING_PANE_OVERLAY_BG)
         }
 
         main_content := RoundedView {
@@ -47,7 +47,7 @@ script_mod! {
                     text: "Loading content..."
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
+                        color: (COLOR_TEXT_TITLE)
                     }
                 }
             }
@@ -66,7 +66,7 @@ script_mod! {
                         text_style: REGULAR_TEXT {
                             font_size: 11.5,
                         },
-                        color: #000
+                        color: (COLOR_TEXT_BODY)
                     }
                 }
 

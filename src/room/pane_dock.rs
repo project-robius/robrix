@@ -34,12 +34,12 @@ script_mod! {
         padding: 0, spacing: 0, margin: 0
         align: Align{x: 0.5, y: 0.5}
         icon_walk: Walk{width: 13, height: 13, margin: 0}
-        draw_icon.color: #666
+        draw_icon.color: (COLOR_TEXT_MUTED)
         draw_bg +: {
             border_size: 0
-            color: #0000
-            color_hover: #00000015
-            color_down: #00000025
+            color: (COLOR_TRANSPARENT)
+            color_hover: (COLOR_FLAT_ICON_BUTTON_BG_HOVER)
+            color_down: (COLOR_FLAT_ICON_BUTTON_BG_DOWN)
         }
     }
 
@@ -140,15 +140,15 @@ script_mod! {
     mod.widgets.RoomPaneEdge = set_type_default() do #(RoomPaneEdge::register_widget(vm)) {
         ..mod.widgets.RoundedView
         width: Fit, height: Fit
-        draw_bg +: { color: #0000 }
+        draw_bg +: { color: (COLOR_TRANSPARENT) }
         draw_handle +: {
             color: (COLOR_PANE_DIVIDER)
+            color_dot: uniform((COLOR_PANE_GRAB_HANDLE_DOTS))
             // The grab handle: a soft capsule with dots that is quiet until you get near it.
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 let w = self.rect_size.x
                 let h = self.rect_size.y
-                let dot = vec4(1.0, 1.0, 1.0, 0.92)
                 if h > w {
                     sdf.box(0.0, 0.0, w, h, w * 0.5)
                     sdf.fill(self.color)
@@ -159,7 +159,7 @@ script_mod! {
                     sdf.circle(w * 0.5, cy, 1.15)
                     sdf.circle(w * 0.5, cy + gap, 1.15)
                     sdf.circle(w * 0.5, cy + gap * 2.0, 1.15)
-                    return sdf.fill(dot)
+                    return sdf.fill(self.color_dot)
                 }
                 sdf.box(0.0, 0.0, w, h, h * 0.5)
                 sdf.fill(self.color)
@@ -170,7 +170,7 @@ script_mod! {
                 sdf.circle(cx, h * 0.5, 1.15)
                 sdf.circle(cx + gap, h * 0.5, 1.15)
                 sdf.circle(cx + gap * 2.0, h * 0.5, 1.15)
-                return sdf.fill(dot)
+                return sdf.fill(self.color_dot)
             }
         }
         draw_grab +: { color: #00000001 }
@@ -266,6 +266,12 @@ script_mod! {
         threads_pane: mod.widgets.RoomPaneFrame {
             content +: { threads := mod.widgets.ThreadsList {} }
         }
+
+        // The edge button's icon for each side that it can move its pane to.
+        edge_icon_top: (ICON_CARET_UP)
+        edge_icon_bottom: (ICON_CARET_DOWN)
+        edge_icon_left: (ICON_CARET_LEFT)
+        edge_icon_right: (ICON_CARET_RIGHT)
     }
 }
 
@@ -424,10 +430,9 @@ pub fn set_pane_header(cx: &mut Cx, pane: &WidgetRef, kind: &RoomPaneKind) {
     let line_height = label.borrow()
         .map_or(0.0, |label| utils::text_line_height(cx, &label.draw_text));
     let top = ((HEADER_BUTTON_SIZE - line_height) * 0.5).max(0.0);
-    let mut title_line = pane.widget(cx, ids!(title_line));
-    script_apply_eval!(cx, title_line, {
-        padding: mod.prelude.widgets.Inset{top: #(top)}
-    });
+    if let Some(mut title_line) = pane.view(cx, ids!(title_line)).borrow_mut() {
+        title_line.layout.padding.top = top;
+    }
 }
 
 /// Returns the width of the given pane's title laid out on one line,
@@ -468,6 +473,10 @@ pub struct RoomPaneDock {
     #[live] members_pane: Option<LivePtr>,
     #[live] pinned_messages_pane: Option<LivePtr>,
     #[live] threads_pane: Option<LivePtr>,
+    #[live] edge_icon_top: Option<ScriptHandleRef>,
+    #[live] edge_icon_bottom: Option<ScriptHandleRef>,
+    #[live] edge_icon_left: Option<ScriptHandleRef>,
+    #[live] edge_icon_right: Option<ScriptHandleRef>,
     #[rust] room_name_id: Option<RoomNameId>,
     /// The timeline that this dock's panes belong to.
     #[rust] timeline_kind: Option<TimelineKind>,
@@ -481,8 +490,28 @@ pub struct RoomPaneDock {
 }
 
 impl ScriptHook for RoomPaneDock {
-    fn on_after_apply(&mut self, vm: &mut ScriptVm, _apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+    fn on_after_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, scope: &mut Scope, _value: ScriptValue) {
         vm.cx_mut().widget_tree_mark_dirty(self.widget_uid());
+        if !apply.is_reload() {
+            return;
+        }
+        // A reload never reaches our panes' frames, since we build them from templates,
+        // so we re-apply their templates ourselves and then redo the styling we set on them.
+        for index in 0..self.panes.len() {
+            if let Some(template) = self.frame_template(&self.panes[index].kind) {
+                self.panes[index].frame.script_apply(vm, apply, scope, template);
+            }
+            self.panes[index].button_cols = 0;
+        }
+        vm.with_cx_mut(|cx| {
+            for index in 0..self.panes.len() {
+                set_pane_header(cx, &self.panes[index].frame, &self.panes[index].kind);
+                self.apply_side(cx, index);
+                let (title_width, title_two_line_width) = measure_title_widths(cx, &self.panes[index].frame);
+                self.panes[index].title_width = title_width;
+                self.panes[index].title_two_line_width = title_two_line_width;
+            }
+        });
     }
 }
 
@@ -869,12 +898,14 @@ impl RoomPaneDock {
     /// and gives a tall pane on the left or right side a bit more room above its content.
     fn apply_side(&self, cx: &mut Cx, index: usize) {
         let Some(pane) = self.panes.get(index) else { return };
-        let mut button = pane.frame.button(cx, ids!(pane_edge_button));
-        match pane.layout.side.next() {
-            PaneSide::Top => script_apply_eval!(cx, button, { draw_icon +: { svg: (mod.widgets.ICON_CARET_UP) } }),
-            PaneSide::Bottom => script_apply_eval!(cx, button, { draw_icon +: { svg: (mod.widgets.ICON_CARET_DOWN) } }),
-            PaneSide::Left => script_apply_eval!(cx, button, { draw_icon +: { svg: (mod.widgets.ICON_CARET_LEFT) } }),
-            PaneSide::Right => script_apply_eval!(cx, button, { draw_icon +: { svg: (mod.widgets.ICON_CARET_RIGHT) } }),
+        let icon = match pane.layout.side.next() {
+            PaneSide::Top => &self.edge_icon_top,
+            PaneSide::Bottom => &self.edge_icon_bottom,
+            PaneSide::Left => &self.edge_icon_left,
+            PaneSide::Right => &self.edge_icon_right,
+        };
+        if let Some(mut button) = pane.frame.button(cx, ids!(pane_edge_button)).borrow_mut() {
+            button.draw_icon.svg = icon.clone();
         }
         let top = if pane.layout.side.is_vertical() { VERTICAL_CONTENT_TOP_PADDING } else { CONTENT_TOP_PADDING };
         // Add enough right padding for the content to not interfere with the scroll bar.
@@ -883,10 +914,9 @@ impl RoomPaneDock {
             PaneSide::Top | PaneSide::Bottom => DIVIDER_THICKNESS * 0.5,
             PaneSide::Right => 0.0,
         };
-        let mut content = pane.frame.widget(cx, ids!(content));
-        script_apply_eval!(cx, content, {
-            padding: mod.prelude.widgets.Inset{top: #(top), right: #(right), bottom: #(FRAME_PADDING), left: #(FRAME_PADDING)}
-        });
+        if let Some(mut content) = pane.frame.view(cx, ids!(content)).borrow_mut() {
+            content.layout.padding = Inset { top, right, bottom: FRAME_PADDING, left: FRAME_PADDING };
+        }
     }
 
     /// Limits each pair of opposite edges such that the center keeps at least `MIN_CENTER_SIZE`.

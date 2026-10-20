@@ -13,8 +13,6 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.SEND_STATUS_ICON_COLOR = #8C8C8C
-
     mod.widgets.SendStatusIndicator = #(SendStatusIndicator::register_widget(vm)) {
         width: Fit,
         height: Fit{min: FitBound.Abs(15.0)},
@@ -55,7 +53,7 @@ script_mod! {
             check := Icon {
                 draw_icon +: {
                     svg: (ICON_CHECKMARK),
-                    color: #FFFFFF,
+                    color: (COLOR_TEXT_ON_ACCENT),
                 }
                 icon_walk: Walk{width: 8.5, height: Fit}
             }
@@ -71,15 +69,16 @@ script_mod! {
                 width: 3.0, height: 10.5,
                 show_bg: true,
                 draw_bg +: {
+                    color: uniform((COLOR_TEXT_ON_ACCENT))
                     pixel: fn() {
                         let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                         let w = self.rect_size.x
                         let dot_r = w * 0.5
                         let gap = w * 0.4
                         sdf.box(0.0, 0.0, w, self.rect_size.y - dot_r * 2.0 - gap, dot_r)
-                        sdf.fill(#ffffff)
+                        sdf.fill(self.color)
                         sdf.circle(dot_r, self.rect_size.y - dot_r, dot_r)
-                        sdf.fill(#ffffff)
+                        sdf.fill(self.color)
                         return sdf.result
                     }
                 }
@@ -216,7 +215,7 @@ pub enum SendStatusIndicatorAction {
     None,
 }
 
-#[derive(Script, Widget, ScriptHook)]
+#[derive(Script, Widget)]
 pub struct SendStatusIndicator {
     #[deref] view: View,
     #[walk] walk: Walk,
@@ -242,6 +241,18 @@ pub struct SendStatusIndicator {
     #[rust] label_widget: Option<(SendStatusLabel, LabelRef)>,
 }
 
+impl ScriptHook for SendStatusIndicator {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // A reload never reaches the icon and label we built from templates, so we drop them,
+        // and reset the info too since `set_from_event()` does nothing when it's unchanged.
+        self.icon_widget = None;
+        self.label_widget = None;
+        self.info = None;
+        self.tooltip_text.clear();
+        self.has_failed = false;
+    }
+}
+
 /// Send status icons are small, so we make their hit box a bit larger.
 const HIT_MARGIN: Inset = Inset { left: 8.0, top: 5.0, right: 5.0, bottom: 5.0 };
 
@@ -254,13 +265,11 @@ impl Widget for SendStatusIndicator {
         let uid = self.widget_uid();
         match event.hits_with_options(cx, self.area, HitOptions::new().with_margin(HIT_MARGIN)) {
             Hit::FingerHoverIn(..) | Hit::FingerLongPress(_) if !self.tooltip_text.is_empty() => {
-                let mut options = CalloutTooltipOptions {
+                let options = CalloutTooltipOptions {
                     position: TooltipPosition::Left,
+                    bg_color: self.has_failed.then_some(self.tooltip_bg_color_failed),
                     ..Default::default()
                 };
-                if self.has_failed {
-                    options.bg_color = self.tooltip_bg_color_failed;
-                }
                 cx.widget_action(
                     uid,
                     TooltipAction::HoverIn {

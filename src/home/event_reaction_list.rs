@@ -12,8 +12,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.COLOR_BUTTON_GREY = #B6BABF
-
     mod.widgets.ReactionList = #(ReactionList::register_widget(vm)) {
         width: Fill,
         height: Fit,
@@ -30,10 +28,10 @@ script_mod! {
             draw_bg +: {
                 // Anything that we apply over must be an `instance`,
                 // and their names must be distinct from the base Button type.
-                reaction_bg_color: instance(mod.widgets.COLOR_BUTTON_GREY)
-                reaction_border_color: instance(#001A11)
+                reaction_bg_color: instance(mod.widgets.COLOR_REACTION_BG)
+                reaction_border_color: instance(mod.widgets.COLOR_REACTION_BORDER)
                 // Override values from the base Button type.
-                color_hover: #fef65b
+                color_hover: (mod.widgets.COLOR_REACTION_HOVER_TINT)
                 hover: 0.0
                 border_size: 1.5
                 border_radius: 3.0
@@ -60,7 +58,7 @@ script_mod! {
             }
             draw_text +: {
                 text_style: REGULAR_TEXT {font_size: 10},
-                color: #000000
+                color: (mod.widgets.COLOR_TEXT_BODY)
                 get_color: fn() -> vec4 {
                     return self.color;
                 }
@@ -81,7 +79,7 @@ pub struct ReactionData {
     pub room_id: OwnedRoomId,
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct ReactionList {
     #[uid] uid: WidgetUid,
     #[redraw] #[rust] area: Area,
@@ -97,6 +95,15 @@ pub struct ReactionList {
     /// Consists of: `(reaction count, total senders, num sent by me)`.
     #[rust] last_reaction_counts: Option<(usize, usize, usize)>,
 }
+
+impl ScriptHook for ReactionList {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // A reload never reaches the buttons we built from the template,
+        // so we forget the last counts to make the next `set_list()` rebuild them.
+        self.last_reaction_counts = None;
+    }
+}
+
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if self.children.is_empty() {
@@ -157,8 +164,7 @@ impl Widget for ReactionList {
                     }
                     // Touch never sends a hover-out, so clear the highlight the long press set.
                     else if fue.has_long_press_occurred {
-                        let mut reaction_button = button_ref.clone();
-                        script_apply_eval!(cx, reaction_button, { draw_bg +: { hover: 0.0 } });
+                        button_ref.reset_hover(cx);
                     }
                     break;
                 }
@@ -188,8 +194,9 @@ impl ReactionList {
                 reaction_data,
             },
         );
-        let mut button_ref = button_ref.clone();
-        script_apply_eval!(cx, button_ref, { draw_bg +: { hover: 1.0 } });
+        if let Some(mut button) = button_ref.borrow_mut() {
+            button.animator_cut(cx, ids!(hover.on));
+        }
         cx.set_cursor(MouseCursor::Hand);
     }
 
@@ -201,8 +208,7 @@ impl ReactionList {
         button_ref: &ButtonRef,
     ) {
         cx.widget_action(self.widget_uid(),  RoomScreenTooltipActions::HoverOut);
-        let mut button_ref = button_ref.clone();
-        script_apply_eval!(cx, button_ref, { draw_bg +: { hover: 0.0 } });
+        button_ref.reset_hover(cx);
         cx.set_cursor(MouseCursor::Default);
     }
 }

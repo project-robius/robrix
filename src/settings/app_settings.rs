@@ -78,7 +78,7 @@ script_mod! {
         margin: Inset{left: 14, top: 0, bottom: 6, right: 5}
         padding: 0,
         font_size: 11,
-        font_color: #666,
+        font_color: (COLOR_TEXT_MUTED),
         text_style_normal: MESSAGE_TEXT_STYLE { font_size: 11 },
         list_item_walk: Walk{width: Fill, height: Fit, margin: Inset{bottom: 3}}
     }
@@ -233,7 +233,7 @@ script_mod! {
             border_color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
             border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER),
             border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER),
-            mark_color: vec4(0.0, 0.0, 0.0, 0.0),
+            mark_color: (COLOR_TRANSPARENT),
             mark_color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
         }
     }

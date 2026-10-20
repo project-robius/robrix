@@ -15,7 +15,7 @@ use crate::{
     avatar_cache::{get_or_fetch_avatar, AvatarCacheEntry},
     home::rooms_list::RoomsListRef,
     room::FetchedRoomAvatar,
-    shared::{avatar::{AvatarImage, TextAvatarBgColor, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand},
+    shared::{avatar::{AvatarImage, TextAvatarBgColor, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
     utils::{self, RoomNameId},
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
@@ -41,7 +41,7 @@ script_mod! {
         align: Align{x: 0.0, y: 0.0}
 
         color: (COLOR_TRANSPARENT)
-        color_focus: #xB6D3F2
+        color_focus: (COLOR_LIST_ITEM_BG_FOCUS)
         color_hover: (COLOR_LIST_ITEM_BG_HOVER)
 
         // So the way this works is that we move the popup_frame wrapper view,
@@ -61,7 +61,7 @@ script_mod! {
                     border_radius: 5.0
                     border_size: 1.0
                     border_color: (COLOR_SECONDARY)
-                    shadow_color: #0006
+                    shadow_color: (COLOR_SHADOW_STRONG)
                     shadow_radius: 12.0
                     shadow_offset: vec2(0.0, 3.0)
                 }
@@ -239,7 +239,7 @@ impl Widget for MentionablePopup {
                 }
                 let row = match self.items.get(index) {
                     Some(mention) => {
-                        let mut row_widget = build_row(cx, &mut list, index, mention);
+                        let row_widget = build_row(cx, &mut list, index, mention);
                         let color = if self.keyboard_focus_index == Some(index) {
                             self.color_focus
                         } else if self.pointer_hover_index == Some(index) {
@@ -247,7 +247,7 @@ impl Widget for MentionablePopup {
                         } else {
                             self.color
                         };
-                        script_apply_eval!(cx, row_widget, { draw_bg.color: #(color) });
+                        set_view_bg_color(cx, &row_widget.as_view(), color);
                         row_widget
                     }
                     None if self.is_loading => status_row(cx, &mut list, index, true, &self.loading_message),

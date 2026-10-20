@@ -77,7 +77,7 @@ script_mod! {
                 width: Fill, height: Fit,
                 draw_text +: {
                     text_style: TITLE_TEXT { font_size: 16 },
-                    color: #000
+                    color: (COLOR_TEXT_TITLE)
                 }
                 text: "Upload File"
             }
@@ -89,12 +89,12 @@ script_mod! {
                 align: Align{x: 0.5, y: 0.5}
                 icon_walk: Walk{width: 18, height: 18, margin: 0}
                 draw_icon.svg: (ICON_CLOSE)
-                draw_icon.color: #666
+                draw_icon.color: (COLOR_TEXT_MUTED)
                 draw_bg +: {
                     border_size: 0
-                    color: #0000
-                    color_hover: #00000015
-                    color_down: #00000025
+                    color: (COLOR_TRANSPARENT)
+                    color_hover: (COLOR_FLAT_ICON_BUTTON_BG_HOVER)
+                    color_down: (COLOR_FLAT_ICON_BUTTON_BG_DOWN)
                 }
             }
         }
@@ -246,36 +246,41 @@ script_mod! {
 
                     no_preview_icon_badge := RoundedView {
                         width: 110, height: 110, align: Align{x: 0.5, y: 0.5}, show_bg: true,
-                        draw_bg +: { pixel: fn() {
-                            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                            let cx = self.rect_size.x * 0.5
-                            let cy = self.rect_size.y * 0.5
-                            let disc = 46.0
-                            sdf.circle(cx, cy, disc)
-                            sdf.fill(#D6E6FF)
-                            let pw = 38.0
-                            let ph = 48.0
-                            let px = cx - pw * 0.5
-                            let py = cy - ph * 0.5
-                            let fold = 13.0
-                            // Full rounded page; the fold is a triangle over the top-right corner.
-                            sdf.box(px, py, pw, ph, 4.0)
-                            sdf.fill(#FFFFFF)
-                            sdf.move_to(px + pw - fold, py)
-                            sdf.line_to(px + pw, py + fold)
-                            sdf.line_to(px + pw - fold, py + fold)
-                            sdf.close_path()
-                            sdf.fill(#7AA8E8)
-                            let lx = px + 7.0
-                            let lw = pw - 14.0
-                            sdf.box(lx, py + fold + 7.0, lw * 0.6, 3.0, 1.5)
-                            sdf.fill(#7AA8E8)
-                            sdf.box(lx, py + fold + 16.0, lw, 3.0, 1.5)
-                            sdf.fill(#7AA8E8)
-                            sdf.box(lx, py + fold + 25.0, lw, 3.0, 1.5)
-                            sdf.fill(#7AA8E8)
-                            return sdf.result
-                        } }
+                        draw_bg +: {
+                            color_disc: uniform((COLOR_NO_PREVIEW_ICON_DISC))
+                            color_page: uniform((COLOR_NO_PREVIEW_ICON_PAGE))
+                            color_accent: uniform((COLOR_NO_PREVIEW_ICON_ACCENT))
+                            pixel: fn() {
+                                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                                let cx = self.rect_size.x * 0.5
+                                let cy = self.rect_size.y * 0.5
+                                let disc = 46.0
+                                sdf.circle(cx, cy, disc)
+                                sdf.fill(self.color_disc)
+                                let pw = 38.0
+                                let ph = 48.0
+                                let px = cx - pw * 0.5
+                                let py = cy - ph * 0.5
+                                let fold = 13.0
+                                // Full rounded page; the fold is a triangle over the top-right corner.
+                                sdf.box(px, py, pw, ph, 4.0)
+                                sdf.fill(self.color_page)
+                                sdf.move_to(px + pw - fold, py)
+                                sdf.line_to(px + pw, py + fold)
+                                sdf.line_to(px + pw - fold, py + fold)
+                                sdf.close_path()
+                                sdf.fill(self.color_accent)
+                                let lx = px + 7.0
+                                let lw = pw - 14.0
+                                sdf.box(lx, py + fold + 7.0, lw * 0.6, 3.0, 1.5)
+                                sdf.fill(self.color_accent)
+                                sdf.box(lx, py + fold + 16.0, lw, 3.0, 1.5)
+                                sdf.fill(self.color_accent)
+                                sdf.box(lx, py + fold + 25.0, lw, 3.0, 1.5)
+                                sdf.fill(self.color_accent)
+                                return sdf.result
+                            }
+                        }
                     }
 
                     Label {

@@ -125,7 +125,7 @@ impl Widget for SettingsScreen {
         // but still resets animator-driven controls and `script_apply_eval`-driven
         // bits (avatar, button colors). Re-apply just those.
         // Never re-`set_text` user-editable inputs here, that would wipe in-progress edits.
-        if let Event::ScriptReapply = event {
+        if matches!(event, Event::ScriptReapply | Event::LiveEdit) {
             if let Some(app_state) = scope.data.get::<AppState>() {
                 self.populate_subwidgets(cx, PopulateMode::AfterReapply, None, app_state);
             }
@@ -225,7 +225,7 @@ impl SettingsScreen {
     }
 
     /// Single place deciding which sub-widgets get (re)synced and how.
-    /// Both the initial-open and `Event::ScriptReapply` paths route here.
+    /// Both the initial-open and `Event::ScriptReapply`/`Event::LiveEdit` paths route here.
     ///
     /// `AppSettings` is missing from `AfterReapply` on purpose, since it
     /// restores itself inline from `on_after_apply` to avoid the flicker

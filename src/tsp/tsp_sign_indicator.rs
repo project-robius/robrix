@@ -118,7 +118,7 @@ impl Widget for TspSignIndicator {
                     text: text.to_string(),
                     widget_rect: area.rect(cx),
                     options: CalloutTooltipOptions {
-                        bg_color,
+                        bg_color: Some(bg_color),
                         ..Default::default()
                     },
                 },

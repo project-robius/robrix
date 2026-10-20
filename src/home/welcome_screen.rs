@@ -12,8 +12,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.WELCOME_TEXT_MUTED = #5C6478
-
     // A tip in the welcome screen's grid, which fits three tips per row
     // if the grid is at least 675px wide, otherwise one per row.
     mod.widgets.WelcomeTip = View {
@@ -54,7 +52,7 @@ script_mod! {
                 body := Label {
                     width: Fill, padding: 0
                     draw_text +: {
-                        color: (mod.widgets.WELCOME_TEXT_MUTED)
+                        color: (COLOR_WELCOME_TIP_BODY_TEXT)
                         text_style: theme.font_regular { font_size: 12, line_spacing: 1.4 }
                     }
                 }
@@ -93,7 +91,7 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: #F3EFFD
+            color: (COLOR_WELCOME_BG_TOP)
             color_2: (COLOR_PRIMARY)
             border_radius: 0.0
         }
@@ -138,10 +136,10 @@ script_mod! {
                 padding: Inset{left: 24, right: 24, top: 22, bottom: 22}
                 draw_bg +: {
                     color: (COLOR_ROBRIX_PURPLE)
-                    color_2: #1F7BF2
+                    color_2: (COLOR_WELCOME_ROOM_PANEL_BG_RIGHT)
                     gradient_fill_horizontal: 1.0
                     border_radius: 16.0
-                    shadow_color: #x572DCC40
+                    shadow_color: (COLOR_WELCOME_ROOM_PANEL_SHADOW)
                     shadow_radius: 18.0
                     shadow_offset: vec2(0.0, 6.0)
                 }
@@ -154,17 +152,17 @@ script_mod! {
                     RoundedView {
                         width: 52, height: 52
                         align: Align{x: 0.5, y: 0.5}
-                        draw_bg +: { color: #xFFFFFF2E, border_radius: 14.0 }
+                        draw_bg +: { color: (COLOR_WELCOME_ROOM_PANEL_ICON_BG), border_radius: 14.0 }
                         Icon {
                             icon_walk: Walk{width: 26, height: 26}
-                            draw_icon +: { svg: (ICON_REPLY_IN_THREAD), color: #fff }
+                            draw_icon +: { svg: (ICON_REPLY_IN_THREAD), color: (COLOR_TEXT_ON_ACCENT) }
                         }
                     }
                     Label {
                         width: Fill, padding: 0
                         text: "Check out our Matrix room"
                         draw_text +: {
-                            color: #fff
+                            color: (COLOR_TEXT_ON_ACCENT)
                             text_style: theme.font_bold { font_size: 17 }
                         }
                     }
@@ -183,7 +181,7 @@ script_mod! {
                             width: Fill, padding: 0
                             text: "Feel free to ask questions, share feedback, or catch up on the latest announcements."
                             draw_text +: {
-                                color: #xFFFFFFD9
+                                color: (COLOR_TEXT_ON_ACCENT_MUTED)
                                 text_style: theme.font_regular { font_size: 13, line_spacing: 1.35 }
                             }
                         }
@@ -192,7 +190,7 @@ script_mod! {
                             padding: Inset{left: 14, right: 16, top: 10, bottom: 10}
                             spacing: 8
                             draw_bg +: {
-                                color: #fff
+                                color: (COLOR_WELCOME_ROOM_PANEL_BUTTON_BG)
                                 color_hover: (COLOR_BG_LAVENDER_HOVER)
                                 color_down: (COLOR_BG_LAVENDER_DOWN)
                                 border_radius: 8.0
@@ -216,11 +214,11 @@ script_mod! {
                 flow: Down, spacing: 20
                 padding: 26
                 draw_bg +: {
-                    color: #fff
+                    color: (COLOR_PRIMARY)
                     border_radius: 16.0
                     border_size: 1.0
-                    border_color: #x00000010
-                    shadow_color: #x1C274C14
+                    border_color: (COLOR_WELCOME_TIPS_PANEL_BORDER)
+                    shadow_color: (COLOR_WELCOME_TIPS_PANEL_SHADOW)
                     shadow_radius: 16.0
                     shadow_offset: vec2(0.0, 4.0)
                 }
@@ -251,10 +249,10 @@ script_mod! {
                             body_view +: { body +: { text: "Open rooms from the rooms list on the left, then drag & drop tabs to rearrange them into multiple panes, side by side!" } }
                         }
                         hint +: {
-                            draw_bg.color: #xF4F1FE
+                            draw_bg.color: (COLOR_WELCOME_TIP_HINT_BG_WORKSPACE)
                             hint_label +: {
                                 text: "There's no limits on dockable tabs, so go wild!"
-                                draw_text.color: #x4A2BA8
+                                draw_text.color: (COLOR_WELCOME_TIP_HINT_TEXT_WORKSPACE)
                             }
                         }
                     }
@@ -263,7 +261,7 @@ script_mod! {
                         upper +: {
                             header +: {
                                 badge +: {
-                                    draw_bg.color: #xE3F0FF
+                                    draw_bg.color: (COLOR_WELCOME_TIP_BADGE_BG_SETTINGS)
                                     icon +: { draw_icon +: { svg: (ICON_SETTINGS), color: (COLOR_ACTIVE_PRIMARY) } }
                                 }
                                 title +: { text: "Explore more options" }
@@ -271,10 +269,10 @@ script_mod! {
                             body_view +: { body +: { text: "Tap/click your profile icon to open all app and user settings." } }
                         }
                         hint +: {
-                            draw_bg.color: #xEEF6FF
+                            draw_bg.color: (COLOR_WELCOME_TIP_HINT_BG_SETTINGS)
                             hint_label +: {
                                 text: "Try zooming the UI! It's super fast and fine-tuned; keyboard shortcuts work too."
-                                draw_text.color: #x0B5CAB
+                                draw_text.color: (COLOR_WELCOME_TIP_HINT_TEXT_SETTINGS)
                             }
                         }
                     }
@@ -283,18 +281,18 @@ script_mod! {
                         upper +: {
                             header +: {
                                 badge +: {
-                                    draw_bg.color: #xDDF6F5
-                                    icon +: { draw_icon +: { svg: (ICON_JUMP), color: #x039E99 } }
+                                    draw_bg.color: (COLOR_WELCOME_TIP_BADGE_BG_NAVIGATION)
+                                    icon +: { draw_icon +: { svg: (ICON_JUMP), color: (COLOR_WELCOME_TIP_ICON_NAVIGATION) } }
                                 }
                                 title +: { text: "Use mouse buttons" }
                             }
                             body_view +: { body +: { text: "Just like a browser: navigate backwards and forwards through your history of visited rooms, or middle-click to close a tab." } }
                         }
                         hint +: {
-                            draw_bg.color: #xEAF9F8
+                            draw_bg.color: (COLOR_WELCOME_TIP_HINT_BG_NAVIGATION)
                             hint_label +: {
                                 text: "Full keyboard navigation and custom shortcuts are coming soon!"
-                                draw_text.color: #x02706C
+                                draw_text.color: (COLOR_WELCOME_TIP_HINT_TEXT_NAVIGATION)
                             }
                         }
                     }
@@ -312,7 +310,7 @@ script_mod! {
                     align: Align{x: 0.5}
                     text: "Robrix is still being actively developed. You might need another client to do certain administrative actions for now."
                     draw_text +: {
-                        color: #x6B7287
+                        color: (COLOR_WELCOME_FOOTER_TEXT)
                         text_style: theme.font_regular { font_size: 12, line_spacing: 1.35 }
                     }
                 }

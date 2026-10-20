@@ -58,7 +58,7 @@ script_mod! {
                     text_style: REGULAR_TEXT {
                         font_size: 9,
                     },
-                    color: #A,
+                    color: (COLOR_MODAL_TIP_TEXT),
                 }
                 text: "Tip: hold Shift when clicking a button to bypass this prompt."
             }

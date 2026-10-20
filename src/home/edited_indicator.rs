@@ -19,7 +19,6 @@ script_mod! {
 
 
     mod.widgets.EDITED_INDICATOR_FONT_SIZE = 9.5
-    mod.widgets.EDITED_INDICATOR_FONT_COLOR = #666666
 
     mod.widgets.EditedIndicator = #(EditedIndicator::register_widget(vm)) {
         visible: false, // default to hidden

@@ -81,13 +81,13 @@ script_mod! {
         padding: 0,
         draw_bg +: {
             border_radius: #(BUTTON_SIZE / 2.0)
-            color: #0000
-            color_hover: #FFFFFF26
-            color_down: #FFFFFF40
+            color: (COLOR_TRANSPARENT)
+            color_hover: (COLOR_IMAGE_VIEWER_BUTTON_BG_HOVER)
+            color_down: (COLOR_IMAGE_VIEWER_BUTTON_BG_DOWN)
         }
         draw_icon +: {
             svg: (ICON_ZOOM_OUT),
-            color: #FFF
+            color: (COLOR_IMAGE_VIEWER_FG)
         }
         icon_walk: Walk{width: 27, height: 27}
     }
@@ -99,8 +99,8 @@ script_mod! {
         draw_bg +: {
             color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
             border_size: 1.0
-            border_color: #FFFFFF29
-            shadow_color: #00000047
+            border_color: (COLOR_IMAGE_VIEWER_META_BORDER)
+            shadow_color: (COLOR_IMAGE_VIEWER_META_SHADOW)
             shadow_radius: 24.0
             shadow_offset: vec2(0.0, 8.0)
 
@@ -199,7 +199,7 @@ script_mod! {
             ts_label +: {
                 draw_text +: {
                     text_style: theme.font_regular {font_size: 9.5},
-                    color: #FFFFFFBF
+                    color: (COLOR_IMAGE_VIEWER_FG_MUTED)
                 }
             }
         }
@@ -209,7 +209,7 @@ script_mod! {
             text: "·"
             draw_text +: {
                 text_style: theme.font_regular {font_size: 9.5},
-                color: #FFFFFFBF
+                color: (COLOR_IMAGE_VIEWER_FG_MUTED)
             }
         }
         image_size := Label {
@@ -217,7 +217,7 @@ script_mod! {
             padding: 0
             draw_text +: {
                 text_style: theme.font_regular {font_size: 9.5},
-                color: #FFFFFFBF
+                color: (COLOR_IMAGE_VIEWER_FG_MUTED)
             }
         }
     }
@@ -244,7 +244,7 @@ script_mod! {
         image_layer := View {
             width: Fill, height: Fill,
             align: Align{x: 0.5, y: 0.5}
-            flow: Down
+            flow: Overlay
 
             rotated_image_container := View {
                 width: Fill, height: Fill,
@@ -258,7 +258,7 @@ script_mod! {
                 }
             }
 
-            footer := View {
+            status_view := View {
                 width: Fill, height: Fit,
                 flow: Right
                 padding: 10
@@ -271,7 +271,7 @@ script_mod! {
                     loading_spinner := LoadingSpinner {
                         width: 40, height: 40,
                         draw_bg +: {
-                            color: #FFF
+                            color: (COLOR_IMAGE_VIEWER_FG)
                             stroke_width: 3.0
                         }
                     }
@@ -283,7 +283,7 @@ script_mod! {
                     Icon {
                         draw_icon +: {
                             svg: (ICON_FORBIDDEN),
-                            color: #FFF,
+                            color: (COLOR_IMAGE_VIEWER_FG),
                         }
                         icon_walk: Walk{ width: 30, height: 30 }
                     }
@@ -295,7 +295,7 @@ script_mod! {
                     text: "Loading image...",
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 14},
-                        color: #FFF
+                        color: (COLOR_IMAGE_VIEWER_FG)
                     }
                 }
             }
@@ -327,7 +327,7 @@ script_mod! {
                         max_lines: 4
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 12},
-                            color: #FFF
+                            color: (COLOR_IMAGE_VIEWER_FG)
                         }
                     }
 
@@ -336,7 +336,7 @@ script_mod! {
                         max_lines: 2
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 10},
-                            color: #FFFFFFBF
+                            color: (COLOR_IMAGE_VIEWER_FG_MUTED)
                         }
                     }
                 }
@@ -421,7 +421,7 @@ script_mod! {
                             text_overflow: Ellipsis
                             draw_text +: {
                                 text_style: USERNAME_TEXT_STYLE {},
-                                color: #FFF
+                                color: (COLOR_IMAGE_VIEWER_FG)
                             }
                         }
 
@@ -992,7 +992,7 @@ impl MatchEvent for ImageViewer {
                     }
                     LoadState::FinishedBackgroundDecoding => {
                         self.is_loaded = true;
-                        self.hide_footer(cx);
+                        self.hide_status_view(cx);
                     },
                     LoadState::Error(error) => {
                         self.show_error(cx, error);
@@ -1219,19 +1219,19 @@ impl ImageViewer {
         self.apply_image_transform(cx);
     }
 
-    /// Shows a loading message in the footer.
+    /// Shows a loading message atop the image.
     ///
     /// The loading spinner is shown, the error icon is hidden, and the
     /// status label is set to "Loading...".
     pub fn show_loading(&mut self, cx: &mut Cx) {
-        let footer = self.view.view(cx, ids!(image_layer.footer));
-        footer.view(cx, ids!(image_viewer_loading_spinner_view))
+        let status_view = self.view.view(cx, ids!(image_layer.status_view));
+        status_view.view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, true);
-        footer.label(cx, ids!(image_viewer_status_label))
+        status_view.label(cx, ids!(image_viewer_status_label))
             .set_text(cx, "Loading...");
-        footer.view(cx, ids!(image_viewer_forbidden_view))
+        status_view.view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
-        footer.set_visible(cx, true);
+        status_view.set_visible(cx, true);
         // Snap the overlay to visible immediately on initial open (no animation).
         self.ui_overlay_visible = true;
         self.is_hiding_overlay = false;
@@ -1242,7 +1242,7 @@ impl ImageViewer {
         self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
     }
 
-    /// Shows an error message in the footer.
+    /// Shows an error message atop the image.
     ///
     /// The loading spinner is hidden, the error icon is shown, and the
     /// status label is set to the error message provided.
@@ -1250,20 +1250,20 @@ impl ImageViewer {
         if self.is_loaded {
             return;
         }
-        let footer = self.view.view(cx, ids!(image_layer.footer));
-        footer.view(cx, ids!(image_viewer_loading_spinner_view))
+        let status_view = self.view.view(cx, ids!(image_layer.status_view));
+        status_view.view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, false);
-        footer.view(cx, ids!(image_viewer_forbidden_view))
+        status_view.view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, true);
-        footer.label(cx, ids!(image_viewer_status_label))
+        status_view.label(cx, ids!(image_viewer_status_label))
             .set_text(cx, &error.to_string());
-        footer.set_visible(cx, true);
+        status_view.set_visible(cx, true);
     }
 
-    /// Hides the footer of the image viewer.
-    pub fn hide_footer(&mut self, cx: &mut Cx) {
-        let footer = self.view.view(cx, ids!(image_layer.footer));
-        footer.set_visible(cx, false);
+    /// Hides the loading/error status shown atop the image.
+    pub fn hide_status_view(&mut self, cx: &mut Cx) {
+        let status_view = self.view.view(cx, ids!(image_layer.status_view));
+        status_view.set_visible(cx, false);
     }
 
     /// Sets the metadata view in the image viewer with the provided metadata.

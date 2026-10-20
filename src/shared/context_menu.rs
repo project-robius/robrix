@@ -27,12 +27,12 @@ script_mod! {
         draw_bg +: {
             color: (COLOR_PRIMARY)
             color_hover: (COLOR_LIST_ITEM_BG_HOVER)
-            color_down: #DCDCDC
+            color_down: (COLOR_CONTEXT_MENU_ITEM_BG_DOWN)
             border_radius: 4.0
         }
-        draw_icon.color: #000
+        draw_icon.color: (COLOR_TEXT_BODY)
         draw_text +: {
-            color: #000, color_hover: #000, color_down: #000
+            color: (COLOR_TEXT_BODY), color_hover: (COLOR_TEXT_BODY), color_down: (COLOR_TEXT_BODY)
             text_style: REGULAR_TEXT {font_size: 11}
         }
     }
@@ -40,8 +40,8 @@ script_mod! {
     mod.widgets.ContextMenuDangerButton = mod.widgets.ContextMenuButton {
         draw_bg +: {
             color: (COLOR_BG_DANGER_RED)
-            color_hover: #F0D4D4
-            color_down: #E0B8B8
+            color_hover: (COLOR_BG_DANGER_RED_HOVER)
+            color_down: (COLOR_BG_DANGER_RED_DOWN)
         }
         draw_icon.color: (COLOR_FG_DANGER_RED)
         draw_text +: {
@@ -70,7 +70,7 @@ script_mod! {
         // Show a slightly darkened translucent background to make the menu stand out.
         show_bg: true
         draw_bg +: {
-            color: #0000004d
+            color: (COLOR_CONTEXT_MENU_OVERLAY_BG)
         }
     }
 
@@ -88,7 +88,7 @@ script_mod! {
             color: (COLOR_PRIMARY)
             border_radius: 5.0
             border_size: 0.5
-            border_color: #888
+            border_color: (COLOR_CONTEXT_MENU_BORDER)
         }
     }
 }

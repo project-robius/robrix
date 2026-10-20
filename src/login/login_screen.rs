@@ -16,10 +16,6 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    // A lighter version of the main Robrix purple color
-    mod.widgets.COLOR_LOGIN_BG_TOP = #EEEAFA
-    mod.widgets.COLOR_LOGIN_BG_BOTTOM = #FFFFFF
-
     mod.widgets.LoginButton = mod.widgets.RobrixIconButton {
         width: Fill {max: 275}, height: Fit
         padding: Inset{top: 12.5, bottom: 12.5, left: 10, right: 10}
@@ -42,16 +38,16 @@ script_mod! {
         padding: Inset{top: 3, left: 2, right: 2}
         align: Align{x: 0.5, y: 0.5}
 
-        LineH { draw_bg.color: #C8C8C8 }
+        LineH { draw_bg.color: (COLOR_LABELED_DIVIDER) }
         divider_label := Label {
             width: Fit, height: Fit
             padding: Inset{left: 4, right: 4, top: 0, bottom: 0}
             draw_text +: {
-                color: #8C8C8C
+                color: (COLOR_TEXT_HINT)
                 text_style: REGULAR_TEXT {font_size: 9}
             }
         }
-        LineH { draw_bg.color: #C8C8C8 }
+        LineH { draw_bg.color: (COLOR_LABELED_DIVIDER) }
     }
 
     mod.widgets.LoginHint = Label {
@@ -60,7 +56,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
         padding: 0
         draw_text +: {
-            color: #8C8C8C
+            color: (COLOR_TEXT_HINT)
             text_style: REGULAR_TEXT {font_size: 9.5}
         }
     }
@@ -184,7 +180,7 @@ script_mod! {
 
                         query_loading_spinner := LoadingSpinner {
                             width: 13, height: 13
-                            draw_bg.color: #8C8C8C
+                            draw_bg.color: (COLOR_TEXT_HINT)
                         }
 
                         query_status_label := mod.widgets.LoginHint {
@@ -314,6 +310,8 @@ pub struct LoginScreen {
 
     /// While a browser-based login is in flight, the login buttons stay disabled.
     #[rust] is_login_pending: bool,
+    /// Whether the password login button is shown as enabled, or `None` if we need to restyle it.
+    #[rust] is_login_button_enabled: Option<bool>,
     /// The homeserver we last queried info for, or `None` if we haven't done any queries yet.
     #[rust] queried_homeserver: Option<String>,
     /// The login methods that are currently shown.
@@ -348,6 +346,11 @@ enum LoginMethodsState<'a> {
 impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        // A reapply resets the login button to its disabled look, so we restyle it.
+        if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
+            self.is_login_button_enabled = None;
+            self.enable_login_button(cx);
+        }
         if self.homeserver_query_timer.is_event(event).is_some() {
             self.homeserver_query_timer = Timer::empty();
             self.query_login_methods(cx);
@@ -549,6 +552,10 @@ impl LoginScreen {
     fn enable_login_button(&mut self, cx: &mut Cx) {
         let is_ready = !self.view.text_input(cx, ids!(user_id_input)).text().trim().is_empty()
             && !self.view.password_text_input(cx, ids!(password_input)).text().is_empty();
+        if self.is_login_button_enabled == Some(is_ready) {
+            return;
+        }
+        self.is_login_button_enabled = Some(is_ready);
         let mut login_button = self.view.button(cx, ids!(login_button));
         if is_ready {
             script_apply_eval!(cx, login_button, {

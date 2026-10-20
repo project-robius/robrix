@@ -708,14 +708,16 @@ impl AccountSettings {
             );
         }
 
+        let is_avatar_change_pending = self.view.widget(cx, ids!(upload_avatar_spinner)).visible()
+            || self.view.widget(cx, ids!(delete_avatar_spinner)).visible();
         Self::enable_upload_avatar_button(
             cx,
-            true,
+            !is_avatar_change_pending,
             &self.view.button(cx, ids!(upload_avatar_button))
         );
         Self::enable_delete_avatar_button(
             cx,
-            own_profile.avatar_state.has_avatar(),
+            !is_avatar_change_pending && own_profile.avatar_state.has_avatar(),
             &self.view.button(cx, ids!(delete_avatar_button))
         );
     }
@@ -761,7 +763,8 @@ impl AccountSettings {
         //   * Initial: write the cached username + user_id, buttons start disabled.
         //   * AfterReapply: leave the input alone to preserve in-progress edits,
         //     skip user_id (already restored in `on_after_apply`),
-        //     and re-derive the button enable state from whether the input still matches.
+        //     and re-derive the button enable state from whether the input still matches
+        //     and whether a name save is in flight.
         let modified = match mode {
             PopulateMode::Initial => {
                 self.view.label(cx, ids!(user_id))
@@ -771,7 +774,8 @@ impl AccountSettings {
                 false
             }
             PopulateMode::AfterReapply => {
-                self.view.text_input(cx, ids!(display_name_input)).text() != cached_name
+                !self.view.widget(cx, ids!(save_name_spinner)).visible()
+                    && self.view.text_input(cx, ids!(display_name_input)).text() != cached_name
             }
         };
 

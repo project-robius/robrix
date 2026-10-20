@@ -48,11 +48,11 @@ script_mod! {
             color_down: (COLOR_ACTIVE_PRIMARY_DOWN)
             color_disabled: (COLOR_BG_DISABLED)
 
-            border_color: #0000
-            border_color_hover: #0000
-            border_color_down: #0000
-            border_color_focus: #0000
-            border_color_disabled: #0000
+            border_color: (COLOR_TRANSPARENT)
+            border_color_hover: (COLOR_TRANSPARENT)
+            border_color_down: (COLOR_TRANSPARENT)
+            border_color_focus: (COLOR_TRANSPARENT)
+            border_color_disabled: (COLOR_TRANSPARENT)
 
             // Disable gradient (color_2) by default
             color_2: vec4(-1.0, -1.0, -1.0, -1.0)

@@ -31,7 +31,7 @@ script_mod! {
         draw_bg +: {
             color: (COLOR_PRIMARY)
             border_radius: 5.0
-            border_color: #E34B4F
+            border_color: (COLOR_FAILED_SEND_BANNER_BORDER)
             border_size: 2.0
         }
 

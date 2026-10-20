@@ -11,7 +11,7 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: uniform(#x000),
+            color: uniform((COLOR_TEXT_BODY)),
             anim_time: uniform(0.0),
             freq: uniform(0.9),  // Animation frequency
             phase_offset: uniform(5.0), // Phase difference

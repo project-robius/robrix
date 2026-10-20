@@ -27,9 +27,9 @@ script_mod! {
         enable_long_press: true
         draw_bg +: {
             border_radius: 5.0
-            color: #0000
-            color_hover: #x00000014
-            color_down: #x00000026
+            color: (COLOR_TRANSPARENT)
+            color_hover: (COLOR_NAV_HISTORY_BUTTON_BG_HOVER)
+            color_down: (COLOR_NAV_HISTORY_BUTTON_BG_DOWN)
         }
         draw_icon.color: (COLOR_FG_DISABLED)
         icon_walk: Walk{width: 16, height: 16}
@@ -40,6 +40,9 @@ script_mod! {
         margin: Inset{left: 8}
         spacing: 2
         align: Align{y: 0.5}
+
+        icon_color: (COLOR_TEXT)
+        icon_color_disabled: (COLOR_FG_DISABLED)
 
         go_back_button := mod.widgets.NavHistoryButton {
             draw_icon +: { svg: (ICON_ARROW_LEFT) }
@@ -55,6 +58,8 @@ script_mod! {
 pub struct NavHistoryButtons {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    #[live] icon_color: Vec4f,
+    #[live] icon_color_disabled: Vec4f,
     #[rust] tooltip: RoomActionTooltip,
     #[rust] long_press: LongPressWatcher,
     #[rust] are_tooltips_hidden: bool,
@@ -97,7 +102,7 @@ impl Widget for NavHistoryButtons {
                 }
             }
             // A reapply resets the buttons to their DSL defaults, so we enable them again.
-            Event::ScriptReapply => self.enable_buttons(cx, self.can_go_back, self.can_go_forward),
+            Event::LiveEdit | Event::ScriptReapply => self.enable_buttons(cx, self.can_go_back, self.can_go_forward),
             _ => {}
         }
     }
@@ -121,19 +126,14 @@ impl NavHistoryButtons {
         self.can_go_back = can_go_back;
         self.can_go_forward = can_go_forward;
         for (button_id, enable) in [(ids!(go_back_button), can_go_back), (ids!(go_forward_button), can_go_forward)] {
-            let mut button = self.view.button(cx, button_id);
-            if enable {
-                script_apply_eval!(cx, button, {
-                    enabled: true,
-                    draw_icon.color: mod.widgets.COLOR_TEXT,
-                });
-            } else {
+            let button = self.view.button(cx, button_id);
+            if !enable {
                 // A button that we disable while it's hovered shouldn't stay highlighted.
                 button.reset_hover(cx);
-                script_apply_eval!(cx, button, {
-                    enabled: false,
-                    draw_icon.color: mod.widgets.COLOR_FG_DISABLED,
-                });
+            }
+            button.set_enabled(cx, enable);
+            if let Some(mut inner) = button.borrow_mut() {
+                inner.draw_icon.color = if enable { self.icon_color } else { self.icon_color_disabled };
             }
         }
         self.view.redraw(cx);

@@ -42,7 +42,7 @@ script_mod! {
             padding: 0,
             flow: Flow.Right { wrap: false },
             draw_text +: {
-                color: #x0,
+                color: (COLOR_TEXT_BODY),
                 text_style: TITLE_TEXT { font_size: 10}
             }
             text: ""
@@ -50,7 +50,7 @@ script_mod! {
     }
 }
 /// The widget that displays a list of read receipts.
-#[derive(Script, ScriptHook, WidgetRef, WidgetSet, WidgetRegister)]
+#[derive(Script, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct AvatarRow {
     #[live]
     draw_text: DrawText,
@@ -82,6 +82,14 @@ pub struct AvatarRow {
     /// The timeline these read receipts belong to.
     #[rust]
     timeline_kind: Option<TimelineKind>,
+}
+
+impl ScriptHook for AvatarRow {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // A reload never reaches the avatars and label we built from templates,
+        // so we forget the receipts to make the next `set_avatar_row()` rebuild them.
+        self.read_receipts = None;
+    }
 }
 
 impl WidgetNode for AvatarRow {

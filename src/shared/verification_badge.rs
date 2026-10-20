@@ -42,17 +42,13 @@ script_mod! {
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_YES_BG),
-                get_color: fn() -> vec4 {
-                    return #xFFFFFFFF;
-                }
+                color: (COLOR_TEXT_ON_ACCENT),
             }
         }
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_YES),
-                get_color: fn() -> vec4 {
-                    return (COLOR_FG_ACCEPT_GREEN);
-                }
+                color: (COLOR_FG_ACCEPT_GREEN),
             }
         }
     }
@@ -65,17 +61,13 @@ script_mod! {
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_NO_BG),
-                get_color: fn() -> vec4 {
-                    return #xFFFFFFFF;
-                }
+                color: (COLOR_TEXT_ON_ACCENT),
             }
         }
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_NO),
-                get_color: fn() -> vec4 {
-                    return (COLOR_FG_DANGER_RED);
-                }
+                color: (COLOR_FG_DANGER_RED),
             }
         }
     }
@@ -88,17 +80,13 @@ script_mod! {
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_UNK_BG),
-                get_color: fn() -> vec4 {
-                    return #xFFFFFFFF;
-                }
+                color: (COLOR_TEXT_ON_ACCENT),
             }
         }
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_UNK),
-                get_color: fn() -> vec4 {
-                    return #x888888;
-                }
+                color: (COLOR_VERIFICATION_BADGE_UNKNOWN),
             }
         }
     }

@@ -3,18 +3,21 @@ use makepad_widgets::*;
 
 use crate::{settings::is_settings_screen_shown, shared::popup_list::{enqueue_popup_notification, PopupKind}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
+const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
+
 script_mod! {
     link tsp_enabled
 
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
-
     // The view containing all TSP-related settings.
     mod.widgets.TspSettingsScreen = #(TspSettingsScreen::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
+
+        identity_color_active: (COLOR_FG_ACCEPT_GREEN)
+        identity_color_missing: (COLOR_TEXT_WARNING_NOT_FOUND)
 
         LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
@@ -56,7 +59,7 @@ script_mod! {
             margin: Inset{top: 8, bottom: 10, left: 5},
             draw_icon.svg: (ICON_UPLOAD)
             icon_walk: Walk{width: 16, height: 16}
-            text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT
+            text: #(REPUBLISH_IDENTITY_BUTTON_TEXT)
         }
 
 
@@ -84,7 +87,7 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: #F6F8F9
+                color: (COLOR_SETTINGS_LIST_BG)
                 border_radius: 4.0
             }
 
@@ -200,6 +203,9 @@ impl WalletStatusAndDefault {
 pub struct TspSettingsScreen {
     #[deref] view: View,
 
+    #[live] identity_color_active: Vec4f,
+    #[live] identity_color_missing: Vec4f,
+
     /// The list of wallets that are known by this widget.
     ///
     /// * If `None`, this widget doesn't know about any wallets or is outdated,
@@ -227,24 +233,15 @@ impl Widget for TspSettingsScreen {
         }
 
         // Draw the current identity label and republish button based on the active identity.
-        let (current_did_text, has_active_identity) = match
+        let (current_did_text, current_did_color, has_active_identity) = match
             self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
         {
-            Some(current_did) => (current_did.to_string(), true),
-            None => ("No default identity has been set.".to_string(), false),
+            Some(current_did) => (current_did, self.identity_color_active, true),
+            None => ("No default identity has been set.", self.identity_color_missing, false),
         };
-        let mut current_identity_label = self.view.label(cx, ids!(current_identity_label));
-        if has_active_identity {
-            script_apply_eval!(cx, current_identity_label, {
-                text: #(current_did_text),
-                draw_text +: { color: mod.widgets.COLOR_FG_ACCEPT_GREEN },
-            });
-        } else {
-            script_apply_eval!(cx, current_identity_label, {
-                text: #(current_did_text),
-                draw_text +: { color: mod.widgets.COLOR_TEXT_WARNING_NOT_FOUND },
-            });
-        }
+        let current_identity_label = self.view.label(cx, ids!(current_identity_label));
+        current_identity_label.set_text(cx, current_did_text);
+        current_identity_label.set_text_color(cx, current_did_color);
         self.view.button(cx, ids!(republish_identity_button)).set_visible(cx, has_active_identity);
 
 
@@ -384,11 +381,9 @@ impl WidgetMatchEvent for TspSettingsScreen {
                 }
                 Some(TspIdentityAction::DidRepublishResult(result)) => {
                     // restore the republish button to its original state.
-                    let mut republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
-                    script_apply_eval!(cx, republish_identity_button, {
-                        enabled: true,
-                        text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT,
-                    });
+                    let republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
+                    republish_identity_button.set_enabled(cx, true);
+                    republish_identity_button.set_text(cx, REPUBLISH_IDENTITY_BUTTON_TEXT);
                     match result {
                         Ok(did) => {
                             enqueue_popup_notification(
@@ -441,14 +436,12 @@ impl WidgetMatchEvent for TspSettingsScreen {
         // Allow the user to republish their identity to the DID server.
         // This is primarily needed because some DID servers (e.g., the test servers)
         // frequently wipe their identity storage after a certain period of time.
-        let mut republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
+        let republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
         if republish_identity_button.clicked(actions) {
             if self.has_default_wallet() {
                 if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
-                    script_apply_eval!(cx, republish_identity_button, {
-                        enabled: false,
-                        text: "Republishing DID now...",
-                    });
+                    republish_identity_button.set_enabled(cx, false);
+                    republish_identity_button.set_text(cx, "Republishing DID now...");
 
                     submit_tsp_request(TspRequest::RepublishDid { did: our_did.to_string() });
                 } else {

@@ -22,7 +22,7 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: #e8f4ff
+            color: (COLOR_TYPING_NOTICE_BG)
         }
 
         typing_label := Label {
