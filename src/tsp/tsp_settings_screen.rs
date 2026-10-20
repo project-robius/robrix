@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{settings::is_settings_screen_shown, shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{settings::is_settings_screen_shown, shared::popup_list::{enqueue_popup_notification, PopupKind}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 script_mod! {
     link tsp_enabled
@@ -227,18 +227,25 @@ impl Widget for TspSettingsScreen {
         }
 
         // Draw the current identity label and republish button based on the active identity.
-        let (current_did_text, current_did_text_color, show_republish_button) = match
+        let (current_did_text, has_active_identity) = match
             self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
         {
-            Some(current_did) => (current_did.to_string(), COLOR_FG_ACCEPT_GREEN, true),
-            None => ("No default identity has been set.".to_string(), COLOR_TEXT_WARNING_NOT_FOUND, false),
+            Some(current_did) => (current_did.to_string(), true),
+            None => ("No default identity has been set.".to_string(), false),
         };
         let mut current_identity_label = self.view.label(cx, ids!(current_identity_label));
-        script_apply_eval!(cx, current_identity_label, {
-            text: #(current_did_text),
-            draw_text +: { color: #(current_did_text_color) },
-        });
-        self.view.button(cx, ids!(republish_identity_button)).set_visible(cx, show_republish_button);
+        if has_active_identity {
+            script_apply_eval!(cx, current_identity_label, {
+                text: #(current_did_text),
+                draw_text +: { color: mod.widgets.COLOR_FG_ACCEPT_GREEN },
+            });
+        } else {
+            script_apply_eval!(cx, current_identity_label, {
+                text: #(current_did_text),
+                draw_text +: { color: mod.widgets.COLOR_TEXT_WARNING_NOT_FOUND },
+            });
+        }
+        self.view.button(cx, ids!(republish_identity_button)).set_visible(cx, has_active_identity);
 
 
         // If we don't have any wallets, show the "no wallets" label.

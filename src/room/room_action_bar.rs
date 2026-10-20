@@ -35,7 +35,7 @@ script_mod! {
         border_color: instance(#0000)
         border_color_2: instance(vec4(-1))
 
-        shadow_color: instance(#0005)
+        shadow_color: instance((COLOR_HEADER_SHADOW))
         shadow_radius: uniform(12.0)
         shadow_offset: uniform(vec2(0.0, 0.0))
 
@@ -113,9 +113,9 @@ script_mod! {
         icon_walk: Walk{width: 18, height: 18}
         draw_icon.color: ROOM_NAME_TEXT_COLOR
         draw_bg +: {
-            color: #0000
-            color_hover: #0001
-            color_down: #0002
+            color: (COLOR_TRANSPARENT)
+            color_hover: (COLOR_ROOM_ACTION_BUTTON_BG_HOVER)
+            color_down: (COLOR_ROOM_ACTION_BUTTON_BG_DOWN)
         }
         draw_text +: {
             color: ROOM_NAME_TEXT_COLOR
@@ -143,6 +143,7 @@ script_mod! {
         draw_shadow: mod.widgets.RobrixHeaderBackground {
             color: #0000
         }
+        shadow_color: (COLOR_HEADER_SHADOW)
 
         // room_info_button            := mod.widgets.RoomActionButton {draw_icon.svg: ICON_INFO}
         room_threads_button         := mod.widgets.RoomActionButton {draw_icon.svg: ICON_REPLY_IN_THREAD}
@@ -293,6 +294,7 @@ pub struct RoomActionBar {
     #[deref] view: View,
     #[apply_default] animator: Animator,
     #[live] draw_shadow: DrawQuad,
+    #[live] shadow_color: Vec4f,
     /// Whether we're in desktop view mode (`true`) or mobile view mode (`false`).
     #[live(true)] is_desktop_mode: bool,
     /// Whether the full list of buttons is expanded (or is sliding into view).
@@ -454,7 +456,11 @@ impl RoomActionBar {
                 }
             } else {
                 script_apply_eval!(cx, button, {
-                    draw_bg +: { color: #0000, color_hover: #0001, color_down: #0002 }
+                    draw_bg +: {
+                        color: (mod.widgets.COLOR_TRANSPARENT)
+                        color_hover: (mod.widgets.COLOR_ROOM_ACTION_BUTTON_BG_HOVER)
+                        color_down: (mod.widgets.COLOR_ROOM_ACTION_BUTTON_BG_DOWN)
+                    }
                     draw_icon +: { color: (mod.widgets.ROOM_NAME_TEXT_COLOR) }
                 });
                 script_apply_eval!(cx, expanded_button, {
@@ -608,8 +614,9 @@ impl RoomActionBarRef {
         {
             let rect = inner.view.area().rect(cx);
             // Fade the shadow in and out along with the slide.
-            let alpha = (0x55 as f32 / 255.0) * inner.expand.clamp(0.0, 1.0);
-            inner.draw_shadow.set_dyn_instance(cx, id!(shadow_color), &[0.0, 0.0, 0.0, alpha]);
+            let color = inner.shadow_color;
+            let alpha = color.w * inner.expand.clamp(0.0, 1.0);
+            inner.draw_shadow.set_dyn_instance(cx, id!(shadow_color), &[color.x, color.y, color.z, alpha]);
             cx.push_clip_rect(room_rect);
             inner.draw_shadow.draw_abs(cx, rect);
             cx.pop_clip_rect();

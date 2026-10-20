@@ -10,7 +10,6 @@ use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId, su
 use crate::sliding_sync::{MatrixRequest, TimelineKind, submit_async_request};
 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
-use crate::shared::styles::{COLOR_FG_DANGER_RED, COLOR_TEXT};
 use crate::home::send_status_indicator::upload_progress_text;
 
 script_mod! {
@@ -316,19 +315,21 @@ impl UploadProgressView {
 
         self.set_visible(cx, true);
         self.label(cx, ids!(file_name_label)).set_text(cx, &file_name);
-        let status_label = self.label(cx, ids!(status_label));
+        let mut status_label = self.label(cx, ids!(status_label));
         status_label.set_text(cx, &status);
         self.button(cx, ids!(retry_button)).set_visible(cx, can_retry);
         let progress_bar = self.child_by_path(ids!(progress_bar)).as_progress_bar();
         progress_bar.set_progress(cx, fraction);
-        if let Some(mut label) = status_label.borrow_mut() {
-            label.draw_text.color = if is_failed { COLOR_FG_DANGER_RED } else { COLOR_TEXT };
-        }
         if is_failed {
-            progress_bar.set_progress_color(cx, COLOR_FG_DANGER_RED);
+            script_apply_eval!(cx, status_label, {
+                draw_text +: { color: mod.widgets.COLOR_FG_DANGER_RED }
+            });
         } else {
-            progress_bar.reset_progress_color(cx);
+            script_apply_eval!(cx, status_label, {
+                draw_text +: { color: mod.widgets.COLOR_TEXT }
+            });
         }
+        progress_bar.set_failed(cx, is_failed);
         self.redraw(cx);
     }
 }

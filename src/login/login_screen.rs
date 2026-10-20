@@ -6,7 +6,7 @@
 use std::{net::{Ipv4Addr, Ipv6Addr}, ops::Not};
 use makepad_widgets::*;
 use crate::{
-    shared::{password_input::PasswordTextInputWidgetExt, styles::*},
+    shared::password_input::PasswordTextInputWidgetExt,
     sliding_sync::{homeserver_of_user_id, submit_async_request, username_to_full_user_id, BrowserLoginKind, LoginByPassword, LoginMethods, LoginRequest, MatrixRequest},
     utils,
 };
@@ -549,22 +549,30 @@ impl LoginScreen {
     fn enable_login_button(&mut self, cx: &mut Cx) {
         let is_ready = !self.view.text_input(cx, ids!(user_id_input)).text().trim().is_empty()
             && !self.view.password_text_input(cx, ids!(password_input)).text().is_empty();
-        let (fg_color, bg_color) = if is_ready {
-            (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
-        } else {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-        };
         let mut login_button = self.view.button(cx, ids!(login_button));
-        script_apply_eval!(cx, login_button, {
-            enabled: #(is_ready),
-            draw_bg +: {
-                color: #(bg_color),
-                border_color: #(fg_color),
-            }
-            draw_text +: {
-                color: #(fg_color),
-            }
-        });
+        if is_ready {
+            script_apply_eval!(cx, login_button, {
+                enabled: true,
+                draw_bg +: {
+                    color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                    border_color: mod.widgets.COLOR_PRIMARY,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_PRIMARY,
+                }
+            });
+        } else {
+            script_apply_eval!(cx, login_button, {
+                enabled: false,
+                draw_bg +: {
+                    color: mod.widgets.COLOR_BG_DISABLED,
+                    border_color: mod.widgets.COLOR_FG_DISABLED,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_FG_DISABLED,
+                }
+            });
+        }
     }
 
     /// Returns the homeserver to use for login.

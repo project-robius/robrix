@@ -139,8 +139,12 @@ script_mod! {
 
     mod.widgets.COLOR_FG_ACCEPT_GREEN = #138808
     mod.widgets.COLOR_BG_ACCEPT_GREEN = #F0FFF0
+    mod.widgets.COLOR_BG_ACCEPT_GREEN_HOVER = #xD4EED4
+    mod.widgets.COLOR_BG_ACCEPT_GREEN_DOWN = #xB8E0B8
     mod.widgets.COLOR_FG_DANGER_RED = #DC0005
     mod.widgets.COLOR_BG_DANGER_RED = #FFF0F0
+    mod.widgets.COLOR_BG_DANGER_RED_HOVER = #xF0D4D4
+    mod.widgets.COLOR_BG_DANGER_RED_DOWN = #xE0B8B8
     mod.widgets.COLOR_FG_DISABLED = #B3B3B3
     mod.widgets.COLOR_BG_DISABLED = #E0E0E0
     mod.widgets.COLOR_INFO_BLUE = #0f88fe
@@ -160,6 +164,8 @@ script_mod! {
 
     mod.widgets.COLOR_PRIMARY_DARKER = #fefefe
     mod.widgets.COLOR_SECONDARY = #E3E3E3
+    mod.widgets.COLOR_SECONDARY_HOVER = #xD0D0D0
+    mod.widgets.COLOR_SECONDARY_DOWN = #xC0C0C0
     mod.widgets.COLOR_SECONDARY_DARKER = #C8C8C8
 
     // What a list item, e.g., a room, message, or menu item, darkens to on hover or press.
@@ -173,6 +179,8 @@ script_mod! {
     mod.widgets.COLOR_ACTIVE_PRIMARY = #0f88fe
 
     mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
+
+    mod.widgets.COLOR_ACTIVE_PRIMARY_DOWN = #x0C5DAA
 
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
     // Looks like COLOR_BG_PREVIEW atop white, but it also darkens a hovered or highlighted message behind it.
@@ -198,11 +206,12 @@ script_mod! {
     mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT = #A35A00
 
     mod.widgets.COLOR_AVATAR_BG = #52b2ac
+    mod.widgets.COLOR_UNKNOWN_ROOM_AVATAR = #xFF6E00
 
     mod.widgets.COLOR_AVATAR_BG_IDLE = #d8d8d8
 
 
-    mod.widgets.COLOR_UNREAD_BADGE_MENTIONS = #FF0000;
+    mod.widgets.COLOR_UNREAD_BADGE_MENTIONS = #xFF1133;
 
 
     mod.widgets.COLOR_UNREAD_BADGE_MARKED = (mod.widgets.COLOR_ROBRIX_CYAN);
@@ -220,6 +229,55 @@ script_mod! {
     mod.widgets.COLOR_WARNING = #fcdb03
 
     mod.widgets.COLOR_LINK_HOVER = #21B070
+    mod.widgets.COLOR_LINK = #x0000EE
+
+    mod.widgets.COLOR_LINK_PILL_BG = #x000000
+    mod.widgets.COLOR_LINK_PILL_BG_MENTION = #xD91B38
+    mod.widgets.COLOR_SPOILER_REASON_TEXT = #x999999
+
+    // A message that mentions the current user (or @room).
+    mod.widgets.COLOR_MENTION_HIGHLIGHT_BG = #xFFFFD1
+    mod.widgets.COLOR_MENTION_HIGHLIGHT_BG_HOVER = #xFFF9C2
+    mod.widgets.COLOR_MENTION_HIGHLIGHT_BAR = #xFFD54F
+
+    mod.widgets.COLOR_REACTION_BG = #xF7F9FA
+    mod.widgets.COLOR_REACTION_BORDER = #xB6BABF
+    mod.widgets.COLOR_REACTION_BG_INCLUDES_USER = #xE3F7ED
+    mod.widgets.COLOR_REACTION_BORDER_INCLUDES_USER = #x009978
+
+    // The latest message preview in a rooms list entry.
+    mod.widgets.COLOR_ROOM_PREVIEW_TEXT = #x444444
+    mod.widgets.COLOR_ROOM_PREVIEW_CODE_BG = #xEDEDED
+    mod.widgets.COLOR_ROOM_PREVIEW_CODE_BG_SELECTED = #x4D4D4D
+
+    mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_HOVER = #x0000001F
+    mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_DOWN = #x00000033
+    mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER = #xFFFFFF33
+    mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_DOWN = #xFFFFFF4D
+
+    mod.widgets.COLOR_ROOM_ACTION_BUTTON_BG_HOVER = #x00000011
+    mod.widgets.COLOR_ROOM_ACTION_BUTTON_BG_DOWN = #x00000022
+    mod.widgets.COLOR_HEADER_SHADOW = #x00000055
+
+    mod.widgets.COLOR_PANE_DIVIDER = #x4D4D4D
+
+    mod.widgets.COLOR_SPEECH_BUTTON_ICON = #x555555
+    mod.widgets.COLOR_SPEECH_BUTTON_BG_HOVER = #xE0E8F0
+    mod.widgets.COLOR_SPEECH_BUTTON_BG_DOWN = #xD0D8E8
+    mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING = #x141414
+    mod.widgets.COLOR_SPEECH_BUTTON_BG_RECORDING_HOVER = #x404040
+
+    mod.widgets.COLOR_OVERLAY_BG = #x000000BB
+
+    // The close button on an error, info, or success popup's colored background.
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR = #xFFFFFF22
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_HOVER = #xFFFFFF30
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_DOWN = #xFFFFFF42
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR = #xFFFFFF2C
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_HOVER = #xFFFFFF38
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_DOWN = #xFFFFFF4A
+    mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_COLOR = #xFFFFFFFA
+    mod.widgets.COLOR_POPUP_WARNING_ICON = #x000000
 
 
     // Use an even value for this, not odd, such that it can be divided in half,
@@ -378,59 +436,14 @@ script_mod! {
 }
 
 
-/// #FFFFFF
-pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
-/// #0F88FE
-pub const COLOR_ACTIVE_PRIMARY:        Vec4 = vec4(0.059, 0.533, 0.996, 1.0);
-/// #106FCC
-pub const COLOR_ACTIVE_PRIMARY_DARKER: Vec4 = vec4(0.063, 0.435, 0.682, 1.0);
-/// #138808
-pub const COLOR_FG_ACCEPT_GREEN:       Vec4 = vec4(0.074, 0.533, 0.031, 1.0);
-/// #F0FFF0
-pub const COLOR_BG_ACCEPT_GREEN:       Vec4 = vec4(0.941, 1.0, 0.941, 1.0);
-/// #B3B3B3
-pub const COLOR_FG_DISABLED:           Vec4 = vec4(0.7, 0.7, 0.7, 1.0);
-/// #E0E0E0
-pub const COLOR_BG_DISABLED:           Vec4 = vec4(0.878, 0.878, 0.878, 1.0);
-/// #1C274C
-pub const COLOR_TEXT:                  Vec4 = vec4(0.11, 0.153, 0.298, 1.0);
-/// #DC0005
-pub const COLOR_FG_DANGER_RED:         Vec4 = vec4(0.863, 0.0, 0.02, 1.0);
-/// #FFF0F0
-pub const COLOR_BG_DANGER_RED:         Vec4 = vec4(1.0, 0.941, 0.941, 1.0);
-/// #572DCC
-pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0);
-/// #05CDC7
-pub const COLOR_ROBRIX_CYAN:           Vec4 = vec4(0.031, 0.804, 0.78, 1.0);
-/// #FF0000
-pub const COLOR_UNREAD_BADGE_MENTIONS: Vec4 = vec4(1.0, 0.0, 0.0, 1.0);
-/// #572DCC
-pub const COLOR_UNREAD_BADGE_MARKED:   Vec4 = COLOR_ROBRIX_CYAN;
-/// #AAAAAA
-pub const COLOR_UNREAD_BADGE_MESSAGES: Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
-/// #FF6e00
-pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
-/// The same as `COLOR_AVATAR_BG` in the DSL above: #52B2AC
-pub const COLOR_AVATAR_BG:             Vec4 = vec4(0.322, 0.698, 0.675, 1.0);
-/// #888888
-pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
-/// #953800
-pub const COLOR_TEXT_WARNING_NOT_FOUND: Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
-/// #F0F5FF
-pub const COLOR_BG_PREVIEW:            Vec4 = vec4(0.941, 0.961, 1.0, 1.0);
-/// #CDEDDF
-pub const COLOR_BG_PREVIEW_HOVER:      Vec4 = vec4(0.804, 0.929, 0.875, 1.0);
-/// The same as `SMALL_STATE_TEXT_COLOR` in the DSL above: #888888
-pub const SMALL_STATE_TEXT_COLOR:      Vec4 = vec4(0.533, 0.533, 0.533, 1.0);
-
 /// Applies positive (green) button styling to the given button.
 pub fn apply_positive_button_style(cx: &mut Cx, button: &mut ButtonRef) {
     script_apply_eval!(cx, button, {
         draw_bg +: {
             border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
             color: mod.widgets.COLOR_BG_ACCEPT_GREEN,
-            color_hover: #D4EED4,
-            color_down: #B8E0B8,
+            color_hover: mod.widgets.COLOR_BG_ACCEPT_GREEN_HOVER,
+            color_down: mod.widgets.COLOR_BG_ACCEPT_GREEN_DOWN,
         }
         draw_text +: {
             color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
@@ -449,8 +462,8 @@ pub fn apply_negative_button_style(cx: &mut Cx, button: &mut ButtonRef) {
         draw_bg +: {
             border_color: mod.widgets.COLOR_FG_DANGER_RED,
             color: mod.widgets.COLOR_BG_DANGER_RED,
-            color_hover: #F0D4D4,
-            color_down: #E0B8B8,
+            color_hover: mod.widgets.COLOR_BG_DANGER_RED_HOVER,
+            color_down: mod.widgets.COLOR_BG_DANGER_RED_DOWN,
         }
         draw_text +: {
             color: mod.widgets.COLOR_FG_DANGER_RED,
@@ -469,8 +482,8 @@ pub fn apply_neutral_button_style(cx: &mut Cx, button: &mut ButtonRef) {
         draw_bg +: {
             border_color: mod.widgets.COLOR_BG_DISABLED,
             color: mod.widgets.COLOR_SECONDARY,
-            color_hover: #D0D0D0,
-            color_down: #C0C0C0,
+            color_hover: mod.widgets.COLOR_SECONDARY_HOVER,
+            color_down: mod.widgets.COLOR_SECONDARY_DOWN,
         }
         draw_text +: {
             color: mod.widgets.COLOR_TEXT,
@@ -489,10 +502,10 @@ pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
         draw_bg +: {
             color: mod.widgets.COLOR_ACTIVE_PRIMARY,
             color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
-            color_down: #0C5DAA,
-            border_color: #0000,
-            border_color_hover: #0000,
-            border_color_down: #0000,
+            color_down: mod.widgets.COLOR_ACTIVE_PRIMARY_DOWN,
+            border_color: mod.widgets.COLOR_TRANSPARENT,
+            border_color_hover: mod.widgets.COLOR_TRANSPARENT,
+            border_color_down: mod.widgets.COLOR_TRANSPARENT,
         }
         draw_text +: {
             color: mod.widgets.COLOR_PRIMARY,

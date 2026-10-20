@@ -44,9 +44,8 @@ use crate::{
     home::{home_screen::effective_is_desktop, spaces_bar::SpacesBarWidgetExt},
     settings::app_preferences::{AppPreferencesAction, ViewModeOverride},
     shared::{
-        avatar::{AvatarState, AvatarWidgetExt},
+        avatar::{AvatarState, TextAvatarBgColor, AvatarWidgetExt},
         navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt},
-        styles::*,
         verification_badge::VerificationBadgeWidgetExt
     },
     sliding_sync::{current_user_id, AccountDataAction},
@@ -415,7 +414,7 @@ impl Widget for ProfileIcon {
             // If we don't have a profile, default to an unknown avatar.
             our_own_avatar.show_text(
                 cx,
-                Some(COLOR_FG_DISABLED),
+                Some(TextAvatarBgColor::Disabled),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 "",
             );
@@ -433,7 +432,7 @@ impl Widget for ProfileIcon {
         if !drew_avatar {
             our_own_avatar.show_text(
                 cx,
-                Some(COLOR_ROBRIX_PURPLE),
+                Some(TextAvatarBgColor::Accent),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 own_profile.displayable_name(),
             );

@@ -20,7 +20,6 @@ use crate::{
     profile::{user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, user_profile_cache},
     room::FetchedRoomAvatar,
     room_preview_cache::{self, CachedRoomPreview},
-    shared::styles::COLOR_AVATAR_BG,
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
     utils::{self, RoomNameId},
 };
@@ -97,6 +96,16 @@ enum AvatarDisplayState {
     ImageLoading,
     /// Showing the fully-decoded avatar image.
     Image,
+}
+
+/// The background color behind an avatar's text label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextAvatarBgColor {
+    Default,
+    Accent,
+    Disabled,
+    Alert,
+    UnknownRoom,
 }
 
 #[derive(Script, Widget)]
@@ -193,7 +202,7 @@ impl Avatar {
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
-        bg_color: Option<Vec4>,
+        bg_color: Option<TextAvatarBgColor>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -220,11 +229,25 @@ impl Avatar {
         }
     }
 
-    fn set_text_bg_color(&mut self, cx: &mut Cx, color: Vec4) {
+    fn set_text_bg_color(&mut self, cx: &mut Cx, bg_color: TextAvatarBgColor) {
         let mut text_view = self.view(cx, ids!(text_view));
-        script_apply_eval!(cx, text_view, {
-            draw_bg.color: #(color)
-        });
+        match bg_color {
+            TextAvatarBgColor::Default => script_apply_eval!(cx, text_view, {
+                draw_bg.color: mod.widgets.COLOR_AVATAR_BG
+            }),
+            TextAvatarBgColor::Accent => script_apply_eval!(cx, text_view, {
+                draw_bg.color: mod.widgets.COLOR_ROBRIX_PURPLE
+            }),
+            TextAvatarBgColor::Disabled => script_apply_eval!(cx, text_view, {
+                draw_bg.color: mod.widgets.COLOR_FG_DISABLED
+            }),
+            TextAvatarBgColor::Alert => script_apply_eval!(cx, text_view, {
+                draw_bg.color: mod.widgets.COLOR_FG_DANGER_RED
+            }),
+            TextAvatarBgColor::UnknownRoom => script_apply_eval!(cx, text_view, {
+                draw_bg.color: mod.widgets.COLOR_UNKNOWN_ROOM_AVATAR
+            }),
+        }
     }
 
     /// Sets the image content of this avatar, making the image visible
@@ -420,19 +443,19 @@ impl Avatar {
                     // (Toggling visibility on every call would redraw the whole window.)
                     if self.display_state == AvatarDisplayState::ImageLoading {
                         self.set_text_label(cx, name);
-                        self.set_text_bg_color(cx, COLOR_AVATAR_BG);
+                        self.set_text_bg_color(cx, TextAvatarBgColor::Default);
                     }
                 } else {
-                    self.show_text(cx, Some(COLOR_AVATAR_BG), None, name);
+                    self.show_text(cx, Some(TextAvatarBgColor::Default), None, name);
                 }
                 true
             }
             Some((_, AvatarCacheEntry::Requested)) => {
-                self.show_text(cx, Some(COLOR_AVATAR_BG), None, name);
+                self.show_text(cx, Some(TextAvatarBgColor::Default), None, name);
                 false
             }
             Some((_, AvatarCacheEntry::Failed)) | None => {
-                self.show_text(cx, Some(COLOR_AVATAR_BG), None, name);
+                self.show_text(cx, Some(TextAvatarBgColor::Default), None, name);
                 true
             }
         }
@@ -465,7 +488,7 @@ impl AvatarRef {
     pub fn show_text<T: AsRef<str>>(
         &self,
         cx: &mut Cx,
-        bg_color: Option<Vec4>,
+        bg_color: Option<TextAvatarBgColor>,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {

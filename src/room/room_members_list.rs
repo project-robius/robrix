@@ -26,6 +26,7 @@ script_mod! {
     mod.widgets.RoomMembersList = #(RoomMembersList::register_widget(vm)) {
         width: Fill, height: Fill
         flow: Down, spacing: 6
+        color: (COLOR_TRANSPARENT)
         color_hover: (COLOR_LIST_ITEM_BG_HOVER)
 
         member_filter_bar := mod.widgets.RoomFilterInputBar {
@@ -154,6 +155,7 @@ pub struct SavedRoomMembersList {
 #[derive(Script, ScriptHook, Widget)]
 pub struct RoomMembersList {
     #[deref] view: View,
+    #[live] color: Vec4f,
     #[live] color_hover: Vec4f,
 
     #[rust] room_name_id: Option<RoomNameId>,
@@ -242,7 +244,7 @@ impl Widget for RoomMembersList {
                     // Applying a color redraws the row, so only do so when its hover state changes.
                     let is_hovered = self.hovered_index == Some(index);
                     if is_hovered != self.hover_colored.contains(&index) {
-                        let color = if is_hovered { self.color_hover } else { Vec4f::default() };
+                        let color = if is_hovered { self.color_hover } else { self.color };
                         script_apply_eval!(cx, row, { draw_bg.color: #(color) });
                         if is_hovered { self.hover_colored.insert(index); } else { self.hover_colored.remove(&index); }
                     }

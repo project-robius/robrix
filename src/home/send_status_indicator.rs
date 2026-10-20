@@ -7,7 +7,7 @@ use matrix_sdk::{QueueWedgeError, media::MediaError, ruma::{api::error::ErrorKin
 use matrix_sdk_base::crypto::{OlmError, SessionRecipientCollectionError};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem};
 
-use crate::{LivePtr, shared::styles::COLOR_FG_DANGER_RED, sliding_sync::is_offline, utils::{SERVER_REJECTED_TEXT, UNKNOWN_ERROR_TEXT, format_decimal_file_size, stringify_matrix_error}, widget_ref_from_live_ptr};
+use crate::{LivePtr, sliding_sync::is_offline, utils::{SERVER_REJECTED_TEXT, UNKNOWN_ERROR_TEXT, format_decimal_file_size, stringify_matrix_error}, widget_ref_from_live_ptr};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -22,6 +22,8 @@ script_mod! {
         flow: Right,
         align: Align{y: 0.0},
         spacing: 3,
+
+        tooltip_bg_color_failed: (COLOR_FG_DANGER_RED),
 
         sending_icon: LoadingSpinner {
             width: 15,
@@ -230,6 +232,7 @@ pub struct SendStatusIndicator {
     #[live] failed_label: Option<LivePtr>,
     #[live] queued_label: Option<LivePtr>,
     #[live] blocked_label: Option<LivePtr>,
+    #[live] tooltip_bg_color_failed: Vec4f,
 
     /// `None` means this indicator isn't shown by a message.
     #[rust] info: Option<SendStatusInfo>,
@@ -256,7 +259,7 @@ impl Widget for SendStatusIndicator {
                     ..Default::default()
                 };
                 if self.has_failed {
-                    options.bg_color = COLOR_FG_DANGER_RED;
+                    options.bg_color = self.tooltip_bg_color_failed;
                 }
                 cx.widget_action(
                     uid,
