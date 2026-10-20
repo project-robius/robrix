@@ -431,3 +431,30 @@ pub enum AppPreferencesAction {
 /// here via `cx.global::<AppPreferencesGlobal>()`.
 #[derive(Default, Clone)]
 pub struct AppPreferencesGlobal(pub AppPreferences);
+
+/// The app's color scheme, which is saved per device rather than per account.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Appearance {
+    #[default]
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            1 => Self::Dark,
+            _ => Self::Light,
+        }
+    }
+    pub fn to_index(self) -> usize {
+        match self {
+            Self::Light => 0,
+            Self::Dark => 1,
+        }
+    }
+}
+
+/// A `Cx` global holding the current [`Appearance`].
+#[derive(Clone, Copy, Default, Debug)]
+pub struct AppearanceGlobal(pub Appearance);

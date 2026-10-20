@@ -4,7 +4,8 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride}},
+    persistence,
+    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride}},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -257,6 +258,28 @@ script_mod! {
         TitleLabel {
             text: "App Settings"
         }
+
+        View {
+            width: Fill, height: Fit
+            margin: Inset{bottom: 5}
+            flow: Flow.Right{wrap: true}
+            align: Align{y: 0.5}
+
+            SubsectionLabel {
+                width: Fit,
+                margin: Inset{top: 4}
+                text: "Appearance:"
+            }
+
+            appearance_dropdown := mod.widgets.RobrixSettingsDropDown {
+                labels: ["Light Theme", "Dark Theme"]
+                selected_item: 0
+            }
+        }
+        mod.widgets.SettingsSectionDescription {
+            body: "<ul><li>Automatic switching is coming soon!</li></ul>"
+        }
+
 
         View {
             width: Fill, height: Fit
@@ -558,6 +581,22 @@ impl AppSettings {
         let is_shown = is_settings_screen_shown(scope);
         let app_state = scope.data.get_mut::<AppState>().unwrap();
 
+        if is_shown && let Some(index) = self.view.drop_down2(cx, ids!(appearance_dropdown)).changed(actions) {
+            let new_appearance = Appearance::from_index(index);
+            if new_appearance != cx.global::<AppearanceGlobal>().0 {
+                cx.global::<AppearanceGlobal>().0 = new_appearance;
+                if let Err(e) = persistence::save_appearance(new_appearance) {
+                    error!("Failed to save appearance. Error: {e}");
+                }
+                cx.request_style_reload();
+                enqueue_popup_notification(
+                    "Updated appearance setting.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
+            }
+        }
+
         if is_shown && let Some(index) = self.view.drop_down2(cx, ids!(view_mode_dropdown)).changed(actions) {
             let new_mode = ViewModeOverride::from_index(index);
             if new_mode != app_state.app_prefs.view_mode {
@@ -661,7 +700,7 @@ impl AppSettings {
             };
             let custom_now = matches!(new_thumb, ThumbnailMaxHeight::Custom(_));
             Self::set_thumb_custom_input_read_only(cx, &self.view, custom_now);
-            Self::set_thumb_custom_input_disabled(cx, &self.view, custom_now);
+            Self::set_thumb_custom_input_disabled(cx, &self.view, custom_now, Animate::Yes);
             if new_thumb != app_state.app_prefs.thumbnail_max_height {
                 app_state.app_prefs.thumbnail_max_height = new_thumb;
                 app_state.app_prefs.on_thumbnail_max_height_changed(cx);
@@ -813,10 +852,6 @@ impl AppSettings {
         self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium, Animate::No);
         self.view.radio_button(cx, ids!(thumb_large_radio)).set_active(cx, large, Animate::No);
         self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom, Animate::No);
-        // `populate_safe` set `is_read_only`; pair it with the animator's
-        // disabled state here so the input lands in the right state on
-        // first paint. ScriptReapply only needs `is_read_only`.
-        Self::set_thumb_custom_input_disabled(cx, &self.view, custom);
 
         // Only write `thumb_custom_input`'s text on initial populate.
         // `on_after_apply` leaves it alone so in-progress edits survive.
@@ -825,8 +860,13 @@ impl AppSettings {
 
     /// Re-populated fields set by code, for use after an apply action reset things to DSL defaults.
     ///
-    /// This is safe to call from `on_after_apply` since it doesn't use `cx.with_vm`.
+    /// This is safe to call from `on_after_apply` inside `vm.with_cx_mut`,
+    /// which hands the VM back to `cx` so the animator can run right away.
     fn populate_safe(cx: &mut Cx, view: &View, prefs: &AppPreferences) {
+        let appearance = cx.global::<AppearanceGlobal>().0;
+        view.drop_down2(cx, ids!(appearance_dropdown))
+            .set_selected_item(cx, appearance.to_index());
+
         view.drop_down2(cx, ids!(view_mode_dropdown))
             .set_selected_item(cx, prefs.view_mode.to_index());
 
@@ -856,6 +896,7 @@ impl AppSettings {
 
         let custom_active = matches!(prefs.thumbnail_max_height, ThumbnailMaxHeight::Custom(_));
         Self::set_thumb_custom_input_read_only(cx, view, custom_active);
+        Self::set_thumb_custom_input_disabled(cx, view, custom_active, Animate::No);
     }
 
     fn update_toggle_description(cx: &mut Cx, view: &View, description: &[LiveId], is_on: bool, (on_text, off_text): (&str, &str)) {
@@ -898,14 +939,12 @@ impl AppSettings {
 
     /// Sets the disabled animator state.
     ///
-    /// **Not safe inside `on_after_apply`**. `set_disabled` goes through
-    /// `animator_toggle` → `cx.with_vm`, which panics when the VM is
-    /// swapped out. Only call this from outside an apply walk.
-    /// ScriptReapply doesn't need it, since the codegen chain restores
-    /// animator state itself.
-    fn set_thumb_custom_input_disabled(cx: &mut Cx, view: &View, enabled: bool) {
-        view.text_input(cx, ids!(thumb_custom_input))
-            .set_disabled(cx, !enabled);
+    /// A reload resets the input's disabled look but not its animator state,
+    /// so restoring it needs `Animate::No`, since an animated toggle would see nothing to do.
+    fn set_thumb_custom_input_disabled(cx: &mut Cx, view: &View, enabled: bool, animate: Animate) {
+        let input_ref = view.text_input(cx, ids!(thumb_custom_input));
+        let Some(mut input) = input_ref.borrow_mut() else { return };
+        input.animator_toggle(cx, !enabled, animate, ids!(disabled.on), ids!(disabled.off));
     }
 }
 

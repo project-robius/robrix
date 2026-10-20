@@ -138,6 +138,8 @@ script_mod! {
             code_color: (COLOR_MESSAGE_CODE_BG)
             quote_bg_color: (COLOR_MESSAGE_QUOTE_BG)
             quote_fg_color: (MESSAGE_TEXT_COLOR)
+            table_header_bg_color: (COLOR_MESSAGE_TABLE_HEADER_BG)
+            table_border_color: (COLOR_MESSAGE_TABLE_BORDER)
         }
 
         // Specific all the parts of these sizes/flows/layouts, since they get reset to default upon a reload apply.

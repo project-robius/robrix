@@ -176,6 +176,14 @@ script_mod! {
                             },
                             color: (COLOR_LINK),
                             color_hover: (COLOR_LINK_HOVER),
+                            color_down: (COLOR_LINK_PREVIEW_TITLE_DOWN),
+                            color_focus: (COLOR_LINK_PREVIEW_TITLE_FOCUS),
+                        }
+                        draw_bg +: {
+                            color: (COLOR_LINK_PREVIEW_UNDERLINE)
+                            color_hover: (COLOR_LINK_PREVIEW_UNDERLINE)
+                            color_down: (COLOR_LINK_PREVIEW_UNDERLINE_DOWN)
+                            color_focus: (COLOR_LINK_PREVIEW_UNDERLINE)
                         }
                     }
 

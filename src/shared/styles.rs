@@ -321,6 +321,10 @@ script_mod! {
 
     mod.widgets.COLOR_WINDOW_CLEAR = #xFFFFFF00
     mod.widgets.COLOR_CAPTION_BAR_BG = #xF3F3F3
+    mod.widgets.COLOR_CAPTION_BUTTON_ICON = #x00000099
+    mod.widgets.COLOR_CAPTION_BUTTON_ICON_HOVER = #x000000
+    mod.widgets.COLOR_CAPTION_BUTTON_BG_HOVER = #xE9E9E9
+    mod.widgets.COLOR_CAPTION_BUTTON_BG_DOWN = #xCCCCCC
     mod.widgets.COLOR_SCROLL_BAR_HANDLE = #x00000040
     mod.widgets.COLOR_SCROLL_BAR_HANDLE_HOVER = #x00000060
     mod.widgets.COLOR_SCROLL_BAR_HANDLE_DRAG = #x00000080
@@ -450,6 +454,26 @@ script_mod! {
     mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING_HOVER = #x0000002C
     mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING_DOWN = #x00000038
     mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_WARNING = #x000000D0
+
+    // Toggles, checkboxes, and radio buttons.
+    // The mark is a toggle's knob, a checkbox's check, or a radio button's dot.
+    mod.widgets.COLOR_TOGGLE_BG = #x00000019
+    mod.widgets.COLOR_TOGGLE_BG_DISABLED = #x00000008
+    mod.widgets.COLOR_TOGGLE_BORDER = #x0000001F
+    mod.widgets.COLOR_TOGGLE_BORDER_HOVER = #x0000003F
+    mod.widgets.COLOR_TOGGLE_BORDER_DISABLED = #xB2B2B2
+    mod.widgets.COLOR_TOGGLE_MARK = #x000000BF
+    mod.widgets.COLOR_TOGGLE_MARK_ACTIVE = #x00000099
+    mod.widgets.COLOR_TOGGLE_TEXT = #x000000BF
+    mod.widgets.COLOR_TOGGLE_TEXT_DISABLED = #x0000001F
+
+    mod.widgets.COLOR_LINK_PREVIEW_TITLE_DOWN = #x000000BF
+    mod.widgets.COLOR_LINK_PREVIEW_TITLE_FOCUS = #x00000099
+    mod.widgets.COLOR_LINK_PREVIEW_UNDERLINE = #x00000099
+    mod.widgets.COLOR_LINK_PREVIEW_UNDERLINE_DOWN = #x000000BF
+
+    mod.widgets.COLOR_MESSAGE_TABLE_HEADER_BG = #xFFFFFF0C
+    mod.widgets.COLOR_MESSAGE_TABLE_BORDER = #x0000001F
 
 
     // Use an even value for this, not odd, such that it can be divided in half,
