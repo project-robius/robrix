@@ -79,7 +79,7 @@ script_mod! {
                     header_label := Label {
                         width: Fill, height: Fit, max_lines: 1, text_overflow: Ellipsis, padding: 0
                         draw_text +: {
-                            color: (COLOR_PRIMARY)
+                            color: (COLOR_TEXT_ON_ACCENT)
                             text_style: theme.font_bold {font_size: 13.0, line_spacing: 1.0}
                         }
                     }

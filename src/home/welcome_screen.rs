@@ -191,8 +191,8 @@ script_mod! {
                             spacing: 8
                             draw_bg +: {
                                 color: (COLOR_WELCOME_ROOM_PANEL_BUTTON_BG)
-                                color_hover: (COLOR_BG_LAVENDER_HOVER)
-                                color_down: (COLOR_BG_LAVENDER_DOWN)
+                                color_hover: (COLOR_WELCOME_ROOM_PANEL_BUTTON_BG_HOVER)
+                                color_down: (COLOR_WELCOME_ROOM_PANEL_BUTTON_BG_DOWN)
                                 border_radius: 8.0
                             }
 
@@ -242,7 +242,7 @@ script_mod! {
                             header +: {
                                 badge +: {
                                     draw_bg.color: (COLOR_BG_LAVENDER)
-                                    icon +: { draw_icon +: { svg: (ICON_SQUARES), color: (COLOR_ROBRIX_PURPLE) } }
+                                    icon +: { draw_icon +: { svg: (ICON_SQUARES), color: (COLOR_TEXT_PURPLE) } }
                                 }
                                 title +: { text: "Arrange your workspace" }
                             }

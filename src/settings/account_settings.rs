@@ -897,13 +897,13 @@ impl AccountSettings {
                 enabled: true,
                 draw_bg +: {
                     color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                    border_color: mod.widgets.COLOR_PRIMARY,
+                    border_color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 }
                 draw_icon +: {
-                    color: mod.widgets.COLOR_PRIMARY,
+                    color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 }
                 draw_text +: {
-                    color: mod.widgets.COLOR_PRIMARY,
+                    color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 }
             }),
             (true, EnabledColors::Accept) => script_apply_eval!(cx, button, {

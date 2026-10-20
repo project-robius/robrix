@@ -20,8 +20,8 @@ script_mod! {
         font_color_verified: (COLOR_FG_ACCEPT_GREEN)
         font_color_wrong_signature: (COLOR_FG_DANGER_RED)
         tooltip_bg_color_unknown: (COLOR_FG_DISABLED)
-        tooltip_bg_color_verified: (COLOR_FG_ACCEPT_GREEN)
-        tooltip_bg_color_wrong_signature: (COLOR_FG_DANGER_RED)
+        tooltip_bg_color_verified: (COLOR_BG_ACCEPT_GREEN_SOLID)
+        tooltip_bg_color_wrong_signature: (COLOR_BG_DANGER_RED_SOLID)
 
         // TODO: re-enable this once we have implemented the ability
         // to click on the indicator to show the user's profile and TSP info.

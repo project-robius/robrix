@@ -18,7 +18,7 @@ script_mod! {
         // Leave the key focus in the text input, so toggling doesn't tear down the IME.
         grab_key_focus: false
         draw_bg +: {
-            color: (COLOR_SECONDARY * 1.05)
+            color: (COLOR_PASSWORD_EYE_BUTTON_BG)
         }
         draw_icon +: {
             color: (COLOR_TEXT_HINT),

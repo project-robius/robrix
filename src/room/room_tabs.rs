@@ -193,7 +193,7 @@ impl RoomTabs {
                     let mut button = controls.widget(cx, &[button_id]);
                     if is_active {
                         script_apply_eval!(cx, button, {
-                            draw_icon +: {color: mod.widgets.COLOR_PRIMARY}
+                            draw_icon +: {color: mod.widgets.COLOR_TEXT_ON_ACCENT}
                             draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_DOWN}
                         });
                     } else {

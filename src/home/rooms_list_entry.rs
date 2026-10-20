@@ -71,7 +71,7 @@ script_mod! {
         preview_text_color: (COLOR_ROOM_PREVIEW_TEXT)
         preview_code_bg_color: (COLOR_ROOM_PREVIEW_CODE_BG)
         preview_link_color: (COLOR_LINK)
-        selected_text_color: (COLOR_PRIMARY)
+        selected_text_color: (COLOR_TEXT_ON_ACCENT)
         selected_code_bg_color: (COLOR_ROOM_PREVIEW_CODE_BG_SELECTED)
 
         show_bg: true
@@ -81,7 +81,7 @@ script_mod! {
             color: instance(COLOR_TRANSPARENT)
             color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
             color_selected: instance(COLOR_ACTIVE_PRIMARY)
-            color_selected_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
+            color_selected_hover: instance(COLOR_ACTIVE_PRIMARY_HOVER)
             border_color: instance(COLOR_TRANSPARENT)
             border_size: uniform(0.0)
             border_radius: uniform(4.0)

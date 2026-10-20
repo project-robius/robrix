@@ -21,7 +21,7 @@ script_mod! {
         align: Align{y: 0.0},
         spacing: 3,
 
-        tooltip_bg_color_failed: (COLOR_FG_DANGER_RED),
+        tooltip_bg_color_failed: (COLOR_BG_DANGER_RED_SOLID),
 
         sending_icon: LoadingSpinner {
             width: 15,
@@ -48,7 +48,7 @@ script_mod! {
             width: 15, height: 15,
             align: Align{x: 0.5, y: 0.5}
             show_bg: true,
-            draw_bg.color: (COLOR_FG_ACCEPT_GREEN)
+            draw_bg.color: (COLOR_BG_ACCEPT_GREEN_SOLID)
 
             check := Icon {
                 draw_icon +: {
@@ -63,7 +63,7 @@ script_mod! {
             width: 15, height: 15,
             align: Align{x: 0.5, y: 0.5}
             show_bg: true,
-            draw_bg.color: (COLOR_FG_DANGER_RED)
+            draw_bg.color: (COLOR_BG_DANGER_RED_SOLID)
 
             exclamation := View {
                 width: 3.0, height: 10.5,

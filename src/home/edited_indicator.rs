@@ -37,7 +37,7 @@ script_mod! {
             margin: 0,
 
             font_size: (mod.widgets.EDITED_INDICATOR_FONT_SIZE),
-            font_color: (COLOR_ROBRIX_PURPLE),
+            font_color: (COLOR_TEXT_PURPLE),
             body: "(<u>edited</u>)",
         }
     }

@@ -48,7 +48,7 @@ script_mod! {
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_YES),
-                color: (COLOR_FG_ACCEPT_GREEN),
+                color: (COLOR_BG_ACCEPT_GREEN_SOLID),
             }
         }
     }
@@ -67,7 +67,7 @@ script_mod! {
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_NO),
-                color: (COLOR_FG_DANGER_RED),
+                color: (COLOR_BG_DANGER_RED_SOLID),
             }
         }
     }
@@ -96,8 +96,8 @@ script_mod! {
         width: Fit, height: Fit
         flow: Overlay
         align: Align{ x: 1.0, y: 0 }
-        tooltip_bg_verified: (COLOR_FG_ACCEPT_GREEN)
-        tooltip_bg_unverified: (COLOR_FG_DANGER_RED)
+        tooltip_bg_verified: (COLOR_BG_ACCEPT_GREEN_SOLID)
+        tooltip_bg_unverified: (COLOR_BG_DANGER_RED_SOLID)
 
         verification_icons := View {
             flow: Overlay

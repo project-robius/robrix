@@ -138,12 +138,14 @@ script_mod! {
     mod.widgets.COLOR_DIVIDER_DARK = #00000044
 
     mod.widgets.COLOR_FG_ACCEPT_GREEN = #138808
+    mod.widgets.COLOR_BG_ACCEPT_GREEN_SOLID = #x138808
     mod.widgets.COLOR_BG_ACCEPT_GREEN = #F0FFF0
     mod.widgets.COLOR_BG_ACCEPT_GREEN_HOVER = #xD4EED4
     mod.widgets.COLOR_BG_ACCEPT_GREEN_DOWN = #xB8E0B8
     mod.widgets.COLOR_FG_DANGER_RED = #DC0005
-    mod.widgets.COLOR_FG_DANGER_RED_HOVER = #xB00004
-    mod.widgets.COLOR_FG_DANGER_RED_DOWN = #x930003
+    mod.widgets.COLOR_BG_DANGER_RED_SOLID = #xDC0005
+    mod.widgets.COLOR_BG_DANGER_RED_SOLID_HOVER = #xB00004
+    mod.widgets.COLOR_BG_DANGER_RED_SOLID_DOWN = #x930003
     mod.widgets.COLOR_BG_DANGER_RED = #FFF0F0
     mod.widgets.COLOR_BG_DANGER_RED_HOVER = #xF0D4D4
     mod.widgets.COLOR_BG_DANGER_RED_DOWN = #xE0B8B8
@@ -178,6 +180,7 @@ script_mod! {
 
     mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
 
+    mod.widgets.COLOR_ACTIVE_PRIMARY_HOVER = #x106fcc
     mod.widgets.COLOR_ACTIVE_PRIMARY_DOWN = #x0C5DAA
 
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
@@ -259,6 +262,7 @@ script_mod! {
     mod.widgets.COLOR_HEADER_SHADOW = #x00000055
 
     mod.widgets.COLOR_PANE_DIVIDER = #x4D4D4D
+    mod.widgets.COLOR_PANE_DIVIDER_GRIP = #xE3E3E3
 
     mod.widgets.COLOR_SPEECH_BUTTON_ICON = #x555555
     mod.widgets.COLOR_SPEECH_BUTTON_BG_HOVER = #xE0E8F0
@@ -280,10 +284,13 @@ script_mod! {
     mod.widgets.COLOR_TEXT_HINT = #x8C8C8C
     mod.widgets.COLOR_TEXT_ON_ACCENT = #xFFFFFF
     mod.widgets.COLOR_TEXT_ON_ACCENT_MUTED = #xFFFFFFD9
+    mod.widgets.COLOR_TEXT_ON_WARNING = #x000000
+    mod.widgets.COLOR_TEXT_PURPLE = #x572DCC
 
     mod.widgets.COLOR_TEXT_INPUT_PLACEHOLDER = #xBBBBBB
     mod.widgets.COLOR_TEXT_INPUT_PLACEHOLDER_HOVER = #x999999
     mod.widgets.COLOR_TEXT_INPUT_PLACEHOLDER_FOCUS = #x999999
+    mod.widgets.COLOR_PASSWORD_EYE_BUTTON_BG = #xEEEEEE
     mod.widgets.COLOR_MODAL_INPUT_TEXT = #x000000
 
     mod.widgets.COLOR_SHADOW_SOFT = #x00000033
@@ -356,7 +363,7 @@ script_mod! {
     mod.widgets.COLOR_DOCK_TAB_BG_HOVER = #xC8DDEF
     mod.widgets.COLOR_DOCK_TAB_BG_ACTIVE = #x0660FE
     mod.widgets.COLOR_DOCK_TAB_BG_ACTIVE_BOTTOM = #x398CFE
-    mod.widgets.COLOR_DOCK_TAB_BAR_BG = (mod.widgets.COLOR_PRIMARY * 0.96)
+    mod.widgets.COLOR_DOCK_TAB_BAR_BG = #xF4F4F4F4
     mod.widgets.COLOR_DOCK_TAB_BAR_BG_DRAG = #x000000
     mod.widgets.COLOR_DOCK_DROP_PREVIEW_MIX = #xFFFFFF00
     mod.widgets.COLOR_PANE_GRAB_HANDLE_DOTS = vec4(1.0, 1.0, 1.0, 0.92)
@@ -373,6 +380,8 @@ script_mod! {
     mod.widgets.COLOR_WELCOME_ROOM_PANEL_SHADOW = #x572DCC40
     mod.widgets.COLOR_WELCOME_ROOM_PANEL_ICON_BG = #xFFFFFF2E
     mod.widgets.COLOR_WELCOME_ROOM_PANEL_BUTTON_BG = #xFFFFFF
+    mod.widgets.COLOR_WELCOME_ROOM_PANEL_BUTTON_BG_HOVER = #xE8E1FA
+    mod.widgets.COLOR_WELCOME_ROOM_PANEL_BUTTON_BG_DOWN = #xE1D7F7
     mod.widgets.COLOR_WELCOME_TIPS_PANEL_BORDER = #x00000010
     mod.widgets.COLOR_WELCOME_TIPS_PANEL_SHADOW = #x1C274C14
     mod.widgets.COLOR_WELCOME_TIP_BODY_TEXT = #x5C6478
@@ -426,14 +435,21 @@ script_mod! {
     mod.widgets.COLOR_CODE_COMMENT = #x6A737D
 
     // The close button on an error, info, or success popup's colored background.
-    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR = #xFFFFFF22
-    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_HOVER = #xFFFFFF30
-    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_DOWN = #xFFFFFF42
-    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR = #xFFFFFF2C
-    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_HOVER = #xFFFFFF38
-    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_DOWN = #xFFFFFF4A
-    mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_COLOR = #xFFFFFFFA
-    mod.widgets.COLOR_POPUP_WARNING_ICON = #x000000
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_ACCENT = #xFFFFFF22
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_ACCENT_HOVER = #xFFFFFF30
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_ACCENT_DOWN = #xFFFFFF42
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_ACCENT = #xFFFFFF2C
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_ACCENT_HOVER = #xFFFFFF38
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_ACCENT_DOWN = #xFFFFFF4A
+    mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_ACCENT = #xFFFFFFFA
+    // The close button on a warning popup's yellow background.
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_WARNING = #x00000014
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_WARNING_HOVER = #x00000022
+    mod.widgets.COLOR_POPUP_CLOSE_BG_ON_WARNING_DOWN = #x0000002E
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING = #x00000020
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING_HOVER = #x0000002C
+    mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING_DOWN = #x00000038
+    mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_WARNING = #x000000D0
 
 
     // Use an even value for this, not odd, such that it can be divided in half,
@@ -443,11 +459,9 @@ script_mod! {
     mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.4)
 
 
-    mod.widgets.COLOR_NAVIGATION_TAB_FG = (mod.widgets.COLOR_TEXT)
-    mod.widgets.COLOR_NAVIGATION_TAB_FG_HOVER = (mod.widgets.COLOR_TEXT)
-    mod.widgets.COLOR_NAVIGATION_TAB_FG_ACTIVE = (mod.widgets.COLOR_TEXT)
-    mod.widgets.COLOR_NAVIGATION_TAB_BG = (mod.widgets.COLOR_SECONDARY)
-    mod.widgets.COLOR_NAVIGATION_TAB_BG_HOVER = (mod.widgets.COLOR_SECONDARY * 0.85)
+    mod.widgets.COLOR_NAVIGATION_TAB_FG = #x1C274C
+    mod.widgets.COLOR_NAVIGATION_TAB_BG = #xE3E3E3
+    mod.widgets.COLOR_NAVIGATION_TAB_BG_HOVER = #xC0C0C0D8
     mod.widgets.COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
 
     mod.widgets.COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
@@ -536,19 +550,19 @@ pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
     script_apply_eval!(cx, button, {
         draw_bg +: {
             color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-            color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
+            color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_HOVER,
             color_down: mod.widgets.COLOR_ACTIVE_PRIMARY_DOWN,
             border_color: mod.widgets.COLOR_TRANSPARENT,
             border_color_hover: mod.widgets.COLOR_TRANSPARENT,
             border_color_down: mod.widgets.COLOR_TRANSPARENT,
         }
         draw_text +: {
-            color: mod.widgets.COLOR_PRIMARY,
-            color_hover: mod.widgets.COLOR_PRIMARY,
-            color_down: mod.widgets.COLOR_PRIMARY,
+            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
+            color_hover: mod.widgets.COLOR_TEXT_ON_ACCENT,
+            color_down: mod.widgets.COLOR_TEXT_ON_ACCENT,
         }
         draw_icon +: {
-            color: mod.widgets.COLOR_PRIMARY,
+            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
         }
     });
 }
@@ -557,18 +571,18 @@ pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
 pub fn apply_danger_button_style(cx: &mut Cx, button: &mut ButtonRef) {
     script_apply_eval!(cx, button, {
         draw_bg +: {
-            border_color: mod.widgets.COLOR_FG_DANGER_RED,
-            color: mod.widgets.COLOR_FG_DANGER_RED,
-            color_hover: mod.widgets.COLOR_FG_DANGER_RED_HOVER,
-            color_down: mod.widgets.COLOR_FG_DANGER_RED_DOWN,
+            border_color: mod.widgets.COLOR_BG_DANGER_RED_SOLID,
+            color: mod.widgets.COLOR_BG_DANGER_RED_SOLID,
+            color_hover: mod.widgets.COLOR_BG_DANGER_RED_SOLID_HOVER,
+            color_down: mod.widgets.COLOR_BG_DANGER_RED_SOLID_DOWN,
         }
         draw_text +: {
-            color: mod.widgets.COLOR_PRIMARY,
-            color_hover: mod.widgets.COLOR_PRIMARY,
-            color_down: mod.widgets.COLOR_PRIMARY,
+            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
+            color_hover: mod.widgets.COLOR_TEXT_ON_ACCENT,
+            color_down: mod.widgets.COLOR_TEXT_ON_ACCENT,
         }
         draw_icon +: {
-            color: mod.widgets.COLOR_PRIMARY,
+            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
         }
     });
 }
