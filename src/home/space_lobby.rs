@@ -116,7 +116,7 @@ script_mod! {
 
                 color: (COLOR_TEXT)
                 color_hover: instance(COLOR_TEXT)
-                color_active: instance(COLOR_TEXT)
+                color_active: instance(COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE)
 
                 get_color: fn() -> vec4 {
                     return mix(
@@ -145,7 +145,7 @@ script_mod! {
 
                 color: (COLOR_TEXT)
                 color_hover: instance(COLOR_TEXT)
-                color_active: instance(COLOR_TEXT)
+                color_active: instance(COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE)
 
                 text_style: REGULAR_TEXT {font_size: 11},
 
@@ -352,7 +352,7 @@ script_mod! {
                         margin: 0
                         width: Fit, height: Fit,
                         text: "Suggested"
-                        draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: (COLOR_INFO_BLUE) }
+                        draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: (COLOR_FG_INFO_BLUE) }
                     }
                 }
 

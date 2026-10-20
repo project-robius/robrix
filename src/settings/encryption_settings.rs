@@ -151,7 +151,7 @@ script_mod! {
             margin: Inset{top: 5, bottom: 5}
             show_bg: true
             draw_bg +: {
-                color: (COLOR_SECONDARY)
+                color: (COLOR_MODAL_PANEL_BG)
                 border_radius: 4.0
             }
 

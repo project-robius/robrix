@@ -25,8 +25,8 @@ script_mod! {
         icon_walk: Walk{width: 18, height: 18}
 
         draw_bg +: {
-            color: (COLOR_PRIMARY)
-            color_hover: (COLOR_LIST_ITEM_BG_HOVER)
+            color: (COLOR_BG_FLOATING)
+            color_hover: (COLOR_FLOATING_ITEM_BG_HOVER)
             color_down: (COLOR_CONTEXT_MENU_ITEM_BG_DOWN)
             border_radius: 4.0
         }
@@ -85,7 +85,7 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: (COLOR_PRIMARY)
+            color: (COLOR_BG_FLOATING)
             border_radius: 5.0
             border_size: 0.5
             border_color: (COLOR_CONTEXT_MENU_BORDER)

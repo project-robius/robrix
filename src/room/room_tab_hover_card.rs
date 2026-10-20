@@ -23,7 +23,7 @@ script_mod! {
                 padding: Inset{top: 12, left: 12, bottom: 12}
                 align: Align{y: 0.5}
                 draw_bg +: {
-                    color: (COLOR_PRIMARY)
+                    color: (COLOR_BG_FLOATING)
                     border_radius: 10
                     border_size: 1
                     border_color: (COLOR_DIVIDER)

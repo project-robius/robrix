@@ -43,7 +43,7 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: (COLOR_PRIMARY)
+            color: (COLOR_BG_FLOATING)
             border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS
             border_size: 0.0
         }
@@ -216,7 +216,7 @@ script_mod! {
                         color: (COLOR_TRANSPARENT)
                         border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS,
                         border_size: 1.25,
-                        border_color: (COLOR_SECONDARY)
+                        border_color: (COLOR_CODE_BLOCK_BORDER)
                     }
                 }
             }

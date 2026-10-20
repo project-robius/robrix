@@ -139,7 +139,7 @@ script_mod! {
                 margin: 0
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 11 },
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: (COLOR_ACTIVE_PRIMARY_DARKER)
                 }
                 text: "Downloading…"
             }

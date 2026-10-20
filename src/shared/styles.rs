@@ -149,9 +149,13 @@ script_mod! {
     mod.widgets.COLOR_BG_DANGER_RED = #FFF0F0
     mod.widgets.COLOR_BG_DANGER_RED_HOVER = #xF0D4D4
     mod.widgets.COLOR_BG_DANGER_RED_DOWN = #xE0B8B8
+    mod.widgets.COLOR_BG_NEUTRAL = #xE3E3E3
+    mod.widgets.COLOR_BG_NEUTRAL_HOVER = #xD0D0D0
+    mod.widgets.COLOR_BG_NEUTRAL_DOWN = #xC0C0C0
     mod.widgets.COLOR_FG_DISABLED = #B3B3B3
     mod.widgets.COLOR_BG_DISABLED = #E0E0E0
     mod.widgets.COLOR_INFO_BLUE = #0f88fe
+    mod.widgets.COLOR_FG_INFO_BLUE = #x0D67C0
     mod.widgets.COLOR_BG_INFO_BLUE = #xE8F4FD
     mod.widgets.COLOR_WARNING_YELLOW = #fcdb03
     mod.widgets.COLOR_TEXT_WARNING_NOT_FOUND = #953800
@@ -169,9 +173,12 @@ script_mod! {
 
     mod.widgets.COLOR_PRIMARY_DARKER = #fefefe
     mod.widgets.COLOR_SECONDARY = #E3E3E3
-    mod.widgets.COLOR_SECONDARY_HOVER = #xD0D0D0
-    mod.widgets.COLOR_SECONDARY_DOWN = #xC0C0C0
     mod.widgets.COLOR_SECONDARY_DARKER = #C8C8C8
+
+    // Modals, menus, popups, and other surfaces that float above the panes.
+    mod.widgets.COLOR_BG_FLOATING = #xFFFFFF
+    mod.widgets.COLOR_FLOATING_ITEM_BG_HOVER = #xEFF3F8
+    mod.widgets.COLOR_FLOATING_ITEM_BG_SELECTED = #xF0F5FF
 
     // What a list item, e.g., a room, message, or menu item, darkens to on hover or press.
     mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #xEFF3F8
@@ -315,6 +322,7 @@ script_mod! {
     mod.widgets.COLOR_CONTEXT_MENU_ITEM_BG_DOWN = #xDCDCDC
     mod.widgets.COLOR_CONTEXT_MENU_BORDER = #x888888
     mod.widgets.COLOR_ROOM_INPUT_MENU_ITEM_BG_DOWN = #xD0D8E8
+    mod.widgets.COLOR_MENTION_POPUP_BORDER = #xE3E3E3
 
     mod.widgets.COLOR_HEADER_FG = #F;
     mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
@@ -406,10 +414,14 @@ script_mod! {
 
     mod.widgets.COLOR_SPACE_LOBBY_NAME_TEXT = #x1A1A1A
     mod.widgets.COLOR_SPACE_LOBBY_TREE_LINES = #x888888
+    // Not COLOR_TEXT_ON_ACCENT, since white on the light accent is only 3.5:1.
+    mod.widgets.COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE = #x111830
 
     mod.widgets.COLOR_INVITE_SCREEN_TOPIC_TEXT = #x444444
 
     mod.widgets.COLOR_MODAL_TIP_TEXT = #xAAAAAA
+    mod.widgets.COLOR_MODAL_PANEL_BG = #xE3E3E3
+    mod.widgets.COLOR_CODE_BLOCK_BORDER = #xE3E3E3
     mod.widgets.COLOR_TSP_FIELD_CAPTION_TEXT = #x777777
     mod.widgets.COLOR_NO_PREVIEW_ICON_DISC = #xD6E6FF
     mod.widgets.COLOR_NO_PREVIEW_ICON_PAGE = #xFFFFFF
@@ -554,9 +566,9 @@ pub fn apply_neutral_button_style(cx: &mut Cx, button: &mut ButtonRef) {
     script_apply_eval!(cx, button, {
         draw_bg +: {
             border_color: mod.widgets.COLOR_BG_DISABLED,
-            color: mod.widgets.COLOR_SECONDARY,
-            color_hover: mod.widgets.COLOR_SECONDARY_HOVER,
-            color_down: mod.widgets.COLOR_SECONDARY_DOWN,
+            color: mod.widgets.COLOR_BG_NEUTRAL,
+            color_hover: mod.widgets.COLOR_BG_NEUTRAL_HOVER,
+            color_down: mod.widgets.COLOR_BG_NEUTRAL_DOWN,
         }
         draw_text +: {
             color: mod.widgets.COLOR_TEXT,

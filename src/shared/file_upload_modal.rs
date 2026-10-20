@@ -62,7 +62,7 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY)
+            color: (COLOR_BG_FLOATING)
             border_radius: 6.0
             border_size: 0.0
         }
