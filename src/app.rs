@@ -17,7 +17,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, Appearance, AppearanceGlobal, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -46,6 +46,30 @@ script_mod! {
                         View {
                             width: Fill, height: Fit
                             nav_history_buttons := NavHistoryButtons {}
+                        }
+                    }
+                    // The min/max/close buttons only show up on Windows and on Linux without native decorations.
+                    windows_buttons +: {
+                        min +: {
+                            draw_bg +: {
+                                color: (COLOR_CAPTION_BUTTON_ICON)
+                                color_hover: (COLOR_CAPTION_BUTTON_ICON_HOVER)
+                                color_down: (COLOR_CAPTION_BUTTON_ICON_HOVER)
+                                bg_color_hover: (COLOR_CAPTION_BUTTON_BG_HOVER)
+                                bg_color_down: (COLOR_CAPTION_BUTTON_BG_DOWN)
+                            }
+                        }
+                        max +: {
+                            draw_bg +: {
+                                color: (COLOR_CAPTION_BUTTON_ICON)
+                                color_hover: (COLOR_CAPTION_BUTTON_ICON_HOVER)
+                                color_down: (COLOR_CAPTION_BUTTON_ICON_HOVER)
+                                bg_color_hover: (COLOR_CAPTION_BUTTON_BG_HOVER)
+                                bg_color_down: (COLOR_CAPTION_BUTTON_BG_DOWN)
+                            }
+                        }
+                        close +: {
+                            draw_bg +: { color: (COLOR_CAPTION_BUTTON_ICON) }
                         }
                     }
                 }
@@ -170,7 +194,10 @@ script_mod! {
     }
 }
 
-app_main!(App);
+// This runs before App::script_mod, so even the first frame uses the saved appearance.
+app_main!(App, configure: |cx| {
+    cx.set_global(AppearanceGlobal(persistence::load_appearance()));
+});
 
 #[derive(Script)]
 pub struct App {
@@ -783,14 +810,16 @@ impl AppStateSaveFingerprint {
 
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
+        let appearance = vm.cx_mut().global::<AppearanceGlobal>().0;
         // Order matters: base widgets first, then app widgets, then app UI.
         makepad_widgets::theme_mod(vm);
-        script_eval!(vm, {
-            mod.theme = mod.themes.light
-        });
+        match appearance {
+            Appearance::Light => script_eval!(vm, { mod.theme = mod.themes.light }),
+            Appearance::Dark => script_eval!(vm, { mod.theme = mod.themes.dark }),
+        };
         makepad_widgets::widgets_mod(vm);
         makepad_code_editor::script_mod(vm);
-        crate::shared::script_mod(vm);
+        crate::shared::script_mod(vm, appearance);
 
         #[cfg(feature = "tsp")]
         crate::tsp::script_mod(vm);

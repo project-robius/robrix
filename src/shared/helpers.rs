@@ -10,6 +10,47 @@ script_mod! {
     mod.widgets.ScrollBar.draw_bg.color_hover = (COLOR_SCROLL_BAR_HANDLE_HOVER)
     mod.widgets.ScrollBar.draw_bg.color_drag = (COLOR_SCROLL_BAR_HANDLE_DRAG)
 
+    // Every toggle, checkbox, and radio button uses this styling.
+    mod.widgets.CheckBoxFlat.draw_bg.color = (COLOR_TOGGLE_BG)
+    mod.widgets.CheckBoxFlat.draw_bg.color_hover = (COLOR_TOGGLE_BG)
+    mod.widgets.CheckBoxFlat.draw_bg.color_down = (COLOR_TOGGLE_BG)
+    mod.widgets.CheckBoxFlat.draw_bg.color_focus = (COLOR_TOGGLE_BG)
+    mod.widgets.CheckBoxFlat.draw_bg.color_active = (COLOR_TOGGLE_BG)
+    mod.widgets.CheckBoxFlat.draw_bg.color_disabled = (COLOR_TOGGLE_BG_DISABLED)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color = (COLOR_TOGGLE_BORDER)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_hover = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_down = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_focus = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_active = (COLOR_TOGGLE_BORDER)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_disabled = (COLOR_TOGGLE_BORDER_DISABLED)
+    mod.widgets.CheckBoxFlat.draw_bg.mark_color_active = (COLOR_TOGGLE_MARK_ACTIVE)
+
+    // ToggleFlat derives from CheckBoxFlat but has its own knob colors.
+    mod.widgets.ToggleFlat.draw_bg.mark_color = (COLOR_TOGGLE_MARK)
+    mod.widgets.ToggleFlat.draw_bg.mark_color_hover = (COLOR_TOGGLE_MARK)
+    mod.widgets.ToggleFlat.draw_bg.mark_color_active = (COLOR_TOGGLE_MARK_ACTIVE)
+
+    mod.widgets.RadioButtonFlat.draw_bg.color = (COLOR_TOGGLE_BG)
+    mod.widgets.RadioButtonFlat.draw_bg.color_hover = (COLOR_TOGGLE_BG)
+    mod.widgets.RadioButtonFlat.draw_bg.color_down = (COLOR_TOGGLE_BG)
+    mod.widgets.RadioButtonFlat.draw_bg.color_focus = (COLOR_TOGGLE_BG)
+    mod.widgets.RadioButtonFlat.draw_bg.color_active = (COLOR_TOGGLE_BG)
+    mod.widgets.RadioButtonFlat.draw_bg.color_disabled = (COLOR_TOGGLE_BG_DISABLED)
+    mod.widgets.RadioButtonFlat.draw_bg.border_color = (COLOR_TOGGLE_BORDER)
+    mod.widgets.RadioButtonFlat.draw_bg.border_color_hover = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.RadioButtonFlat.draw_bg.border_color_down = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.RadioButtonFlat.draw_bg.border_color_focus = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.RadioButtonFlat.draw_bg.border_color_active = (COLOR_TOGGLE_BORDER)
+    mod.widgets.RadioButtonFlat.draw_bg.border_color_disabled = (COLOR_TOGGLE_BORDER_DISABLED)
+    mod.widgets.RadioButtonFlat.draw_bg.mark_color_active = (COLOR_TOGGLE_MARK_ACTIVE)
+
+    mod.widgets.DrawCheckLabel.color = (COLOR_TOGGLE_TEXT)
+    mod.widgets.DrawCheckLabel.color_hover = (COLOR_TOGGLE_TEXT)
+    mod.widgets.DrawCheckLabel.color_down = (COLOR_TOGGLE_TEXT)
+    mod.widgets.DrawCheckLabel.color_focus = (COLOR_TOGGLE_TEXT)
+    mod.widgets.DrawCheckLabel.color_active = (COLOR_TOGGLE_TEXT)
+    mod.widgets.DrawCheckLabel.color_disabled = (COLOR_TOGGLE_TEXT_DISABLED)
+
     // The scroll bar used by all lists (like portallists).
     mod.widgets.ListScrollBar = ScrollBar { bar_size: 9 }
 

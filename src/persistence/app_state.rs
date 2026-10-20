@@ -3,11 +3,13 @@ use std::io::Write;
 use makepad_widgets::*;
 use serde::{self, Deserialize, Serialize};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
-use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir};
+use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir, settings::app_preferences::Appearance};
 
 const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.json";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
+
+const APPEARANCE_FILE_NAME: &str = "appearance.json";
 
 /// Persistable state of the window's size, position, and fullscreen status.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -97,6 +99,26 @@ impl WindowGeomTracker {
         log!("Successfully saved window geometry: {geom:?}");
         Ok(())
     }
+}
+
+/// Loads the saved [`Appearance`], or the default if there isn't a valid one.
+pub fn load_appearance() -> Appearance {
+    let path = app_data_dir().join(APPEARANCE_FILE_NAME);
+    let Ok(bytes) = std::fs::read(path) else { return Appearance::default() };
+    serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+        error!("Failed to parse the saved appearance: {e}");
+        Appearance::default()
+    })
+}
+
+/// Saves the given [`Appearance`] to persistent storage.
+pub fn save_appearance(appearance: Appearance) -> anyhow::Result<()> {
+    std::fs::write(
+        app_data_dir().join(APPEARANCE_FILE_NAME),
+        serde_json::to_string(&appearance)?,
+    )?;
+    log!("Successfully saved appearance: {appearance:?}");
+    Ok(())
 }
 
 /// Save the current app state to persistent storage.
