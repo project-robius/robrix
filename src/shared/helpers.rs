@@ -44,9 +44,9 @@ script_mod! {
 
     // The base widget definition used for all "small" modals in Robrix.
     mod.widgets.SmallModal = RoundedView {
-        width: Fill { max: 400 }
+        width: Fill { max: 500 }
         height: Fit { max: FitBound.Rel{base: Base.Full, factor: 1.0} }
-        margin: 20
+        margin: Inset { top: 30, bottom: 30, left: 15, right: 15 },
         padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
         flow: Down
 
