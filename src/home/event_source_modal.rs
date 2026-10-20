@@ -21,12 +21,12 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
         icon_walk: Walk{width: 14, height: 14, margin: 0}
         draw_icon.svg: (ICON_COPY)
-        draw_icon.color: #666
+        draw_icon.color: (COLOR_TEXT_MUTED)
         draw_bg +: {
             border_size: 0,
-            color: #0000
-            color_hover: #00000015
-            color_down: #00000025
+            color: (COLOR_TRANSPARENT)
+            color_hover: (COLOR_FLAT_ICON_BUTTON_BG_HOVER)
+            color_down: (COLOR_FLAT_ICON_BUTTON_BG_DOWN)
         }
     }
 
@@ -38,13 +38,8 @@ script_mod! {
         margin: Inset { top: 30, bottom: 30, left: 15, right: 15 },
         align: Align{x: 0.5, y: 0}
         flow: Down
-        padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
-
-        // Make this a ScrollYView
-        scroll_bars: ScrollBars {
-            show_scroll_x: false, show_scroll_y: true,
-            scroll_bar_y: ScrollBar {drag_scrolling: true}
-        }
+        padding: Inset{top: 20}
+        cursor: MouseCursor.Default
 
         show_bg: true
         draw_bg +: {
@@ -58,12 +53,13 @@ script_mod! {
             width: Fill, height: Fit,
             flow: Right,
             align: Align{y: 0.5}
+            padding: Inset{left: 25, right: 25}
 
             title := Label {
                 width: Fill, height: Fit,
                 draw_text +: {
                     text_style: TITLE_TEXT {font_size: 16},
-                    color: #000
+                    color: (COLOR_TEXT_TITLE)
                 }
                 text: "View Event Source"
             }
@@ -75,141 +71,160 @@ script_mod! {
                 align: Align{x: 0.5, y: 0.5}
                 icon_walk: Walk{width: 18, height: 18, margin: 0}
                 draw_icon.svg: (ICON_CLOSE)
-                draw_icon.color: #666
+                draw_icon.color: (COLOR_TEXT_MUTED)
                 draw_bg +: {
                     border_size: 0
-                    color: #0000
-                    color_hover: #00000015
-                    color_down: #00000025
-                }
-            }
-        }
-
-        // Room ID row
-        room_id_row := View {
-            width: Fill, height: Fit,
-            flow: Flow.Right {wrap: true}
-            align: Align{y: 0.5}
-            margin: Inset{top: -1, bottom: -1}
-            padding: 0
-
-            Label {
-                width: Fit, height: Fit,
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 11},
-                    color: #666
-                }
-                text: "Room ID:"
-            }
-            room_id_value := Label {
-                width: Fit, height: Fit,
-                // the top margin is a hack to fix vertical alignment
-                margin: Inset{top: 1, left: 4}
-                draw_text +: {
-                    text_style: theme.font_code {font_size: 10},
-                    color: #000
-                }
-                text: "<Unknown Room ID>"
-            }
-            room_id_copy_button := mod.widgets.CopyButton {
-                margin: Inset{left: 4}
-            }
-        }
-
-        // Event ID row
-        event_id_row := View {
-            width: Fill, height: Fit,
-            flow: Flow.Right {wrap: true}
-            align: Align{y: 0.5}
-            margin: Inset{top: -1, bottom: -1}
-            padding: 0
-
-            Label {
-                width: Fit, height: Fit,
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 11},
-                    color: #666
-                }
-                text: "Event ID:"
-            }
-            event_id_value := Label {
-                width: Fit, height: Fit,
-                // the top margin is a hack to fix vertical alignment
-                margin: Inset{top: 1, left: 4}
-                draw_text +: {
-                    text_style: theme.font_code {font_size: 10},
-                    color: #000
-                }
-                text: "<Unknown Event ID>"
-            }
-            event_id_copy_button := mod.widgets.CopyButton {
-                margin: Inset{left: 4}
-            }
-        }
-
-        LineH {
-            height: 1
-            margin: 3
-        }
-
-        // Original event source section header
-        source_header := View {
-            width: Fill, height: Fit,
-            flow: Right,
-            align: Align{y: 0.5}
-            padding: Inset{top: 3, left: 3, right: 6}
-
-            source_label := Label {
-                width: Fill, height: Fit,
-                draw_text +: {
-                    text_style: TITLE_TEXT {font_size: 13},
-                    color: #000
-                }
-                text: "Latest event source"
-            }
-
-            copy_source_button := mod.widgets.CopyButton {}
-        }
-
-        // An overlay view that draws a border frame around the code view.
-        code_block := View {
-            width: Fill,
-            height: Fit,
-            flow: Overlay 
-            // align the left side of the border frame with the left side of the room id / event id rows
-            padding: 6
-
-            // The code editor content (drawn first, behind the overlay).
-            code_view := mod.widgets.LightCodeView {
-                editor +: {
-                    margin: Inset{top: 12, left: 12, bottom: 12},
-                    pad_right: 12,
-                    width: Fill,
-                    height: Fit { max: FitBound.Abs(1500.0) }
-                    word_wrap: true
-                    draw_text +: { text_style +: { font_size: 11 } }
-                }
-                text: "<Unknown Event Source>"
-            }
-
-            // Border overlay frame (drawn on top of content)
-            // Only draws the stroke, fill is transparent
-            border_frame := RoundedView {
-                width: Fill,
-                height: Fill,
-                show_bg: true
-                draw_bg +: {
                     color: (COLOR_TRANSPARENT)
-                    border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS,
-                    border_size: 1.25,
-                    border_color: (COLOR_SECONDARY)
+                    color_hover: (COLOR_FLAT_ICON_BUTTON_BG_HOVER)
+                    color_down: (COLOR_FLAT_ICON_BUTTON_BG_DOWN)
                 }
             }
         }
 
-        // just some extra space at the bottom
-        View {
-            width: Fill, height: 25
+        // Everything below the title scrolls as one, up to the height left in the modal.
+        body_view := View {
+            width: Fill
+            height: Fit { max: FitBound.Rel{base: Base.Unused, factor: 1.0} }
+            flow: Down
+            margin: Inset{top: -1}
+            padding: Inset{right: 25, bottom: 20, left: 25}
+
+            // Make this a ScrollYView
+            scroll_bars: ScrollBars {
+                show_scroll_x: false, show_scroll_y: true,
+                scroll_bar_y: ScrollBar {drag_scrolling: true}
+            }
+
+            // Room ID row
+            room_id_row := View {
+                width: Fill, height: Fit,
+                flow: Flow.Right {wrap: true}
+                align: Align{y: 0.5}
+                margin: Inset{bottom: -1}
+                padding: 0
+
+                Label {
+                    width: Fit, height: Fit,
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 11},
+                        color: (COLOR_TEXT_MUTED)
+                    }
+                    text: "Room ID:"
+                }
+                room_id_value := Label {
+                    width: Fit, height: Fit,
+                    // the top margin is a hack to fix vertical alignment
+                    margin: Inset{top: 1, left: 4}
+                    draw_text +: {
+                        text_style: theme.font_code {font_size: 10},
+                        color: (COLOR_TEXT_BODY)
+                    }
+                    text: "<Unknown Room ID>"
+                }
+                room_id_copy_button := mod.widgets.CopyButton {
+                    margin: Inset{left: 4}
+                }
+            }
+
+            // Event ID row
+            event_id_row := View {
+                width: Fill, height: Fit,
+                flow: Flow.Right {wrap: true}
+                align: Align{y: 0.5}
+                margin: Inset{top: -1, bottom: -1}
+                padding: 0
+
+                Label {
+                    width: Fit, height: Fit,
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 11},
+                        color: (COLOR_TEXT_MUTED)
+                    }
+                    text: "Event ID:"
+                }
+                event_id_value := Label {
+                    width: Fit, height: Fit,
+                    // the top margin is a hack to fix vertical alignment
+                    margin: Inset{top: 1, left: 4}
+                    draw_text +: {
+                        text_style: theme.font_code {font_size: 10},
+                        color: (COLOR_TEXT_BODY)
+                    }
+                    text: "<Unknown Event ID>"
+                }
+                event_id_copy_button := mod.widgets.CopyButton {
+                    margin: Inset{left: 4}
+                }
+            }
+
+            LineH {
+                height: 1
+                margin: 3
+            }
+
+            // Original event source section header
+            source_header := View {
+                width: Fill, height: Fit,
+                flow: Right,
+                align: Align{y: 0.5}
+                padding: Inset{top: 3, left: 3, right: 6}
+
+                source_label := Label {
+                    width: Fill, height: Fit,
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 13},
+                        color: (COLOR_TEXT_TITLE)
+                    }
+                    text: "Latest event source"
+                }
+
+                copy_source_button := mod.widgets.CopyButton {}
+            }
+
+            // An overlay view that draws a border frame around the code view.
+            code_block := View {
+                width: Fill,
+                height: Fit,
+                flow: Overlay 
+                // align the left side of the border frame with the left side of the room id / event id rows
+                padding: 6
+
+                // The code editor content (drawn first, behind the overlay).
+                code_view := mod.widgets.LightCodeView {
+                    editor +: {
+                        margin: 12,
+                        width: Fill,
+                        height: Fit
+                        word_wrap: true
+                        scroll_bars +: {
+                            show_scroll_x: true
+                            show_scroll_y: false
+                            scroll_bar_x.drag_scrolling: true
+                        }
+                        draw_text +: { text_style +: { font_size: 11 } }
+                    }
+                    text: "<Unknown Event Source>"
+                }
+
+                // Border overlay frame (drawn on top of content)
+                // Only draws the stroke, fill is transparent
+                border_frame := RoundedView {
+                    width: Fill,
+                    height: Fill,
+                    show_bg: true
+                    draw_bg +: {
+                        color: (COLOR_TRANSPARENT)
+                        border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS,
+                        border_size: 1.25,
+                        border_color: (COLOR_SECONDARY)
+                    }
+                }
+            }
+
+            // just some extra space at the bottom
+            View {
+                width: Fill, height: 25
+            }
         }
     }
 }
@@ -326,6 +341,8 @@ impl EventSourceModal {
         self.view.button(cx, ids!(room_id_copy_button)).reset_hover(cx);
         self.view.button(cx, ids!(event_id_copy_button)).reset_hover(cx);
         self.view.button(cx, ids!(copy_source_button)).reset_hover(cx);
+        self.view.view(cx, ids!(body_view)).set_scroll_pos(cx, Vec2d::default());
+        self.view.code_view(cx, ids!(code_view)).set_scroll_pos(cx, Vec2d::default());
         self.view.redraw(cx);
     }
 }
