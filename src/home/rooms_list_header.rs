@@ -34,8 +34,8 @@ script_mod! {
         spacing: 3,
 
         tooltip_bg_color_syncing: (COLOR_ACTIVE_PRIMARY)
-        tooltip_bg_color_offline: (COLOR_FG_DANGER_RED)
-        tooltip_bg_color_synced: (COLOR_FG_ACCEPT_GREEN)
+        tooltip_bg_color_offline: (COLOR_BG_DANGER_RED_SOLID)
+        tooltip_bg_color_synced: (COLOR_BG_ACCEPT_GREEN_SOLID)
 
         header_title := Label {
             width: Fill,

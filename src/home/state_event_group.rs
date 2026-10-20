@@ -35,7 +35,7 @@ script_mod! {
         flow: Right,
         spacing: 1.5
         color: (SMALL_STATE_TEXT_COLOR)
-        color_highlighted: (COLOR_ROBRIX_PURPLE)
+        color_highlighted: (COLOR_TEXT_PURPLE)
 
         toggle_arrow := mod.widgets.ExpandArrow {
             width: 16, height: 16,

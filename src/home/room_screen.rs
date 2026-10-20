@@ -529,7 +529,7 @@ script_mod! {
     // The view used for a server notice, which always has the same red header.
     mod.widgets.ServerNoticeMessage = mod.widgets.Message {
         header +: {
-            avatar +: { text_view +: { draw_bg.color: (COLOR_FG_DANGER_RED), text +: { text: "⚠" } } }
+            avatar +: { text_view +: { draw_bg.color: (COLOR_BG_DANGER_RED_SOLID), text +: { text: "⚠" } } }
             username +: {
                 draw_text +: { color: (COLOR_FG_DANGER_RED) }
                 text: "Server notice"

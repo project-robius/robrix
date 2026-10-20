@@ -12,7 +12,7 @@ script_mod! {
         // max_vertical: theme.splitter_max_vertical
 
         draw_bg +: {
-            color: COLOR_SECONDARY
+            color: COLOR_PANE_DIVIDER_GRIP
             color_hover: COLOR_ROBRIX_PURPLE
             color_drag: COLOR_ROBRIX_PURPLE
             color_bg: COLOR_PANE_DIVIDER
@@ -106,7 +106,7 @@ script_mod! {
         margin: Inset{left: -34, right: 4}
         draw_button +: {
             color: COLOR_DOCK_TAB_FG
-            color_active: COLOR_PRIMARY
+            color_active: COLOR_TEXT_ON_ACCENT
             color_bg_hover: uniform(COLOR_ROOM_TAB_BUTTON_BG_HOVER)
             color_bg_active_hover: uniform(COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER)
 
@@ -163,7 +163,7 @@ script_mod! {
             text_overflow: TextOverflow.Ellipsis
 
             color: COLOR_DOCK_TAB_FG
-            color_active: COLOR_PRIMARY
+            color_active: COLOR_TEXT_ON_ACCENT
             get_color: fn() {
                 return self.color.mix(self.color_active, self.active)
             }

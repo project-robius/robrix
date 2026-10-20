@@ -177,10 +177,10 @@ impl WidgetMatchEvent for TspVerificationModal {
                                 color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                             },
                             draw_icon +: {
-                                color: mod.widgets.COLOR_PRIMARY,
+                                color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                             }
                             draw_text +: {
-                                color: mod.widgets.COLOR_PRIMARY,
+                                color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                             },
                         });
                         new_state = TspVerificationModalState::RequestDeclined;
@@ -247,10 +247,10 @@ impl WidgetMatchEvent for TspVerificationModal {
                             color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                         },
                         draw_icon +: {
-                            color: mod.widgets.COLOR_PRIMARY,
+                            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                         }
                         draw_text +: {
-                            color: mod.widgets.COLOR_PRIMARY,
+                            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                         }
                     });
                     self.redraw(cx);

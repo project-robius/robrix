@@ -174,7 +174,7 @@ script_mod! {
             height: 28,
             draw_icon +: {
                 svg: (ICON_CHECKMARK),
-                color: (COLOR_PRIMARY),
+                color: (COLOR_TEXT_ON_ACCENT),
             }
             icon_walk: Walk{ width: 22, height: 22 }
         }
@@ -325,11 +325,12 @@ script_mod! {
         }
         content: mod.widgets.PopupDialogRightToLeftProgress {}
         bg_color_blank: (COLOR_PRIMARY)
-        bg_color_error: (COLOR_FG_DANGER_RED)
+        bg_color_error: (COLOR_BG_DANGER_RED_SOLID)
         bg_color_info: (COLOR_INFO_BLUE)
-        bg_color_success: (COLOR_FG_ACCEPT_GREEN)
+        bg_color_success: (COLOR_BG_ACCEPT_GREEN_SOLID)
         bg_color_warning: (COLOR_WARNING_YELLOW)
-        text_color_on_color: (COLOR_PRIMARY)
+        text_color_on_accent: (COLOR_TEXT_ON_ACCENT)
+        text_color_on_warning: (COLOR_TEXT_ON_WARNING)
     }
 
     mod.widgets.RobrixPopupNotificationTopToBottomProgress = mod.widgets.RobrixPopupNotificationRightToLeftProgress {
@@ -378,7 +379,8 @@ pub struct RobrixPopupNotification {
     #[live] bg_color_success: Vec4f,
     #[live] bg_color_warning: Vec4f,
     /// The text color for popups with a strongly colored background (error, info, success).
-    #[live] text_color_on_color: Vec4f,
+    #[live] text_color_on_accent: Vec4f,
+    #[live] text_color_on_warning: Vec4f,
 
     #[rust] draw_list: Option<DrawList2d>,
     #[redraw] #[live] draw_bg: DrawQuad,
@@ -517,25 +519,25 @@ impl RobrixPopupNotification {
             PopupKind::Error => {
                 script_apply_eval!(cx, popup_icon, {
                     draw_icon.svg: mod.widgets.ICON_FORBIDDEN,
-                    draw_icon.color: mod.widgets.COLOR_PRIMARY,
+                    draw_icon.color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 });
             }
             PopupKind::Info => {
                 script_apply_eval!(cx, popup_icon, {
                     draw_icon.svg: mod.widgets.ICON_INFO,
-                    draw_icon.color: mod.widgets.COLOR_PRIMARY,
+                    draw_icon.color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 });
             }
             PopupKind::Success => {
                 script_apply_eval!(cx, popup_icon, {
                     draw_icon.svg: mod.widgets.ICON_CHECKMARK,
-                    draw_icon.color: mod.widgets.COLOR_PRIMARY,
+                    draw_icon.color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 });
             }
             PopupKind::Warning => {
                 script_apply_eval!(cx, popup_icon, {
                     draw_icon.svg: mod.widgets.ICON_WARNING,
-                    draw_icon.color: mod.widgets.COLOR_POPUP_WARNING_ICON,
+                    draw_icon.color: mod.widgets.COLOR_TEXT_ON_WARNING,
                 });
             }
             PopupKind::Blank => {}
@@ -544,21 +546,35 @@ impl RobrixPopupNotification {
         // Set the text and close button color based on the popup kind.
         match popup.kind {
             PopupKind::Error | PopupKind::Info | PopupKind::Success => {
-                view.label(cx, ids!(popup_label)).set_text_color(cx, self.text_color_on_color);
+                view.label(cx, ids!(popup_label)).set_text_color(cx, self.text_color_on_accent);
                 script_apply_eval!(cx, close_button, {
                     draw_bg +: {
-                        color:              mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR,
-                        color_hover:        mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_HOVER,
-                        color_down:         mod.widgets.COLOR_POPUP_CLOSE_BG_ON_COLOR_DOWN,
-                        border_color:       mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR,
-                        border_color_hover: mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_HOVER,
-                        border_color_down:  mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_COLOR_DOWN,
+                        color:              mod.widgets.COLOR_POPUP_CLOSE_BG_ON_ACCENT,
+                        color_hover:        mod.widgets.COLOR_POPUP_CLOSE_BG_ON_ACCENT_HOVER,
+                        color_down:         mod.widgets.COLOR_POPUP_CLOSE_BG_ON_ACCENT_DOWN,
+                        border_color:       mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_ACCENT,
+                        border_color_hover: mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_ACCENT_HOVER,
+                        border_color_down:  mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_ACCENT_DOWN,
                     },
-                    draw_icon +: { color: mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_COLOR }
+                    draw_icon +: { color: mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_ACCENT }
                 });
             }
-            // These keep the template's dark text and close button.
-            PopupKind::Warning | PopupKind::Blank => {}
+            PopupKind::Warning => {
+                view.label(cx, ids!(popup_label)).set_text_color(cx, self.text_color_on_warning);
+                script_apply_eval!(cx, close_button, {
+                    draw_bg +: {
+                        color:              mod.widgets.COLOR_POPUP_CLOSE_BG_ON_WARNING,
+                        color_hover:        mod.widgets.COLOR_POPUP_CLOSE_BG_ON_WARNING_HOVER,
+                        color_down:         mod.widgets.COLOR_POPUP_CLOSE_BG_ON_WARNING_DOWN,
+                        border_color:       mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING,
+                        border_color_hover: mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING_HOVER,
+                        border_color_down:  mod.widgets.COLOR_POPUP_CLOSE_BORDER_ON_WARNING_DOWN,
+                    },
+                    draw_icon +: { color: mod.widgets.COLOR_POPUP_CLOSE_ICON_ON_WARNING }
+                });
+            }
+            // A blank popup keeps the template's text and close button.
+            PopupKind::Blank => {}
         }
 
         // Set the background color of the popup based on its kind.

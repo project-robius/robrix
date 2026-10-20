@@ -797,7 +797,7 @@ impl RoomInputBar {
         } else if self.is_encrypted {
             script_apply_eval!(cx, send_message_button, {
                 enabled: true,
-                draw_icon.color: mod.widgets.COLOR_PRIMARY,
+                draw_icon.color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 draw_bg.color: mod.widgets.COLOR_ACTIVE_PRIMARY,
             });
         } else {

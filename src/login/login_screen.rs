@@ -562,10 +562,10 @@ impl LoginScreen {
                 enabled: true,
                 draw_bg +: {
                     color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                    border_color: mod.widgets.COLOR_PRIMARY,
+                    border_color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 }
                 draw_text +: {
-                    color: mod.widgets.COLOR_PRIMARY,
+                    color: mod.widgets.COLOR_TEXT_ON_ACCENT,
                 }
             });
         } else {

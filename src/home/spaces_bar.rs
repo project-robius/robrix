@@ -53,7 +53,7 @@ script_mod! {
                 text +: {
                     draw_text +: {
                         text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
-                        color: (COLOR_PRIMARY),
+                        color: (COLOR_TEXT_ON_ACCENT),
                     }
                 }
             }

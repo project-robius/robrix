@@ -448,11 +448,11 @@ impl RoomActionBar {
                             color_hover: (mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER)
                             color_down: (mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN)
                         }
-                        draw_icon +: { color: (mod.widgets.COLOR_PRIMARY) }
+                        draw_icon +: { color: (mod.widgets.COLOR_TEXT_ON_ACCENT) }
                         draw_text +: {
-                            color: (mod.widgets.COLOR_PRIMARY)
-                            color_hover: (mod.widgets.COLOR_PRIMARY)
-                            color_down: (mod.widgets.COLOR_PRIMARY)
+                            color: (mod.widgets.COLOR_TEXT_ON_ACCENT)
+                            color_hover: (mod.widgets.COLOR_TEXT_ON_ACCENT)
+                            color_down: (mod.widgets.COLOR_TEXT_ON_ACCENT)
                         }
                     });
                 }

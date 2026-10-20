@@ -44,7 +44,7 @@ script_mod! {
             border_radius: 4.0
 
             color: (COLOR_ACTIVE_PRIMARY)
-            color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
+            color_hover: (COLOR_ACTIVE_PRIMARY_HOVER)
             color_down: (COLOR_ACTIVE_PRIMARY_DOWN)
             color_disabled: (COLOR_BG_DISABLED)
 
@@ -59,13 +59,13 @@ script_mod! {
             border_color_2: vec4(-1.0, -1.0, -1.0, -1.0)
         }
 
-        draw_icon.color: (COLOR_PRIMARY)
+        draw_icon.color: (COLOR_TEXT_ON_ACCENT)
         icon_walk: Walk{width: 16, height: 16}
 
         draw_text +: {
-            color: (COLOR_PRIMARY)
-            color_hover: (COLOR_PRIMARY)
-            color_down: (COLOR_PRIMARY)
+            color: (COLOR_TEXT_ON_ACCENT)
+            color_hover: (COLOR_TEXT_ON_ACCENT)
+            color_down: (COLOR_TEXT_ON_ACCENT)
             color_disabled: (COLOR_FG_DISABLED)
             text_style: mod.widgets.REGULAR_TEXT {font_size: 10},
         }

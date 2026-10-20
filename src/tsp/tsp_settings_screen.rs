@@ -141,7 +141,7 @@ script_mod! {
                 text: "Import Existing Wallet"
                 draw_icon +: {
                     svg: (ICON_IMPORT)
-                    color: (COLOR_PRIMARY)
+                    color: (COLOR_TEXT_ON_ACCENT)
                 }
                 icon_walk: Walk{width: 16, height: 16}
             }
