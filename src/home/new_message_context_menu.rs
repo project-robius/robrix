@@ -55,7 +55,14 @@ script_mod! {
                         // However, makepad doesn't yet support this feature,
                         // so we just make the TextInput non-wrap.
                         flow: Flow.Right{wrap: false}, // do not wrap
-                        draw_bg.border_size: 0.0
+                        draw_bg +: {
+                            border_size: 0.0
+                            color: (COLOR_BG_FLOATING)
+                            color_hover: (COLOR_BG_FLOATING)
+                            color_focus: (COLOR_BG_FLOATING)
+                            color_down: (COLOR_BG_FLOATING)
+                            color_empty: (COLOR_BG_FLOATING)
+                        }
                         empty_text: "Enter reaction..."
                     }
                     reaction_send_button := RobrixPositiveIconButton {

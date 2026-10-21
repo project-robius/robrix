@@ -114,9 +114,9 @@ script_mod! {
             border_color: (COLOR_BG_DISABLED)
             border_color_hover: (COLOR_BG_DISABLED)
             border_color_down: (COLOR_BG_DISABLED)
-            color: (COLOR_SECONDARY)
-            color_hover: (COLOR_SECONDARY_HOVER)
-            color_down: (COLOR_SECONDARY_DOWN)
+            color: (COLOR_BG_NEUTRAL)
+            color_hover: (COLOR_BG_NEUTRAL_HOVER)
+            color_down: (COLOR_BG_NEUTRAL_DOWN)
         }
         draw_icon.color: (COLOR_TEXT)
         draw_text +: {

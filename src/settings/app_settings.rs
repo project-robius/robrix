@@ -97,16 +97,16 @@ script_mod! {
         popup_min_width: 260,
 
         draw_popup_bg +: {
-            color: (COLOR_PRIMARY),
+            color: (COLOR_BG_FLOATING),
             border_color: (COLOR_SECONDARY_DARKER),
             border_size: 1.0,
             border_radius: 4.0,
         }
 
         draw_item +: {
-            color: (COLOR_PRIMARY),
-            color_hover: (COLOR_LIST_ITEM_BG_HOVER),
-            color_active: (COLOR_BG_PREVIEW),
+            color: (COLOR_BG_FLOATING),
+            color_hover: (COLOR_FLOATING_ITEM_BG_HOVER),
+            color_active: (COLOR_FLOATING_ITEM_BG_SELECTED),
             mark_color: uniform(COLOR_ACTIVE_PRIMARY_DARKER),
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)

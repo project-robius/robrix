@@ -242,7 +242,7 @@ script_mod! {
             align: Align{x: 0}
 
             show_bg: true,
-            draw_bg.color: (COLOR_PRIMARY)
+            draw_bg.color: (COLOR_BG_FLOATING)
 
             user_profile_view := UserProfileView { }
 

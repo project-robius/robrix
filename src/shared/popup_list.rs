@@ -229,7 +229,7 @@ script_mod! {
             border_radius: uniform(4.0)
             border_color: instance((COLOR_POPUP_BORDER))
             border_size: uniform(2.0)
-            color: instance((COLOR_PRIMARY))
+            color: instance((COLOR_BG_FLOATING))
             display_border: instance(1.0)
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
@@ -324,7 +324,7 @@ script_mod! {
             color: (COLOR_TRANSPARENT)
         }
         content: mod.widgets.PopupDialogRightToLeftProgress {}
-        bg_color_blank: (COLOR_PRIMARY)
+        bg_color_blank: (COLOR_BG_FLOATING)
         bg_color_error: (COLOR_BG_DANGER_RED_SOLID)
         bg_color_info: (COLOR_INFO_BLUE)
         bg_color_success: (COLOR_BG_ACCEPT_GREEN_SOLID)

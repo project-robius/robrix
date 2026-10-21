@@ -42,9 +42,13 @@ script_mod! {
     mod.widgets.COLOR_BG_DANGER_RED = #x412C2B
     mod.widgets.COLOR_BG_DANGER_RED_HOVER = #x4A2E2C
     mod.widgets.COLOR_BG_DANGER_RED_DOWN = #x532F2E
+    mod.widgets.COLOR_BG_NEUTRAL = #x3A3A3A
+    mod.widgets.COLOR_BG_NEUTRAL_HOVER = #x464646
+    mod.widgets.COLOR_BG_NEUTRAL_DOWN = #x505050
     mod.widgets.COLOR_FG_DISABLED = #x6E6E6E
     mod.widgets.COLOR_BG_DISABLED = #x333333
     mod.widgets.COLOR_INFO_BLUE = #x0675DF
+    mod.widgets.COLOR_FG_INFO_BLUE = #x5AABFF
     mod.widgets.COLOR_BG_INFO_BLUE = #x1C2533
     mod.widgets.COLOR_WARNING_YELLOW = #xF2CD13
     mod.widgets.COLOR_TEXT_WARNING_NOT_FOUND = #xF0954A
@@ -55,9 +59,12 @@ script_mod! {
 
     mod.widgets.COLOR_PRIMARY_DARKER = #x252525
     mod.widgets.COLOR_SECONDARY = #x1C1C1C
-    mod.widgets.COLOR_SECONDARY_HOVER = #x333333
-    mod.widgets.COLOR_SECONDARY_DOWN = #x3D3D3D
     mod.widgets.COLOR_SECONDARY_DARKER = #x505050
+
+    // Modals, menus, popups, and other surfaces that float above the panes.
+    mod.widgets.COLOR_BG_FLOATING = #x2E2E2E
+    mod.widgets.COLOR_FLOATING_ITEM_BG_HOVER = #x3A3A3A
+    mod.widgets.COLOR_FLOATING_ITEM_BG_SELECTED = #x2F3B52
 
     // What a list item, e.g., a room, message, or menu item, lightens to on hover or press.
     mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #x2E2E2E
@@ -194,9 +201,10 @@ script_mod! {
 
     mod.widgets.COLOR_LIST_ITEM_BG_FOCUS = #x314363
     mod.widgets.COLOR_LIST_ROW_TEXT_MUTED = #xB5B5B5
-    mod.widgets.COLOR_CONTEXT_MENU_ITEM_BG_DOWN = #x3A3A3A
+    mod.widgets.COLOR_CONTEXT_MENU_ITEM_BG_DOWN = #x444444
     mod.widgets.COLOR_CONTEXT_MENU_BORDER = #x555555
-    mod.widgets.COLOR_ROOM_INPUT_MENU_ITEM_BG_DOWN = #x3A3A3A
+    mod.widgets.COLOR_ROOM_INPUT_MENU_ITEM_BG_DOWN = #x444444
+    mod.widgets.COLOR_MENTION_POPUP_BORDER = #x444444
 
     mod.widgets.COLOR_HEADER_FG = #xFFFFFF
     mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE)
@@ -288,10 +296,13 @@ script_mod! {
 
     mod.widgets.COLOR_SPACE_LOBBY_NAME_TEXT = #xE6E6E6
     mod.widgets.COLOR_SPACE_LOBBY_TREE_LINES = #x737373
+    mod.widgets.COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE = #xFFFFFF
 
     mod.widgets.COLOR_INVITE_SCREEN_TOPIC_TEXT = #xBDBDBD
 
     mod.widgets.COLOR_MODAL_TIP_TEXT = #x8E8E8E
+    mod.widgets.COLOR_MODAL_PANEL_BG = #x262626
+    mod.widgets.COLOR_CODE_BLOCK_BORDER = #x505050
     mod.widgets.COLOR_TSP_FIELD_CAPTION_TEXT = #x9F9F9F
     mod.widgets.COLOR_NO_PREVIEW_ICON_DISC = #x2A374D
     mod.widgets.COLOR_NO_PREVIEW_ICON_PAGE = #x45546E

@@ -34,7 +34,7 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: (COLOR_SECONDARY)
+                color: (COLOR_MODAL_PANEL_BG)
                 border_radius: 4.0
             }
 

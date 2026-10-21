@@ -42,7 +42,7 @@ script_mod! {
 
         color: (COLOR_TRANSPARENT)
         color_focus: (COLOR_LIST_ITEM_BG_FOCUS)
-        color_hover: (COLOR_LIST_ITEM_BG_HOVER)
+        color_hover: (COLOR_FLOATING_ITEM_BG_HOVER)
 
         // So the way this works is that we move the popup_frame wrapper view,
         // which allows the `main_content` to just behave like a regular Fill/Fill view.
@@ -57,10 +57,10 @@ script_mod! {
                 cursor: MouseCursor.Default
                 grab_key_focus: false
                 draw_bg +: {
-                    color: (COLOR_PRIMARY)
+                    color: (COLOR_BG_FLOATING)
                     border_radius: 5.0
                     border_size: 1.0
-                    border_color: (COLOR_SECONDARY)
+                    border_color: (COLOR_MENTION_POPUP_BORDER)
                     shadow_color: (COLOR_SHADOW_STRONG)
                     shadow_radius: 12.0
                     shadow_offset: vec2(0.0, 3.0)
