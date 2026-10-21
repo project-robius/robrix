@@ -14,8 +14,8 @@ version = "1.0.0-beta.3"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "android_config_changes_robrix", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "android_config_changes_robrix" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "modal_scroll_block_rounding_robrix", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "modal_scroll_block_rounding_robrix" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }

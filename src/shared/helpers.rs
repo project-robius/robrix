@@ -214,11 +214,19 @@ script_mod! {
     mod.widgets.FillerY = View { width: Fit,  height: Fill }
 
 
+    // The margin around every modal, which also keeps it out of the device's unsafe areas.
+    mod.widgets.MODAL_MARGIN = Inset {
+        top: max(30, mod.widgets.SAFE_INSET_PAD_TOP),
+        bottom: max(30, mod.widgets.SAFE_INSET_PAD_BOTTOM),
+        left: max(15, mod.widgets.SAFE_INSET_PAD_LEFT),
+        right: max(15, mod.widgets.SAFE_INSET_PAD_RIGHT),
+    }
+
     // The base widget definition used for all "small" modals in Robrix.
     mod.widgets.SmallModal = RoundedView {
         width: Fill { max: 500 }
         height: Fit { max: FitBound.Rel{base: Base.Full, factor: 1.0} }
-        margin: Inset { top: 30, bottom: 30, left: 15, right: 15 },
+        margin: (mod.widgets.MODAL_MARGIN)
         padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
         flow: Down
 

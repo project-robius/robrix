@@ -49,7 +49,7 @@ script_mod! {
 
         width: Fill { max: 1000 }
         height: Fill
-        margin: Inset { top: 30, bottom: 30, left: 15, right: 15 },
+        margin: (mod.widgets.MODAL_MARGIN)
         align: Align{x: 0.5, y: 0}
         flow: Down
         spacing: 12
