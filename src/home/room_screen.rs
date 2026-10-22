@@ -927,10 +927,7 @@ impl ScriptHook for RoomScreen {
         // A script reload changes the RoomScreen's children; invalidate the ones we cached.
         self.cached_refs = None;
         vm.with_cx_mut(|cx| {
-            if let Some(tl_state) = &mut self.tl_state.as_mut() {
-                // Clear the timeline's drawn items caches and redraw it.
-                tl_state.content_drawn_since_last_update.clear();
-                tl_state.profile_drawn_since_last_update.clear();
+            if let Some(tl_state) = self.tl_state.as_ref() {
                 // The reapply also resets the RoomInputBar, so we need to re-update its state.
                 let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
                 room_input_bar.update_room_state(
@@ -1539,6 +1536,13 @@ impl Widget for RoomScreen {
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
+            // Re-populate all items after a reload, since it resets their widgets,
+            // even if it happened while this timeline state was parked.
+            if tl_state.drawn_reload_generation != cx.reload_generation {
+                tl_state.drawn_reload_generation = cx.reload_generation;
+                tl_state.content_drawn_since_last_update.clear();
+                tl_state.profile_drawn_since_last_update.clear();
+            }
 
             // Set the portal list's range based on the number of timeline items.
             let tl_items = &tl_state.items;
@@ -3185,6 +3189,7 @@ impl RoomScreen {
                     index_of_first_own_failed: None,
                     content_drawn_since_last_update: RangeSet::new(),
                     profile_drawn_since_last_update: RangeSet::new(),
+                    drawn_reload_generation: cx.reload_generation,
                     update_receiver,
                     request_sender,
                     media_cache: MediaCache::new(Some(update_sender.clone())),
@@ -4330,6 +4335,9 @@ struct TimelineUiState {
 
     /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
     profile_drawn_since_last_update: RangeSet<usize>,
+
+    /// The `cx.reload_generation` that the above drawn-item caches were filled in.
+    drawn_reload_generation: u64,
 
     /// The channel receiver for timeline updates for this room.
     ///

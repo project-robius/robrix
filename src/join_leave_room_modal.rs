@@ -8,7 +8,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedServerName};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, rooms_list::{InviteState, set_invite_state}}, room::BasicRoomDetails, shared::{popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_negative_button_style, apply_neutral_button_style, apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
+use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, rooms_list::{InviteState, set_invite_state}}, room::BasicRoomDetails, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -22,8 +22,20 @@ script_mod! {
 
         body := ModalBody {}
 
+        // Only one cancel button and one accept button are shown at a time,
+        // depending on whether the action is positive (joining) or negative (leaving/rejecting).
         buttons_view := ModalButtonsRow {
             cancel_button := RobrixNegativeIconButton {
+                width: Fit{min: FitBound.Abs(120.0)},
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
+            }
+
+            cancel_neutral_button := RobrixNeutralIconButton {
+                visible: false
                 width: Fit{min: FitBound.Abs(120.0)},
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
@@ -39,6 +51,26 @@ script_mod! {
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Yes"
+            }
+
+            accept_negative_button := RobrixNegativeIconButton {
+                visible: false
+                width: Fit{min: FitBound.Abs(120.0)},
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Yes"
+            }
+
+            okay_button := RobrixIconButton {
+                visible: false
+                width: Fit{min: FitBound.Abs(120.0)},
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Okay"
             }
         }
 
@@ -70,12 +102,6 @@ script_mod! {
 pub struct JoinLeaveRoomModal {
     #[deref] view: View,
     #[rust] kind: Option<JoinLeaveModalKind>,
-    /// Whether the modal is in a final state, meaning the user can only click "Okay" to close it.
-    ///
-    /// * Set to `Some(true)` after a successful action (e.g., joining or leaving a room).
-    /// * Set to `Some(false)` after a join/leave error occurs.
-    /// * Set to `None` when the user is still able to interact with the modal.
-    #[rust] final_success: Option<bool>,
 }
 
 /// Kinds of content that can be shown and handled by the [`JoinLeaveRoomModal`].
@@ -171,10 +197,11 @@ impl Widget for JoinLeaveRoomModal {
 
 impl WidgetMatchEvent for JoinLeaveRoomModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let mut accept_button = self.view.button(cx, ids!(accept_button));
-        let cancel_button = self.view.button(cx, ids!(cancel_button));
+        let accept_buttons = self.view.button_set(cx, ids_array!(accept_button, accept_negative_button));
+        let cancel_buttons = self.view.button_set(cx, ids_array!(cancel_button, cancel_neutral_button));
+        let okay_button = self.view.button(cx, ids!(okay_button));
 
-        let cancel_clicked = cancel_button.clicked(actions);
+        let cancel_clicked = cancel_buttons.clicked(actions);
         if cancel_clicked ||
             actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
@@ -190,108 +217,112 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         }
 
         let Some(kind) = self.kind.as_ref() else { return };
-        let mut needs_redraw = false;
 
-        if accept_button.clicked(actions) {
-            if self.final_success.is_some() {
-                cx.action(JoinLeaveRoomModalAction::Close {
-                    room_id: kind.room_id().clone(),
-                    was_internal: true,
-                });
-                self.reset_state();
-                return;
-            }
-            else {
-                let title: Cow<str>;
-                let description: String;
-                let accept_button_text: &str;
-                match kind {
-                    JoinLeaveModalKind::AcceptInvite(invite) => {
-                        title = "Accepting this invite...".into();
-                        description = format!(
-                            "Accepting an invitation to join \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            invite.room_name_id(),
-                        );
-                        accept_button_text = "Joining...";
-                        submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: invite.room_id().clone(),
-                            alias: None,
-                            via: Vec::new(),
-                        });
-                        set_invite_state(cx, invite.room_id(), InviteState::WaitingForJoinResult);
-                    }
-                    JoinLeaveModalKind::RejectInvite(invite) => {
-                        title = "Rejecting this invite...".into();
-                        description = format!(
-                            "Rejecting an invitation to join \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            invite.room_name_id(),
-                        );
-                        accept_button_text = "Rejecting...";
-                        submit_async_request(MatrixRequest::LeaveRoom {
-                            room_id: invite.room_id().clone(),
-                        });
-                        set_invite_state(cx, invite.room_id(), InviteState::WaitingForLeaveResult);
-                    }
-                    JoinLeaveModalKind::JoinRoom { details, is_space, via } => {
-                        title = format!("Joining this {}...", if *is_space { "space" } else { "room" }).into();
-                        description = format!(
-                            "Joining \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            details.room_name_id(),
-                        );
-                        accept_button_text = "Joining...";
-                        submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: details.room_id().clone(),
-                            alias: details.alias().cloned(),
-                            via: via.clone(),
-                        });
-                    }
-                    JoinLeaveModalKind::LeaveRoom(room) => {
-                        title = "Leaving this room...".into();
-                        description = format!(
-                            "Leaving \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            room.room_name_id(),
-                        );
-                        accept_button_text = "Leaving...";
-                        submit_async_request(MatrixRequest::LeaveRoom {
-                            room_id: room.room_id().clone(),
-                        });
-                    }
-                    JoinLeaveModalKind::LeaveSpace { details, space_request_sender } => {
-                        title = "Leaving this space...".into();
-                        description = format!(
-                            "Leaving \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            details.room_name_id(),
-                        );
-                        accept_button_text = "Leaving...";
-                        if space_request_sender.send(
-                            SpaceRequest::LeaveSpace { space_name_id: details.room_name_id().clone() }
-                        ).is_err() {
-                            enqueue_popup_notification(
-                                "Failed to send leave space request.\n\nPlease restart Robrix.",
-                                PopupKind::Error,
-                                None,
-                            );
-                        }
-                    }
-                }
-
-                self.view.label(cx, ids!(title)).set_text(cx, &title);
-                self.view.label(cx, ids!(body)).set_text(cx, &description);
-                self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
-                accept_button.set_text(cx, accept_button_text);
-                accept_button.set_enabled(cx, false);
-                // The request is already on its way, so "Cancel" would be a lie.
-                cancel_button.set_text(cx, "Close");
-                needs_redraw = true;
-            }
+        if okay_button.clicked(actions) {
+            cx.action(JoinLeaveRoomModalAction::Close {
+                room_id: kind.room_id().clone(),
+                was_internal: true,
+            });
+            self.reset_state();
+            return;
         }
 
-        let mut new_final_success = None;
+        let mut needs_redraw = false;
+
+        if accept_buttons.clicked(actions) {
+            let title: Cow<str>;
+            let description: String;
+            let accept_button_text: &str;
+            match kind {
+                JoinLeaveModalKind::AcceptInvite(invite) => {
+                    title = "Accepting this invite...".into();
+                    description = format!(
+                        "Accepting an invitation to join \"{}\".\n\n\
+                        Waiting for confirmation from the homeserver...",
+                        invite.room_name_id(),
+                    );
+                    accept_button_text = "Joining...";
+                    submit_async_request(MatrixRequest::JoinRoom {
+                        room_id: invite.room_id().clone(),
+                        alias: None,
+                        via: Vec::new(),
+                    });
+                    set_invite_state(cx, invite.room_id(), InviteState::WaitingForJoinResult);
+                }
+                JoinLeaveModalKind::RejectInvite(invite) => {
+                    title = "Rejecting this invite...".into();
+                    description = format!(
+                        "Rejecting an invitation to join \"{}\".\n\n\
+                        Waiting for confirmation from the homeserver...",
+                        invite.room_name_id(),
+                    );
+                    accept_button_text = "Rejecting...";
+                    submit_async_request(MatrixRequest::LeaveRoom {
+                        room_id: invite.room_id().clone(),
+                    });
+                    set_invite_state(cx, invite.room_id(), InviteState::WaitingForLeaveResult);
+                }
+                JoinLeaveModalKind::JoinRoom { details, is_space, via } => {
+                    title = format!("Joining this {}...", if *is_space { "space" } else { "room" }).into();
+                    description = format!(
+                        "Joining \"{}\".\n\n\
+                        Waiting for confirmation from the homeserver...",
+                        details.room_name_id(),
+                    );
+                    accept_button_text = "Joining...";
+                    submit_async_request(MatrixRequest::JoinRoom {
+                        room_id: details.room_id().clone(),
+                        alias: details.alias().cloned(),
+                        via: via.clone(),
+                    });
+                }
+                JoinLeaveModalKind::LeaveRoom(room) => {
+                    title = "Leaving this room...".into();
+                    description = format!(
+                        "Leaving \"{}\".\n\n\
+                        Waiting for confirmation from the homeserver...",
+                        room.room_name_id(),
+                    );
+                    accept_button_text = "Leaving...";
+                    submit_async_request(MatrixRequest::LeaveRoom {
+                        room_id: room.room_id().clone(),
+                    });
+                }
+                JoinLeaveModalKind::LeaveSpace { details, space_request_sender } => {
+                    title = "Leaving this space...".into();
+                    description = format!(
+                        "Leaving \"{}\".\n\n\
+                        Waiting for confirmation from the homeserver...",
+                        details.room_name_id(),
+                    );
+                    accept_button_text = "Leaving...";
+                    if space_request_sender.send(
+                        SpaceRequest::LeaveSpace { space_name_id: details.room_name_id().clone() }
+                    ).is_err() {
+                        enqueue_popup_notification(
+                            "Failed to send leave space request.\n\nPlease restart Robrix.",
+                            PopupKind::Error,
+                            None,
+                        );
+                    }
+                }
+            }
+
+            self.view.label(cx, ids!(title)).set_text(cx, &title);
+            self.view.label(cx, ids!(body)).set_text(cx, &description);
+            self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
+            for accept_button in accept_buttons.iter() {
+                accept_button.set_text(cx, accept_button_text);
+            }
+            accept_buttons.set_enabled(cx, false);
+            // The request is already on its way, so "Cancel" would be a lie.
+            for cancel_button in cancel_buttons.iter() {
+                cancel_button.set_text(cx, "Close");
+            }
+            needs_redraw = true;
+        }
+
+        let mut is_final_state = false;
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
@@ -300,14 +331,14 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         "Successfully joined \"{}\".",
                         kind.room_name(),
                     ));
-                    new_final_success = Some(true);
+                    is_final_state = true;
                 }
                 Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     self.view.label(cx, ids!(title)).set_text(cx, "Error joining room!");
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(cx, ids!(body)).set_text(cx, &msg);
-                    new_final_success = Some(false);
+                    is_final_state = true;
                 }
                 _ => {}
             }
@@ -331,7 +362,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                     self.view.label(cx, ids!(title)).set_text(cx, title);
                     self.view.label(cx, ids!(body)).set_text(cx, &description);
-                    new_final_success = Some(true);
+                    is_final_state = true;
                 }
                 Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     let title: &str;
@@ -346,7 +377,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
                     self.view.label(cx, ids!(title)).set_text(cx, title);
                     self.view.label(cx, ids!(body)).set_text(cx, &description);
-                    new_final_success = Some(false);
+                    is_final_state = true;
                 }
                 _ => {}
             }
@@ -359,28 +390,25 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         Ok(()) => {
                             title = "Left space!";
                             description = format!("Successfully left \"{space_name_id}\".");
-                            new_final_success = Some(true);
                         }
                         Err(e) => {
                             title = "Error leaving space!";
                             description = format!("Failed to leave space \"{space_name_id}\".\n\nError: {e}");
-                            new_final_success = Some(false);
                         }
                     }
                     self.view.label(cx, ids!(title)).set_text(cx, title);
                     self.view.label(cx, ids!(body)).set_text(cx, &description);
+                    is_final_state = true;
                 }
             }
         }
 
-        if let Some(success) = new_final_success {
-            self.final_success = Some(success);
+        if is_final_state {
             needs_redraw = true;
-            accept_button.set_enabled(cx, true);
-            accept_button.set_text(cx, "Okay");
-            apply_primary_button_style(cx, &mut accept_button);
-            accept_button.reset_hover(cx);
-            cancel_button.set_visible(cx, false);
+            accept_buttons.set_visible(cx, false);
+            cancel_buttons.set_visible(cx, false);
+            okay_button.set_visible(cx, true);
+            okay_button.reset_hover(cx);
         }
         if needs_redraw {
             self.redraw(cx);
@@ -391,7 +419,6 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 impl JoinLeaveRoomModal {
     fn reset_state(&mut self) {
         self.kind = None;
-        self.final_success = None;
     }
 
     /// Populates this modal with the proper info based on 
@@ -472,36 +499,31 @@ impl JoinLeaveRoomModal {
             self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
         }
 
-        let mut accept_button = self.button(cx, ids!(accept_button));
-        let mut cancel_button = self.button(cx, ids!(cancel_button));
-        accept_button.set_text(cx, "Yes");
-
         let is_negative = matches!(kind,
             JoinLeaveModalKind::RejectInvite(_)
             | JoinLeaveModalKind::LeaveRoom(_)
             | JoinLeaveModalKind::LeaveSpace { .. }
         );
+        // Negative action: accept button is red, cancel button is gray/neutral.
+        self.view.button_set(cx, ids_array!(accept_negative_button, cancel_neutral_button)).set_visible(cx, is_negative);
+        // Positive action: accept button is green, cancel button is red/negative.
+        self.view.button_set(cx, ids_array!(accept_button, cancel_button)).set_visible(cx, !is_negative);
+        self.view.button(cx, ids!(okay_button)).set_visible(cx, false);
 
-        if is_negative {
-            // Negative action: accept button is red, cancel button is gray/neutral.
-            apply_negative_button_style(cx, &mut accept_button);
-            apply_neutral_button_style(cx, &mut cancel_button);
-        } else {
-            // Positive action: accept button is green, cancel button is red/negative.
-            apply_positive_button_style(cx, &mut accept_button);
-            apply_negative_button_style(cx, &mut cancel_button);
+        let accept_buttons = self.view.button_set(cx, ids_array!(accept_button, accept_negative_button));
+        let cancel_buttons = self.view.button_set(cx, ids_array!(cancel_button, cancel_neutral_button));
+        for accept_button in accept_buttons.iter() {
+            accept_button.set_text(cx, "Yes");
         }
-
-        accept_button.set_enabled(cx, true);
-        accept_button.set_visible(cx, true);
-        accept_button.reset_hover(cx);
-        cancel_button.set_text(cx, "Cancel");
-        cancel_button.set_enabled(cx, true);
-        cancel_button.set_visible(cx, true);
-        cancel_button.reset_hover(cx);
+        for cancel_button in cancel_buttons.iter() {
+            cancel_button.set_text(cx, "Cancel");
+        }
+        accept_buttons.set_enabled(cx, true);
+        cancel_buttons.set_enabled(cx, true);
+        accept_buttons.reset_hover(cx);
+        cancel_buttons.reset_hover(cx);
 
         self.kind = Some(kind);
-        self.final_success = None;
     }
 }
 

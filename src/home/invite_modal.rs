@@ -107,7 +107,7 @@ enum InviteModalState {
 }
 
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct InviteModal {
     #[deref] view: View,
 
@@ -117,6 +117,12 @@ pub struct InviteModal {
 
     #[rust] state: InviteModalState,
     #[rust] room_name_id: Option<RoomNameId>,
+}
+
+impl ScriptHook for InviteModal {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| self.update_status_color(cx));
+    }
 }
 
 impl Widget for InviteModal {
@@ -168,7 +174,7 @@ impl WidgetMatchEvent for InviteModal {
             // Validate the user ID
             if user_id_str.is_empty() {
                 status_label.set_text(cx, "Please enter a user ID.");
-                status_label.set_text_color(cx, self.status_color_error);
+                self.update_status_color(cx);
                 status_view.set_visible(cx, true);
                 self.view.redraw(cx);
                 return;
@@ -184,7 +190,7 @@ impl WidgetMatchEvent for InviteModal {
                         });
                         self.state = InviteModalState::WaitingForInvite(user_id);
                         status_label.set_text(cx, "Sending invite...");
-                        status_label.set_text_color(cx, self.status_color_pending);
+                        self.update_status_color(cx);
                         status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, false);
                         user_id_input.set_is_read_only(cx, true);
@@ -192,7 +198,7 @@ impl WidgetMatchEvent for InviteModal {
                 }
                 Err(_) => {
                     status_label.set_text(cx, "Invalid User ID. Expected format: @user:server.xyz");
-                    status_label.set_text_color(cx, self.status_color_error);
+                    self.update_status_color(cx);
                     status_view.set_visible(cx, true);
                     user_id_input.set_key_focus(cx);
                 }
@@ -210,7 +216,6 @@ impl WidgetMatchEvent for InviteModal {
                     => {
                         let status = format!("Successfully invited {user_id}!");
                         status_label.set_text(cx, &status);
-                        status_label.set_text_color(cx, self.status_color_success);
                         status_view.set_visible(cx, true);
                         confirm_button.set_visible(cx, false);
                         cancel_button.set_visible(cx, false);
@@ -223,7 +228,6 @@ impl WidgetMatchEvent for InviteModal {
                     => {
                         let status = format!("Failed to send invite: {error}");
                         status_label.set_text(cx, &status);
-                        status_label.set_text_color(cx, self.status_color_error);
                         status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, true);
                         user_id_input.set_is_read_only(cx, false);
@@ -234,6 +238,7 @@ impl WidgetMatchEvent for InviteModal {
                 };
                 if let Some(new_state) = new_state {
                     self.state = new_state;
+                    self.update_status_color(cx);
                     self.view.redraw(cx);
                     break;
                 }
@@ -243,6 +248,15 @@ impl WidgetMatchEvent for InviteModal {
 }
 
 impl InviteModal {
+    fn update_status_color(&self, cx: &mut Cx) {
+        let color = match self.state {
+            InviteModalState::WaitingForInvite(_) => self.status_color_pending,
+            InviteModalState::InviteSuccess => self.status_color_success,
+            InviteModalState::WaitingForUserInput | InviteModalState::InviteError => self.status_color_error,
+        };
+        self.view.label(cx, ids!(status_label_view.status_label)).set_text_color(cx, color);
+    }
+
     pub fn show(&mut self, cx: &mut Cx, room_name_id: RoomNameId) {
         self.view.label(cx, ids!(title)).set_text(
             cx,

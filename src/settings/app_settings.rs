@@ -929,9 +929,7 @@ impl AppSettings {
     }
 
     /// Sets `is_read_only` based on whether the custom radio is selected.
-    /// It's a plain `#[live] bool` the apply walk resets to the DSL default,
-    /// so we re-set it ourselves. Safe anywhere, since it's just a field
-    /// write plus a redraw.
+    /// Safe anywhere, since it's just a field write plus a redraw.
     fn set_thumb_custom_input_read_only(cx: &mut Cx, view: &View, enabled: bool) {
         view.text_input(cx, ids!(thumb_custom_input))
             .set_is_read_only(cx, !enabled);

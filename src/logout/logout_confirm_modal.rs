@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use makepad_widgets::*;
 use tokio::sync::Notify;
-use crate::{home::home_screen::effective_is_desktop, shared::styles::{apply_danger_button_style, apply_negative_button_style}, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{home::home_screen::effective_is_desktop, sliding_sync::{submit_async_request, MatrixRequest}};
 use super::logout_state_machine::is_logout_past_point_of_no_return;
 
 script_mod! {
@@ -39,6 +39,22 @@ script_mod! {
                 draw_icon.svg: (ICON_LOGOUT)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Log out now"
+            }
+
+            // Replaces the confirm button when a failed logout requires restarting Robrix.
+            restart_button := RobrixIconButton {
+                visible: false
+                width: Fit{min: FitBound.Abs(120.0)}
+                align: Align{x: 0.5, y: 0.5}
+                padding: 12,
+                draw_bg +: {
+                    color: (COLOR_BG_DANGER_RED_SOLID)
+                    color_hover: (COLOR_BG_DANGER_RED_SOLID_HOVER)
+                    color_down: (COLOR_BG_DANGER_RED_SOLID_DOWN)
+                }
+                draw_icon.svg: (ICON_LOGOUT)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Restart now"
             }
         }
     }
@@ -142,7 +158,8 @@ impl Widget for LogoutConfirmModal {
 impl WidgetMatchEvent for LogoutConfirmModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let cancel_button = self.button(cx, ids!(cancel_button));
-        let mut confirm_button = self.button(cx, ids!(confirm_button));
+        let confirm_button = self.button(cx, ids!(confirm_button));
+        let restart_button = self.button(cx, ids!(restart_button));
 
         let modal_dismissed = actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
         let cancel_clicked = cancel_button.clicked(actions);
@@ -154,7 +171,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
         }
 
         let mut needs_redraw = false;
-        if confirm_button.clicked(actions) {
+        if confirm_button.clicked(actions) || restart_button.clicked(actions) {
             if let Some(successful) = self.final_success {
                 if is_logout_past_point_of_no_return() && !successful {
                     log!("User requested immediate restart after unrecoverable logout error");
@@ -195,9 +212,8 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         self.label(cx, ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                         self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
-                        confirm_button.set_text(cx, "Restart now");
-                        apply_danger_button_style(cx, &mut confirm_button);
-                        confirm_button.set_enabled(cx, true);
+                        confirm_button.set_visible(cx, false);
+                        restart_button.set_visible(cx, true);
 
                         cancel_button.set_visible(cx, false);
 
@@ -216,9 +232,8 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                     self.label(cx, ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                     self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
 
-                    confirm_button.set_text(cx, "Restart now");
-                    apply_danger_button_style(cx, &mut confirm_button);
-                    confirm_button.set_enabled(cx, true);
+                    confirm_button.set_visible(cx, false);
+                    restart_button.set_visible(cx, true);
                     cancel_button.set_visible(cx, false);
 
                     self.final_success = Some(false);
@@ -254,20 +269,21 @@ impl LogoutConfirmModal {
 
     fn reset_state(&mut self, cx: &mut Cx) {
         let cancel_button = self.button(cx, ids!(cancel_button));
-        let mut confirm_button = self.button(cx, ids!(confirm_button));
-        if self.final_success == Some(false) {
-            apply_negative_button_style(cx, &mut confirm_button);
-        }
+        let confirm_button = self.button(cx, ids!(confirm_button));
+        let restart_button = self.button(cx, ids!(restart_button));
         self.final_success = None;
         self.label(cx, ids!(title)).set_text(cx, "Confirm Logout");
         self.set_message(cx, "Are you sure you want to logout?");
+        confirm_button.set_visible(cx, true);
         confirm_button.set_enabled(cx, true);
         confirm_button.set_text(cx, "Log out now");
+        restart_button.set_visible(cx, false);
         cancel_button.set_visible(cx, true);
         cancel_button.set_enabled(cx, true);
         cancel_button.set_text(cx, "Cancel");
         cancel_button.reset_hover(cx);
         confirm_button.reset_hover(cx);
+        restart_button.reset_hover(cx);
         self.redraw(cx);
     }
 

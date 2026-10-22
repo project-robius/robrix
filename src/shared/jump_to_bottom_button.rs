@@ -104,10 +104,18 @@ script_mod! {
 }
 
 
-#[derive(ScriptHook, Script, Widget)]
+#[derive(Script, Widget)]
 pub struct JumpToBottomButton {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    /// The unread badge's border size, which is smaller for counts with more digits.
+    #[rust] unread_badge_border_size: Option<f32>,
+}
+
+impl ScriptHook for JumpToBottomButton {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| self.apply_unread_badge_border_size(cx));
+    }
 }
 
 impl Widget for JumpToBottomButton {
@@ -194,10 +202,16 @@ impl JumpToBottomButton {
                     cx,
                     &format!("{}{plus_sign}", std::cmp::min(unread_message_count, 99))
                 );
-                self.view(cx, ids!(unread_message_badge.green_rounded_label))
-                    .set_uniform(cx, id!(border_size), &[border_size]);
+                self.unread_badge_border_size = Some(border_size);
+                self.apply_unread_badge_border_size(cx);
             }
         }
+    }
+
+    fn apply_unread_badge_border_size(&self, cx: &mut Cx) {
+        let Some(border_size) = self.unread_badge_border_size else { return };
+        self.view(cx, ids!(unread_message_badge.green_rounded_label))
+            .set_uniform(cx, id!(border_size), &[border_size]);
     }
 
     /// Updates the visibility of the jump to bottom button and the unread message badge

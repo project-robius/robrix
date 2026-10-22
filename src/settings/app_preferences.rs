@@ -96,13 +96,7 @@ impl AppPreferences {
     /// object and updates the widget's `walk.height`.
     pub fn on_thumbnail_max_height_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.thumbnail_max_height = self.thumbnail_max_height;
-        let px = self.thumbnail_max_height.to_pixels() as f64;
-        // The `use mod.prelude.widgets.*` is required so `FitBound`
-        // resolves in runtime script scope.
-        script_eval!(cx, {
-            use mod.prelude.widgets.*
-            mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(px))
-        });
+        cx.with_vm(|vm| set_img_msg_fit_max_height(vm, self.thumbnail_max_height));
 
         // Now that we've updated the `IMG_MSG_FIT.max` object in place,
         // we need to instruct every widget that uses this object to re-read
@@ -273,6 +267,18 @@ impl ThumbnailMaxHeight {
             Self::Custom(v) => *v,
         }
     }
+}
+
+/// Sets the max height of the shared `mod.widgets.IMG_MSG_FIT` object,
+/// which sizes the thumbnail of every image message.
+pub fn set_img_msg_fit_max_height(vm: &mut ScriptVm, max_height: ThumbnailMaxHeight) {
+    let px = max_height.to_pixels() as f64;
+    // The `use mod.prelude.widgets.*` is required so `FitBound`
+    // resolves in runtime script scope.
+    script_eval!(vm, {
+        use mod.prelude.widgets.*
+        mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(px))
+    });
 }
 
 /// Whether the read receipts we send are visible to other users.

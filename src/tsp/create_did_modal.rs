@@ -191,6 +191,16 @@ script_mod! {
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Create DID"
             }
+
+            okay_button := RobrixIconButton {
+                visible: false
+                width: Fit{min: FitBound.Abs(140.0)}
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Okay"
+            }
         }
 
         status_label := ModalBody {
@@ -229,7 +239,7 @@ enum CreateDidModalState {
 }
 
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct CreateDidModal {
     #[deref] view: View,
 
@@ -239,6 +249,12 @@ pub struct CreateDidModal {
 
     #[rust] state: CreateDidModalState,
     #[rust] is_showing_error: bool,
+}
+
+impl ScriptHook for CreateDidModal {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| self.update_status_color(cx));
+    }
 }
 
 impl Widget for CreateDidModal {
@@ -254,8 +270,9 @@ impl Widget for CreateDidModal {
 
 impl WidgetMatchEvent for CreateDidModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let mut accept_button = self.view.button(cx, ids!(accept_button));
+        let accept_button = self.view.button(cx, ids!(accept_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
+        let okay_button = self.view.button(cx, ids!(okay_button));
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
@@ -282,7 +299,7 @@ impl WidgetMatchEvent for CreateDidModal {
 
         // Handle clicking the accept button.
         let mut needs_redraw = false;
-        if accept_button.clicked(actions) {
+        if accept_button.clicked(actions) || okay_button.clicked(actions) {
             match self.state {
                 // If the modal is in the "final" state, just close the modal.
                 CreateDidModalState::IdentityCreated => {
@@ -298,7 +315,7 @@ impl WidgetMatchEvent for CreateDidModal {
                     if username.is_empty() {
                         self.is_showing_error = true;
                         status_label.set_text(cx, "Please enter a DID username.");
-                        status_label.set_text_color(cx, self.status_color_error);
+                        self.update_status_color(cx);
                     } else {
                         let alias = match alias_input.text().trim() {
                             "" => None,
@@ -324,7 +341,7 @@ impl WidgetMatchEvent for CreateDidModal {
                         self.state = CreateDidModalState::WaitingForIdentityCreation;
                         self.is_showing_error = false;
                         status_label.set_text(cx, "Waiting for identity to be created and published...");
-                        status_label.set_text_color(cx, self.status_color_pending);
+                        self.update_status_color(cx);
                         accept_button.set_enabled(cx, false);
                         cancel_button.set_enabled(cx, false); // TODO: support canceling the identity creation request?
                         username_input.set_is_read_only(cx, true);
@@ -352,13 +369,7 @@ impl WidgetMatchEvent for CreateDidModal {
                 self.is_showing_error = false;
                 self.view.label(cx, ids!(status_label)).set_text(cx, "");
                 self.state = CreateDidModalState::WaitingForUserInput;
-                script_apply_eval!(cx, accept_button, {
-                    text: "Create DID",
-                    enabled: true,
-                    draw_text +: {
-                        color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                    },
-                });
+                accept_button.set_enabled(cx, true);
                 needs_redraw = true;
             }
         }
@@ -370,21 +381,10 @@ impl WidgetMatchEvent for CreateDidModal {
                     self.is_showing_error = false;
                     let message = format!("Successfully created and published DID: \"{}\"", did);
                     status_label.set_text(cx, &message);
-                    status_label.set_text_color(cx, self.status_color_success);
-                    script_apply_eval!(cx, accept_button, {
-                        enabled: true,
-                        text: "Okay",
-                        draw_bg +: {
-                            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                        },
-                        draw_icon +: {
-                            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-                        }
-                        draw_text +: {
-                            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-                        },
-                    });
+                    self.update_status_color(cx);
+                    accept_button.set_visible(cx, false);
                     cancel_button.set_visible(cx, false);
+                    okay_button.set_visible(cx, true);
                     needs_redraw = true;
                 }
 
@@ -395,7 +395,7 @@ impl WidgetMatchEvent for CreateDidModal {
                     self.is_showing_error = true;
                     let message = format!("Failed to create DID: {e}");
                     status_label.set_text(cx, &message);
-                    status_label.set_text_color(cx, self.status_color_error);
+                    self.update_status_color(cx);
                     accept_button.set_enabled(cx, false);
                     cancel_button.set_enabled(cx, true);
                     username_input.set_is_read_only(cx, false);
@@ -416,19 +416,29 @@ impl WidgetMatchEvent for CreateDidModal {
 }
 
 impl CreateDidModal {
+    fn update_status_color(&self, cx: &mut Cx) {
+        let color = match self.state {
+            CreateDidModalState::WaitingForIdentityCreation => self.status_color_pending,
+            CreateDidModalState::IdentityCreated => self.status_color_success,
+            CreateDidModalState::WaitingForUserInput | CreateDidModalState::IdentityCreationError => self.status_color_error,
+        };
+        self.view.label(cx, ids!(status_label)).set_text_color(cx, color);
+    }
+
     pub fn show(&mut self, cx: &mut Cx) {
         self.state = CreateDidModalState::WaitingForUserInput;
         let accept_button = self.view.button(cx, ids!(accept_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
-        accept_button.set_text(cx, "Create DID");
+        let okay_button = self.view.button(cx, ids!(okay_button));
         cancel_button.set_text(cx, "Cancel");
         accept_button.reset_hover(cx);
         cancel_button.reset_hover(cx);
+        okay_button.reset_hover(cx);
         accept_button.set_enabled(cx, true);
         cancel_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
         cancel_button.set_visible(cx, true);
-        // TODO: return buttons to their default state/appearance
+        okay_button.set_visible(cx, false);
         self.view.text_input(cx, ids!(username_input)).set_is_read_only(cx, false);
         self.view.text_input(cx, ids!(alias_input)).set_is_read_only(cx, false);
         self.view.text_input(cx, ids!(server_input)).set_is_read_only(cx, false);
