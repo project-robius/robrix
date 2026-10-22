@@ -224,6 +224,9 @@ script_mod! {
         height: Fit
         padding: 0,
         flow: Overlay
+        // Clicks on the popup shouldn't reach whatever is underneath it, or take key focus.
+        cursor: MouseCursor.Default,
+        grab_key_focus: false,
         show_bg: true,
         draw_bg +: {
             border_radius: uniform(4.0)
