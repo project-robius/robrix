@@ -545,46 +545,6 @@ pub fn apply_positive_button_style(cx: &mut Cx, button: &mut ButtonRef) {
     });
 }
 
-/// Applies negative (red) button styling to the given button.
-pub fn apply_negative_button_style(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            border_color: mod.widgets.COLOR_FG_DANGER_RED,
-            color: mod.widgets.COLOR_BG_DANGER_RED,
-            color_hover: mod.widgets.COLOR_BG_DANGER_RED_HOVER,
-            color_down: mod.widgets.COLOR_BG_DANGER_RED_DOWN,
-        }
-        draw_text +: {
-            color: mod.widgets.COLOR_FG_DANGER_RED,
-            color_hover: mod.widgets.COLOR_FG_DANGER_RED,
-            color_down: mod.widgets.COLOR_FG_DANGER_RED,
-        }
-        draw_icon +: {
-            color: mod.widgets.COLOR_FG_DANGER_RED,
-        }
-    });
-}
-
-/// Applies neutral (gray) button styling to the given button.
-pub fn apply_neutral_button_style(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            border_color: mod.widgets.COLOR_BG_DISABLED,
-            color: mod.widgets.COLOR_BG_NEUTRAL,
-            color_hover: mod.widgets.COLOR_BG_NEUTRAL_HOVER,
-            color_down: mod.widgets.COLOR_BG_NEUTRAL_DOWN,
-        }
-        draw_text +: {
-            color: mod.widgets.COLOR_TEXT,
-            color_hover: mod.widgets.COLOR_TEXT,
-            color_down: mod.widgets.COLOR_TEXT,
-        }
-        draw_icon +: {
-            color: mod.widgets.COLOR_TEXT,
-        }
-    });
-}
-
 /// Applies the primary (blue) button styling to the given button.
 pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
     script_apply_eval!(cx, button, {
@@ -595,26 +555,6 @@ pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
             border_color: mod.widgets.COLOR_TRANSPARENT,
             border_color_hover: mod.widgets.COLOR_TRANSPARENT,
             border_color_down: mod.widgets.COLOR_TRANSPARENT,
-        }
-        draw_text +: {
-            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-            color_hover: mod.widgets.COLOR_TEXT_ON_ACCENT,
-            color_down: mod.widgets.COLOR_TEXT_ON_ACCENT,
-        }
-        draw_icon +: {
-            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-        }
-    });
-}
-
-/// Applies danger (solid red) button styling to the given button.
-pub fn apply_danger_button_style(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            border_color: mod.widgets.COLOR_BG_DANGER_RED_SOLID,
-            color: mod.widgets.COLOR_BG_DANGER_RED_SOLID,
-            color_hover: mod.widgets.COLOR_BG_DANGER_RED_SOLID_HOVER,
-            color_down: mod.widgets.COLOR_BG_DANGER_RED_SOLID_DOWN,
         }
         draw_text +: {
             color: mod.widgets.COLOR_TEXT_ON_ACCENT,

@@ -393,7 +393,7 @@ impl RobrixHtmlLink {
 /// A pill-shaped widget that shows a Matrix link as an avatar and a title.
 ///
 /// This can be a link to a user, a room, or an event in a room.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 struct MatrixLinkPill {
     #[deref] view: View,
 
@@ -418,6 +418,15 @@ struct PillBase {
     avatar_text_pt: f32,
 }
 
+impl ScriptHook for MatrixLinkPill {
+    // A reapply or reload puts the DSL sizes back (a reload may even change them),
+    // so the next draw has to capture and scale them again.
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        self.base = None;
+        self.scaled_to = 0.0;
+    }
+}
+
 impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         if matches!(event, Event::Signal)
@@ -425,13 +434,6 @@ impl Widget for MatrixLinkPill {
             && !matches!(self.matrix_id, None | Some(MatrixId::User(_)))
         {
             self.redraw(cx);
-        }
-
-        // A reapply or reload puts the DSL sizes back (a reload may even change them),
-        // so the next draw has to capture and scale them again.
-        if matches!(event, Event::ScriptReapply | Event::LiveEdit) {
-            self.base = None;
-            self.scaled_to = 0.0;
         }
 
         // If this user's profile is now in the cache, redraw so we can pick up that new info.

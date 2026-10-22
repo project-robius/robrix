@@ -122,6 +122,10 @@ script_mod! {
                 scroll_bar_y.drag_scrolling: true
             }
             draw_bg +: { color: (mod.widgets.COLOR_TRANSPARENT) }
+            draw_selection +: {
+                color: (mod.widgets.COLOR_SELECT_TEXT)
+                color_focus: (mod.widgets.COLOR_SELECT_TEXT)
+            }
 
             // Light mode syntax highlighting (inspired by GitHub Light / VS Code Light+)
             token_colors +: {

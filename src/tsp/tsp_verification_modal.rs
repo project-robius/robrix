@@ -2,7 +2,7 @@
 use makepad_widgets::*;
 use tsp_sdk::AsyncSecureStore;
 
-use crate::{shared::styles::apply_positive_button_style, sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
+use crate::{sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
 
 script_mod! {
     link tsp_enabled
@@ -37,6 +37,15 @@ script_mod! {
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Accept Request"
+            }
+
+            okay_button := RobrixIconButton {
+                visible: false
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Okay"
             }
         }
     }
@@ -104,8 +113,9 @@ impl Widget for TspVerificationModal {
 
 impl WidgetMatchEvent for TspVerificationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let mut accept_button = self.button(cx, ids!(accept_button));
+        let accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));
+        let okay_button = self.button(cx, ids!(okay_button));
 
         let cancel_button_clicked = cancel_button.clicked(actions);
         let modal_dismissed = actions
@@ -136,7 +146,7 @@ impl WidgetMatchEvent for TspVerificationModal {
         }
 
         let prompt_label = self.view.label(cx, ids!(body));
-        if accept_button.clicked(actions) {
+        if accept_button.clicked(actions) || okay_button.clicked(actions) {
             let current_state = std::mem::take(&mut self.state);
             let new_state: TspVerificationModalState;
             match current_state {
@@ -171,18 +181,8 @@ impl WidgetMatchEvent for TspVerificationModal {
                             accepted: false,
                         });
                         cancel_button.set_visible(cx, false);
-                        script_apply_eval!(cx, accept_button, {
-                            text: "Okay",
-                            draw_bg +: {
-                                color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                            },
-                            draw_icon +: {
-                                color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-                            }
-                            draw_text +: {
-                                color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-                            },
-                        });
+                        accept_button.set_visible(cx, false);
+                        okay_button.set_visible(cx, true);
                         new_state = TspVerificationModalState::RequestDeclined;
                     }
                     else {
@@ -240,19 +240,8 @@ impl WidgetMatchEvent for TspVerificationModal {
                         }
                     }
                     cancel_button.set_visible(cx, false);
-                    script_apply_eval!(cx, accept_button, {
-                        enabled: true,
-                        text: "Okay",
-                        draw_bg +: {
-                            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                        },
-                        draw_icon +: {
-                            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-                        }
-                        draw_text +: {
-                            color: mod.widgets.COLOR_TEXT_ON_ACCENT,
-                        }
-                    });
+                    accept_button.set_visible(cx, false);
+                    okay_button.set_visible(cx, true);
                     self.redraw(cx);
                 }
                 _ => {}
@@ -280,9 +269,9 @@ impl TspVerificationModal {
         );
         self.label(cx, ids!(body)).set_text(cx, &prompt_text);
 
-        let mut accept_button = self.button(cx, ids!(accept_button));
+        let accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));
-        apply_positive_button_style(cx, &mut accept_button);
+        let okay_button = self.button(cx, ids!(okay_button));
         accept_button.set_text(cx, "Accept Request");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
@@ -291,6 +280,8 @@ impl TspVerificationModal {
         cancel_button.set_enabled(cx, true);
         cancel_button.set_visible(cx, true);
         cancel_button.reset_hover(cx);
+        okay_button.set_visible(cx, false);
+        okay_button.reset_hover(cx);
 
         self.state = TspVerificationModalState::ReceivedRequest {
             details,
