@@ -1893,15 +1893,6 @@ impl Widget for RoomsList {
                     continue;
                 }
 
-                // Handle a matrix link being generated.
-                fn on_link_generated(cx: &mut Cx, link: &str) {
-                    cx.copy_to_clipboard(link);
-                    enqueue_popup_notification(
-                        "Link copied to clipboard.",
-                        PopupKind::Success,
-                        Some(3.0),
-                    );
-                }
                 if let Some(RoomDiagnosticsReady { text }) = action.downcast_ref() {
                     cx.copy_to_clipboard(text);
                     enqueue_popup_notification(
@@ -1911,24 +1902,24 @@ impl Widget for RoomsList {
                     );
                     continue;
                 }
-                match action.downcast_ref() {
-                    Some(MatrixLinkAction::MatrixToUri(link)) => {
-                        on_link_generated(cx, &link.to_string());
-                        continue;
-                    }
-                    Some(MatrixLinkAction::MatrixUri(link)) => {
-                        on_link_generated(cx, &link.to_string());
-                        continue;
-                    }
-                    Some(MatrixLinkAction::Error(err)) => {
-                        enqueue_popup_notification(
+                // Handle a matrix link being generated.
+                if let Some(MatrixLinkAction { copy_to_clipboard: true, result, .. }) = action.downcast_ref() {
+                    match result {
+                        Ok(link) => {
+                            cx.copy_to_clipboard(link);
+                            enqueue_popup_notification(
+                                "Link copied to clipboard.",
+                                PopupKind::Success,
+                                Some(3.0),
+                            );
+                        }
+                        Err(err) => enqueue_popup_notification(
                             format!("Failed to generate link: {}", err),
                             PopupKind::Error,
                             Some(5.0),
-                        );
-                        continue;
+                        ),
                     }
-                    _ => {}
+                    continue;
                 }
 
                 if let Some(space_room_list_action) = action.downcast_ref() {

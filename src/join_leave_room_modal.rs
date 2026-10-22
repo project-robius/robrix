@@ -216,6 +216,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
                             room_id: invite.room_id().clone(),
+                            alias: None,
                             via: Vec::new(),
                         });
                         set_invite_state(cx, invite.room_id(), InviteState::WaitingForJoinResult);
@@ -243,6 +244,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
                             room_id: details.room_id().clone(),
+                            alias: details.alias().cloned(),
                             via: via.clone(),
                         });
                     }

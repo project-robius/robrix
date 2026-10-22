@@ -2791,8 +2791,13 @@ impl RoomScreen {
                 MessageAction::CopyLink(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_id) = details.event_id() {
-                        let matrix_to_uri = tl.kind.room_id().matrix_to_event_uri(event_id.clone());
-                        cx.copy_to_clipboard(&matrix_to_uri.to_string());
+                        submit_async_request(MatrixRequest::GenerateMatrixLink {
+                            room_id: tl.kind.room_id().clone(),
+                            event_id: Some(event_id.clone()),
+                            use_matrix_scheme: false,
+                            join_on_click: false,
+                            copy_to_clipboard: true,
+                        });
                     } else {
                         enqueue_popup_notification(
                             "Couldn't create permalink to message. Please try again.",
@@ -3153,7 +3158,7 @@ impl RoomScreen {
                     submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
                         tombstoned_room_id: room_id.clone(),
                     });
-                    Some(SuccessorRoomDetails::Basic(sr))
+                    Some(SuccessorRoomDetails::Basic { successor_room: sr, via: Vec::new() })
                 } else {
                     None
                 };
@@ -3360,7 +3365,7 @@ impl RoomScreen {
             submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
                 tombstoned_room_id: tl.kind.room_id().clone(),
             });
-            tl.tombstone_info = Some(SuccessorRoomDetails::Basic(successor_room));
+            tl.tombstone_info = Some(SuccessorRoomDetails::Basic { successor_room, via: Vec::new() });
         }
         // If `tl_state` was Some here, it means the timeline is being shown (it's visible),
         // so inform the subscribers of that status.

@@ -402,6 +402,7 @@ impl Widget for InviteScreen {
                 if modifiers.shift {
                     submit_async_request(MatrixRequest::JoinRoom {
                         room_id: info.room_id().clone(),
+                        alias: None,
                         via: Vec::new(),
                     });
                     self.invite_state = InviteState::WaitingForJoinResult;
