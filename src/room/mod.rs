@@ -51,6 +51,11 @@ pub enum BasicRoomDetails {
     RoomId(RoomNameId),
     /// We know the room's displayable name, but nothing else.
     Name(RoomNameId),
+    /// We know the room's name and the servers to ask about it, but nothing else.
+    NameAndVia {
+        room_name_id: RoomNameId,
+        via: Vec<OwnedServerName>,
+    },
     /// We know the room's name and have fetched its full avatar,
     /// but not any auxiliary info like topic, aliases, etc.
     NameAndAvatar {
@@ -76,6 +81,7 @@ impl BasicRoomDetails {
         match self {
             Self::RoomId(room_name_id)
             | Self::Name(room_name_id)
+            | Self::NameAndVia { room_name_id, .. }
             | Self::NameAndAvatar { room_name_id, ..} => room_name_id.room_id(),
             Self::FetchedRoomPreview(frp) => frp.room_name_id.room_id(),
         }
@@ -88,6 +94,7 @@ impl BasicRoomDetails {
         match self {
             Self::RoomId(room_name_id)
             | Self::Name(room_name_id)
+            | Self::NameAndVia { room_name_id, .. }
             | Self::NameAndAvatar { room_name_id, .. } => room_name_id,
             Self::FetchedRoomPreview(frp) => &frp.room_name_id,
         }
@@ -95,11 +102,12 @@ impl BasicRoomDetails {
 
     /// Returns the fetched avatar of this room.
     ///
-    /// If this is the `RoomId` or `Name` variants, the avatar will be empty.
+    /// If this is the `RoomId`, `Name`, or `NameAndVia` variants, the avatar will be empty.
     pub fn room_avatar(&self) -> &FetchedRoomAvatar {
         match self {
             Self::RoomId(_)
-            | Self::Name(_) => &EMPTY_AVATAR,
+            | Self::Name(_)
+            | Self::NameAndVia { .. } => &EMPTY_AVATAR,
             Self::NameAndAvatar { room_avatar, ..} => room_avatar,
             Self::FetchedRoomPreview(frp) => &frp.room_avatar,
         }
@@ -108,6 +116,7 @@ impl BasicRoomDetails {
     /// Returns the servers to ask about this room when joining it, if any are known.
     pub fn via(&self) -> &[OwnedServerName] {
         match self {
+            Self::NameAndVia { via, .. } => via,
             Self::FetchedRoomPreview(frp) => &frp.via,
             _ => &[],
         }
