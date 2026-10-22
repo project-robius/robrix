@@ -114,7 +114,7 @@ script_mod! {
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, 4.0)
-                // Only the focused tab is vivid blue, so every other tab gets the normal hover color.
+                // Only the focused tab gets a special brighter style, so every other tab gets the normal hover color.
                 sdf.fill(mix(self.color_bg_hover, self.color_bg_active_hover, self.current) * self.hover)
 
                 let mid = self.rect_size * 0.5
@@ -183,7 +183,7 @@ script_mod! {
             // to a slightly lighter blue.
             color_active: COLOR_DOCK_TAB_BG_ACTIVE
             color_2_active: COLOR_DOCK_TAB_BG_ACTIVE_BOTTOM
-            // Unfocused active tabs are a pale blue, with a solid blue edge on their left.
+            // Unfocused active tabs have a more muted color than the focused one.
             color_active_unfocused: uniform(COLOR_DOCK_TAB_BG_ACTIVE_UNFOCUSED)
             color_edge_active_unfocused: uniform(COLOR_DOCK_TAB_EDGE_ACTIVE_UNFOCUSED)
             // Remove the border and rounded corners from the default Tab style
@@ -207,7 +207,6 @@ script_mod! {
                     .mix(color_active, self.active)
                 sdf.fill_keep(fill)
 
-                // fill() blurs both sides inward, so we pad by a full blur to keep the edge 4px wide.
                 sdf.rect(self.overlap_fix, 0.0, 4.0 + 1.0 / sdf.aa, self.rect_size.y)
                 sdf.intersect()
                 let edge = self.color_edge_active_unfocused
