@@ -317,6 +317,11 @@ section = "utils"
 "./packaging/debian-copyright" = "/usr/share/doc/robrix/copyright"
 "./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/doc/robrix/THIRD-PARTY-NOTICES.html"
 
+[package.metadata.packager.appimage]
+## The host's Mesa EGL driver must use the host's own libwayland-client, so we don't bundle an older one.
+## AppImage's excludelist skips it too, but the linuxdeploy that cargo-packager uses predates that.
+excluded_libs = ["libwayland-client.so.0"]
+
 [package.metadata.packager.appimage.files]
 "./packaging/rs.robius.robrix.metainfo.xml" = "/usr/share/metainfo/rs.robius.robrix.metainfo.xml"
 "./packaging/debian-copyright" = "/usr/share/doc/robrix/copyright"
