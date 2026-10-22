@@ -328,10 +328,13 @@ script_mod! {
         // A preview of the earlier message that this message was in reply to.
         replied_to_message := mod.widgets.RepliedToMessage {
             flow: Down
-            margin: Inset{ bottom: 3, top: 10 }
+            margin: Inset{ bottom: 0, top: 10 }
+            // The left bar hangs down to 4px above the sender's avatar.
+            left_bar_overhang: 3.5
             preview_content +: {
                 margin +: { left: 20 }
-                padding +: { bottom: 10 }
+                // Lines up the reply's text with this message's text.
+                padding +: { left: 32.5 }
             }
         }
 
@@ -408,8 +411,11 @@ script_mod! {
     mod.widgets.CondensedMessage = mod.widgets.Message {
         padding: Inset{ top: 2.0, bottom: 2.0 }
         replied_to_message +: {
+            left_bar_overhang: 0.0
+            reply_left_bar +: { draw_bg +: { arc_radius: 5.0 } }
             preview_content +: {
                 margin: Inset{ left: 55, bottom: 5.0 }
+                padding +: { left: 22 }
             }
         }
         header +: { visible: false }

@@ -65,7 +65,7 @@ script_mod! {
         width: Fill,
         height: Fit,
         margin: Inset{top: 4.0}
-        padding: Inset{ left: 63.0, top: 2.0, bottom: 2.0 }
+        padding: Inset{ left: 64.5, top: 2.0, bottom: 2.0 }
         cursor: MouseCursor.Hand
 
         show_bg: true
@@ -179,7 +179,8 @@ script_mod! {
             avatar := Avatar {
                 width: 19.,
                 height: 19.,
-                margin: 0
+                // Lines up with the avatar in a message's reply preview.
+                margin: Inset{left: 1.5}
 
                 text_view +: {
                     text +: {
@@ -298,7 +299,7 @@ script_mod! {
             width: Fill,
             height: Fit
             // Align it with the avatar/content column (left padding that's the same width as a timestamp).
-            padding: Inset{ left: 63.0, top: 1.0, bottom: 1.0 }
+            padding: Inset{ left: 64.5, top: 1.0, bottom: 1.0 }
 
             toggle := mod.widgets.GroupToggle {}
         }
@@ -321,7 +322,9 @@ script_mod! {
                 }
             }
 
-            participants := mod.widgets.AvatarStack {}
+            participants := mod.widgets.AvatarStack {
+                margin +: { left: 1.5 }
+            }
 
             summary := Label {
                 width: Fill,
