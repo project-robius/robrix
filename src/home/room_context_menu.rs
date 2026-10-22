@@ -173,6 +173,7 @@ impl WidgetMatchEvent for RoomContextMenu {
                 event_id: None,
                 use_matrix_scheme: false,
                 join_on_click: false,
+                copy_to_clipboard: true,
             });
             close_menu = true;
         }

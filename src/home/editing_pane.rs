@@ -248,7 +248,7 @@ impl Widget for EditingPane {
             {
                 // The edit is the text as shown now, so stop adding dictated words to it.
                 mentionable_input.cancel_dictation(cx);
-                let edited_text = edit_text_input.text().trim().to_string();
+                let edited_text = mentionable_input.add_via_to_room_links(edit_text_input.text().trim());
                 let edited_content = match info.event_tl_item.content() {
                     TimelineItemContent::MsgLike(msg_like_content) => {
                         match &msg_like_content.kind {

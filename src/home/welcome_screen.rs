@@ -1,7 +1,7 @@
 //! The `WelcomeScreen` shown in the desktop Home tab, with a few tips for new users.
 
 use makepad_widgets::*;
-use matrix_sdk::{RoomDisplayName, RoomState, ruma::{OwnedRoomId, owned_room_id}};
+use matrix_sdk::{RoomDisplayName, RoomState, ruma::{OwnedRoomId, owned_room_id, owned_server_name}};
 use crate::{app::AppStateAction, home::{invite_screen::LeaveRoomResultAction, rooms_list::RoomsListRef}, logout::logout_confirm_modal::LogoutAction, room::BasicRoomDetails, utils::RoomNameId};
 
 /// Below this width, the Robrix room panel centers its text and button.
@@ -337,10 +337,17 @@ impl Widget for WelcomeScreen {
         if self.view.button(cx, ids!(join_robrix_room_button)).clicked(actions) {
             cx.action(AppStateAction::NavigateToRoom {
                 room_to_close: None,
-                destination_room: BasicRoomDetails::Name(RoomNameId::new(
-                    RoomDisplayName::Named(String::from("Robrix")),
-                    self.robrix_room_id.clone(),
-                )),
+                destination_room: BasicRoomDetails::NameAndVia {
+                    room_name_id: RoomNameId::new(
+                        RoomDisplayName::Named(String::from("Robrix")),
+                        self.robrix_room_id.clone(),
+                    ),
+                    via: vec![
+                        owned_server_name!("matrix.org"),
+                        owned_server_name!("spiritcroc.de"),
+                        owned_server_name!("tchncs.de"),
+                    ],
+                },
             });
         }
 

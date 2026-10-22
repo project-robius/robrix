@@ -6,7 +6,7 @@
 //! 2. Showing known rooms and spaces (upon pressing '#')
 //! 3. Showing slash commands (upon pressing '/')
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::{BTreeSet, HashMap}, sync::Arc};
 use makepad_widgets::{text::selection::Cursor, *};
 use makepad_widgets::makepad_platform::event::finger::TouchState;
 use matrix_sdk::{
@@ -20,7 +20,7 @@ use crate::{
     home::rooms_list::RoomsListRef,
     profile::user_profile::member_display_name,
     shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}, speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt}},
-    sliding_sync::{submit_async_request, MatrixRequest},
+    sliding_sync::{submit_async_request, MatrixLinkAction, MatrixRequest},
     utils::{self, MatchQuality},
 };
 
@@ -64,6 +64,9 @@ pub struct MentionableTextInput {
     /// Mentions may have been deleted after adding them, so we have to check for them
     /// before sending the message in the textinput.
     #[rust] possible_mentions: Mentions,
+    /// The links we generated for mentioned rooms that don't have an alias,
+    /// which replace those rooms' plain links right before sending.
+    #[rust] mentioned_room_links: HashMap<OwnedRoomId, String>,
     /// Whether the current mouse press started on the mention popup.
     #[rust] was_mouse_down_on_popup: bool,
 }
@@ -175,6 +178,12 @@ impl Widget for MentionableTextInput {
                         popup_ref.set_results(cx, uid, results.items.clone(), false, empty);
                     }
                 }
+                // Only keep a generated link if our text has a plain link to that room.
+                if let Some(MatrixLinkAction { room_id, copy_to_clipboard: false, result: Ok(link) }) = action.downcast_ref()
+                    && self.text().contains(&format!("]({})", room_id.matrix_to_uri()))
+                {
+                    self.mentioned_room_links.insert(room_id.clone(), link.clone());
+                }
             }
 
             if popup_ref.is_open_for(uid) {
@@ -204,6 +213,7 @@ impl Widget for MentionableTextInput {
         self.speech_text_input_ref().set_text(cx, text);
         if text.trim().is_empty() {
             self.possible_mentions = Mentions::new();
+            self.mentioned_room_links.clear();
         }
         self.redraw(cx);
     }
@@ -328,7 +338,16 @@ impl MentionableTextInput {
                 // Prefer the room alias so we don't need the `via` servers list.
                 let (label, uri) = match candidate.alias.as_ref() {
                     Some(alias) => (alias.to_string(), alias.matrix_to_uri()),
-                    None => (candidate.room_name_id.to_string(), candidate.room_name_id.room_id().matrix_to_uri()),
+                    None => {
+                        submit_async_request(MatrixRequest::GenerateMatrixLink {
+                            room_id: candidate.room_name_id.room_id().clone(),
+                            event_id: None,
+                            use_matrix_scheme: false,
+                            join_on_click: false,
+                            copy_to_clipboard: false,
+                        });
+                        (candidate.room_name_id.to_string(), candidate.room_name_id.room_id().matrix_to_uri())
+                    }
                 };
                 format!("[{label}]({uri}) ")
             }
@@ -458,6 +477,7 @@ impl MentionableTextInputRef {
             |inner| MentionableTextInputState {
                 text_input_state: inner.text_input_ref().save_state(),
                 possible_mentions: inner.possible_mentions.clone(),
+                mentioned_room_links: inner.mentioned_room_links.clone(),
             }
         )
     }
@@ -468,12 +488,14 @@ impl MentionableTextInputRef {
         inner.speech_text_input_ref().cancel_dictation(cx);
         inner.text_input_ref().restore_state(cx, state.text_input_state);
         inner.possible_mentions = state.possible_mentions;
+        inner.mentioned_room_links = state.mentioned_room_links;
     }
 
     /// Clears the possible mentions, e.g., after we've sent the edit.
     pub fn clear_mentions(&self) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.possible_mentions = Mentions::new();
+            inner.mentioned_room_links.clear();
         }
     }
 
@@ -482,11 +504,11 @@ impl MentionableTextInputRef {
     /// Returns the outcome: send a message, run a command, or show an error.
     /// If it's a message, it will already contain the mentions present in `entered_text`.
     pub fn parse_input(&self, entered_text: &str) -> SlashCommandOutcome {
-        let outcome = slash_commands::parse_input(entered_text);
-        let Some(inner) = self.borrow() else { return outcome };
-        match outcome {
+        let Some(inner) = self.borrow() else { return slash_commands::parse_input(entered_text) };
+        let entered_text = inner.add_via_to_room_links(entered_text);
+        match slash_commands::parse_input(&entered_text) {
             SlashCommandOutcome::Message(message) => SlashCommandOutcome::Message(
-                message.add_mentions(inner.real_mentions_in_markdown(entered_text))
+                message.add_mentions(inner.real_mentions_in_markdown(&entered_text))
             ),
             other => other,
         }
@@ -496,9 +518,26 @@ impl MentionableTextInputRef {
     pub fn get_mentions_in(&self, text: &str) -> Mentions {
         self.borrow().map_or_else(Mentions::new, |inner| inner.real_mentions_in_markdown(text))
     }
+
+    /// See [`MentionableTextInput::add_via_to_room_links()`].
+    pub fn add_via_to_room_links(&self, text: &str) -> String {
+        self.borrow().map_or_else(|| text.to_owned(), |inner| inner.add_via_to_room_links(text))
+    }
 }
 
 impl MentionableTextInput {
+    /// Returns the given `text` with `via` servers added to its links to mentioned rooms.
+    fn add_via_to_room_links(&self, text: &str) -> String {
+        let mut text = text.to_owned();
+        for (room_id, link) in &self.mentioned_room_links {
+            text = text.replace(
+                &format!("]({})", room_id.matrix_to_uri()),
+                &format!("]({link})"),
+            );
+        }
+        text
+    }
+
     /// The possible mentions whose link text is still present in `text`.
     fn real_mentions_in_markdown(&self, text: &str) -> Mentions {
         let mut user_ids = BTreeSet::new();
@@ -524,6 +563,7 @@ impl MentionableTextInput {
 pub struct MentionableTextInputState {
     text_input_state: TextInputState,
     possible_mentions: Mentions,
+    mentioned_room_links: HashMap<OwnedRoomId, String>,
 }
 
 /// Matched users or rooms/spaces, ranked on a background thread.

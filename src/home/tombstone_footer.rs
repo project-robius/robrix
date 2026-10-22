@@ -6,7 +6,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::{
-    ruma::OwnedRoomId, RoomState, SuccessorRoom
+    ruma::{OwnedRoomId, OwnedServerName}, RoomState, SuccessorRoom
 };
 
 use crate::{app::AppStateAction, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview}, shared::avatar::AvatarWidgetExt, utils};
@@ -91,7 +91,10 @@ pub enum SuccessorRoomDetails {
     #[default]
     None,
     /// Only basic information was known about the successor room.
-    Basic(SuccessorRoom),
+    Basic {
+        successor_room: SuccessorRoom,
+        via: Vec<OwnedServerName>,
+    },
     /// All details about the successor room have been fetched.
     Full {
         room_preview: FetchedRoomPreview,
@@ -102,10 +105,13 @@ impl Clone for SuccessorRoomDetails {
     fn clone(&self) -> Self {
         match self {
             Self::None => Self::None,
-            Self::Basic(sr) => Self::Basic(SuccessorRoom {
-                room_id: sr.room_id.clone(),
-                reason: sr.reason.clone(),
-            }),
+            Self::Basic { successor_room, via } => Self::Basic {
+                successor_room: SuccessorRoom {
+                    room_id: successor_room.room_id.clone(),
+                    reason: successor_room.reason.clone(),
+                },
+                via: via.clone(),
+            },
             Self::Full { room_preview, reason } => Self::Full {
                 room_preview: room_preview.clone(),
                 reason: reason.clone(),
@@ -169,7 +175,7 @@ impl TombstoneFooter {
                 successor_room_name.set_text(cx, "(Unknown successor room");
                 self.successor_info = None;
             }
-            SuccessorRoomDetails::Basic(sr) => {
+            SuccessorRoomDetails::Basic { successor_room: sr, via } => {
                 replacement_reason.set_text(
                     cx,
                     sr.reason.as_deref().unwrap_or(DEFAULT_TOMBSTONE_REASON)
@@ -177,7 +183,10 @@ impl TombstoneFooter {
                 join_successor_button.set_text(cx, DEFAULT_JOIN_BUTTON_TEXT);
                 successor_room_avatar.show_text(cx, None, None, "#");
                 successor_room_name.set_text(cx, &format!("Room ID {}", sr.room_id));
-                self.successor_info = Some(sr.into());
+                self.successor_info = Some(BasicRoomDetails::NameAndVia {
+                    room_name_id: utils::RoomNameId::empty(sr.room_id.clone()),
+                    via: via.clone(),
+                });
             },
             SuccessorRoomDetails::Full { room_preview, reason } => {
                 replacement_reason.set_text(

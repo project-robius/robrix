@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use makepad_widgets::ScriptVm;
-use matrix_sdk::{RoomDisplayName, RoomHeroWithProfile, RoomState, SuccessorRoom, room_preview::RoomPreview};
+use matrix_sdk::{RoomDisplayName, RoomHeroWithProfile, RoomState, room_preview::RoomPreview};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, room::{JoinRuleSummary, RoomType}};
 
 use crate::shared::avatar::AvatarImage;
@@ -51,6 +51,11 @@ pub enum BasicRoomDetails {
     RoomId(RoomNameId),
     /// We know the room's displayable name, but nothing else.
     Name(RoomNameId),
+    /// We know the room's name and the servers to ask about it, but nothing else.
+    NameAndVia {
+        room_name_id: RoomNameId,
+        via: Vec<OwnedServerName>,
+    },
     /// We know the room's name and have fetched its full avatar,
     /// but not any auxiliary info like topic, aliases, etc.
     NameAndAvatar {
@@ -60,11 +65,6 @@ pub enum BasicRoomDetails {
     /// We have fetched the full preview for this room,
     /// including its avatar and all other possible info about it.
     FetchedRoomPreview(FetchedRoomPreview),
-}
-impl From<&SuccessorRoom> for BasicRoomDetails {
-    fn from(sr: &SuccessorRoom) -> Self {
-        BasicRoomDetails::RoomId(RoomNameId::empty(sr.room_id.clone()))
-    }
 }
 impl From<FetchedRoomPreview> for BasicRoomDetails {
     fn from(frp: FetchedRoomPreview) -> Self {
@@ -76,6 +76,7 @@ impl BasicRoomDetails {
         match self {
             Self::RoomId(room_name_id)
             | Self::Name(room_name_id)
+            | Self::NameAndVia { room_name_id, .. }
             | Self::NameAndAvatar { room_name_id, ..} => room_name_id.room_id(),
             Self::FetchedRoomPreview(frp) => frp.room_name_id.room_id(),
         }
@@ -88,6 +89,7 @@ impl BasicRoomDetails {
         match self {
             Self::RoomId(room_name_id)
             | Self::Name(room_name_id)
+            | Self::NameAndVia { room_name_id, .. }
             | Self::NameAndAvatar { room_name_id, .. } => room_name_id,
             Self::FetchedRoomPreview(frp) => &frp.room_name_id,
         }
@@ -95,11 +97,12 @@ impl BasicRoomDetails {
 
     /// Returns the fetched avatar of this room.
     ///
-    /// If this is the `RoomId` or `Name` variants, the avatar will be empty.
+    /// If this is the `RoomId`, `Name`, or `NameAndVia` variants, the avatar will be empty.
     pub fn room_avatar(&self) -> &FetchedRoomAvatar {
         match self {
             Self::RoomId(_)
-            | Self::Name(_) => &EMPTY_AVATAR,
+            | Self::Name(_)
+            | Self::NameAndVia { .. } => &EMPTY_AVATAR,
             Self::NameAndAvatar { room_avatar, ..} => room_avatar,
             Self::FetchedRoomPreview(frp) => &frp.room_avatar,
         }
@@ -108,8 +111,17 @@ impl BasicRoomDetails {
     /// Returns the servers to ask about this room when joining it, if any are known.
     pub fn via(&self) -> &[OwnedServerName] {
         match self {
+            Self::NameAndVia { via, .. } => via,
             Self::FetchedRoomPreview(frp) => &frp.via,
             _ => &[],
+        }
+    }
+
+    /// Returns the alias to join this room through, if we found the room by its alias.
+    pub fn alias(&self) -> Option<&OwnedRoomAliasId> {
+        match self {
+            Self::FetchedRoomPreview(frp) => frp.alias.as_ref(),
+            _ => None,
         }
     }
 }
@@ -134,6 +146,8 @@ pub struct FetchedRoomPreview {
     pub room_avatar: FetchedRoomAvatar,
     /// The servers this preview was fetched through, which can also be asked when joining the room.
     pub via: Vec<OwnedServerName>,
+    /// The alias this preview was fetched through, if any, which can also be used to join the room.
+    pub alias: Option<OwnedRoomAliasId>,
 
     // Below: copied from the `RoomPreview` struct.
 
@@ -162,7 +176,12 @@ pub struct FetchedRoomPreview {
     pub heroes: Option<Vec<RoomHeroWithProfile>>,
 }
 impl FetchedRoomPreview {
-    pub fn from(room_preview: RoomPreview, room_avatar: FetchedRoomAvatar, via: Vec<OwnedServerName>) -> Self {
+    pub fn from(
+        room_preview: RoomPreview,
+        room_avatar: FetchedRoomAvatar,
+        via: Vec<OwnedServerName>,
+        alias: Option<OwnedRoomAliasId>,
+    ) -> Self {
         let display_name = room_preview.name.map_or(
             RoomDisplayName::Empty,
             RoomDisplayName::Named,
@@ -171,6 +190,7 @@ impl FetchedRoomPreview {
             room_name_id: RoomNameId::new(display_name, room_preview.room_id),
             room_avatar,
             via,
+            alias,
             canonical_alias: room_preview.canonical_alias,
             topic: room_preview.topic,
             num_joined_members: room_preview.num_joined_members,

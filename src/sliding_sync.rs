@@ -13,9 +13,9 @@ use matrix_sdk::{
         api::{client::{alias::get_alias, authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             room::{
-                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, MediaSource
+                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, tombstone::RoomTombstoneEventContent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
-        }, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw
     }, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk::Error;
@@ -337,10 +337,12 @@ pub type OnLinkPreviewFetchedFn = fn(
 
 /// Actions emitted in response to a [`MatrixRequest::GenerateMatrixLink`].
 #[derive(Clone, Debug)]
-pub enum MatrixLinkAction {
-    MatrixToUri(MatrixToUri),
-    MatrixUri(MatrixUri),
-    Error(String),
+pub struct MatrixLinkAction {
+    pub room_id: OwnedRoomId,
+    /// See [`MatrixRequest::GenerateMatrixLink::copy_to_clipboard`].
+    pub copy_to_clipboard: bool,
+    /// The generated link, or an error message.
+    pub result: Result<String, String>,
 }
 
 /// Actions emitted when account data (e.g., avatar, display name) changes.
@@ -570,6 +572,8 @@ pub enum MatrixRequest {
     /// Request to join the given room.
     JoinRoom {
         room_id: OwnedRoomId,
+        /// The alias we found the room by, if any. Joining through it doesn't need any `via` servers.
+        alias: Option<OwnedRoomAliasId>,
         /// Servers to ask about the room, which are needed if our homeserver isn't in it yet.
         via: Vec<OwnedServerName>,
     },
@@ -688,11 +692,14 @@ pub enum MatrixRequest {
         /// * If `Some`, the link will point to this specific event within the room.
         /// * If `None`, the link will point to the room itself.
         event_id: Option<OwnedEventId>,
-        /// * If `true`, the `matrix:` URI scheme will be used to create a [`MatrixUri`].
-        /// * If `false` (default), the `https://matrix.to` scheme will be used to create a [`MatrixToUri`].
+        /// * If `true`, the `matrix:` URI scheme will be used to create a [`MatrixUri`](matrix_sdk::ruma::MatrixUri).
+        /// * If `false` (default), the `https://matrix.to` scheme will be used to create a [`MatrixToUri`](matrix_sdk::ruma::MatrixToUri).
         use_matrix_scheme: bool,
         /// * If `true` (default is false), the link will include an action hint to join the room.
         join_on_click: bool,
+        /// * If `true`, the link will be copied to the clipboard.
+        /// * If `false`, the link will replace plain links to this room in a `MentionableTextInput`.
+        copy_to_clipboard: bool,
     },
     /// Request to block or unblock a user.
     #[doc(alias("ignore", "unignore"))]
@@ -1334,15 +1341,16 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::JoinRoom { room_id, via } => {
+            MatrixRequest::JoinRoom { room_id, alias, via } => {
                 let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
                     log!("Sending request to join room {room_id}...");
                     let known_room = client.get_room(&room_id);
                     let was_invite = known_room.as_ref().is_some_and(|r| r.state() == RoomState::Invited);
-                    let result = match known_room.as_ref() {
-                        Some(room) if via.is_empty() => room.join().await.map(|_| room.clone()),
-                        _ => client.join_room_by_id_or_alias((&*room_id).into(), &via).await,
+                    let result = match (known_room.as_ref(), alias) {
+                        (Some(room), None) if via.is_empty() => room.join().await.map(|_| room.clone()),
+                        (_, Some(alias)) => client.join_room_by_id_or_alias((&*alias).into(), &via).await,
+                        (_, None) => client.join_room_by_id_or_alias((&*room_id).into(), &via).await,
                     };
                     // Show the success/failure popup here in case the UI screen that requested the join action
                     // has been hidden or navigated away from since then.
@@ -2196,35 +2204,32 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::GenerateMatrixLink { room_id, event_id, use_matrix_scheme, join_on_click } => {
+            MatrixRequest::GenerateMatrixLink { room_id, event_id, use_matrix_scheme, join_on_click, copy_to_clipboard } => {
                 let Some(client) = get_client() else { continue };
                 let _gen_link_task = Handle::current().spawn(async move {
-                    if let Some(room) = client.get_room(&room_id) {
-                        let result = if use_matrix_scheme {
+                    let result = if let Some(room) = client.get_room(&room_id) {
+                        let link = if use_matrix_scheme {
                             if let Some(event_id) = event_id {
                                 room.matrix_event_permalink(event_id).await
-                                    .map(MatrixLinkAction::MatrixUri)
+                                    .map(|uri| uri.to_string())
                             } else {
                                 room.matrix_permalink(join_on_click).await
-                                    .map(MatrixLinkAction::MatrixUri)
+                                    .map(|uri| uri.to_string())
                             }
                         } else {
                             if let Some(event_id) = event_id {
                                 room.matrix_to_event_permalink(event_id).await
-                                    .map(MatrixLinkAction::MatrixToUri)
+                                    .map(|uri| uri.to_string())
                             } else {
                                 room.matrix_to_permalink().await
-                                    .map(MatrixLinkAction::MatrixToUri)
+                                    .map(|uri| uri.to_string())
                             }
                         };
-    
-                        match result {
-                            Ok(action) => Cx::post_action(action),
-                            Err(e) => Cx::post_action(MatrixLinkAction::Error(e.to_string())),
-                        }
+                        link.map_err(|e| e.to_string())
                     } else {
-                         Cx::post_action(MatrixLinkAction::Error(format!("Room {room_id} not found")));
-                    }
+                        Err(format!("Room {room_id} not found"))
+                    };
+                    Cx::post_action(MatrixLinkAction { room_id, copy_to_clipboard, result });
                 });
             }
 
@@ -5349,15 +5354,26 @@ fn spawn_fetch_successor_room_preview(
     Handle::current().spawn(async move {
         log!("Updating room {tombstoned_room_id} to be tombstoned, {successor_room:?}");
         let srd = if let Some(SuccessorRoom { room_id, reason }) = successor_room {
+            // The tombstone's sender created the successor room, so their homeserver is in it.
+            let mut via = Vec::new();
+            if let Some(room) = client.get_room(&tombstoned_room_id)
+                && let Ok(Some(raw_tombstone)) = room.get_state_event_static::<RoomTombstoneEventContent>().await
+                && let Ok(tombstone) = raw_tombstone.deserialize()
+            {
+                via.push(tombstone.sender().server_name().to_owned());
+            }
             match fetch_room_preview_with_avatar(
                 &client,
                 room_id.deref().into(),
-                Vec::new(),
+                via.clone(),
             ).await {
                 Ok(room_preview) => SuccessorRoomDetails::Full { room_preview, reason },
                 Err(e) => {
                     log!("Failed to fetch preview of successor room {room_id}, error: {e:?}");
-                    SuccessorRoomDetails::Basic(SuccessorRoom { room_id, reason })
+                    SuccessorRoomDetails::Basic {
+                        successor_room: SuccessorRoom { room_id, reason },
+                        via,
+                    }
                 }
             }
         } else {
@@ -5402,7 +5418,8 @@ async fn fetch_room_preview_with_avatar(
         // The successor room did not have an avatar URL
         avatar_from_room_name(room_preview.name.as_deref())
     };
-    Ok(FetchedRoomPreview::from(room_preview, room_avatar, via))
+    let alias = <&RoomId>::try_from(room).err().map(ToOwned::to_owned);
+    Ok(FetchedRoomPreview::from(room_preview, room_avatar, via, alias))
 }
 
 /// Resolves a room link to determine whether we should show it as a room, space, or event.
