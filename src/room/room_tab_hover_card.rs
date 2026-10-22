@@ -22,6 +22,9 @@ script_mod! {
                 flow: Down
                 padding: Inset{top: 12, left: 12, bottom: 12}
                 align: Align{y: 0.5}
+                // Clicks on the card shouldn't reach whatever is underneath it, or take key focus.
+                cursor: MouseCursor.Default
+                grab_key_focus: false
                 draw_bg +: {
                     color: (COLOR_BG_FLOATING)
                     border_radius: 10

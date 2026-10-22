@@ -107,13 +107,15 @@ script_mod! {
         draw_button +: {
             color: COLOR_DOCK_TAB_FG
             color_active: COLOR_TEXT_ON_ACCENT
+            color_active_unfocused: uniform(COLOR_DOCK_TAB_FG_ACTIVE_UNFOCUSED)
             color_bg_hover: uniform(COLOR_ROOM_TAB_BUTTON_BG_HOVER)
             color_bg_active_hover: uniform(COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER)
 
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, 4.0)
-                sdf.fill(mix(self.color_bg_hover, self.color_bg_active_hover, self.active) * self.hover)
+                // Only the focused tab is vivid blue, so every other tab gets the normal hover color.
+                sdf.fill(mix(self.color_bg_hover, self.color_bg_active_hover, self.current) * self.hover)
 
                 let mid = self.rect_size * 0.5
                 let radius = 4.0
@@ -121,7 +123,8 @@ script_mod! {
                 sdf.line_to(mid.x + radius, mid.y + radius)
                 sdf.move_to(mid.x - radius, mid.y + radius)
                 sdf.line_to(mid.x + radius, mid.y - radius)
-                return sdf.stroke(mix(self.color, self.color_active, self.active), 1.5)
+                let color_active = mix(self.color_active_unfocused, self.color_active, self.current)
+                return sdf.stroke(mix(self.color, color_active, self.active), 1.5)
             }
         }
 
@@ -164,25 +167,52 @@ script_mod! {
 
             color: COLOR_DOCK_TAB_FG
             color_active: COLOR_TEXT_ON_ACCENT
+            color_active_unfocused: uniform(COLOR_DOCK_TAB_FG_ACTIVE_UNFOCUSED)
             get_color: fn() {
-                return self.color.mix(self.color_active, self.active)
+                let color_active = mix(self.color_active_unfocused, self.color_active, self.current)
+                return self.color.mix(color_active, self.active)
             }
         }
 
         draw_bg +: {
             // Light blue-ish color, de-saturated from COLOR_ACTIVE_PRIMARY
             color: COLOR_DOCK_TAB_BG
-            color_2: COLOR_DOCK_TAB_BG
             // A slightly darker shade of the tab color for hover visibility
             color_hover: COLOR_DOCK_TAB_BG_HOVER
-            color_2_hover: COLOR_DOCK_TAB_BG_HOVER
             // Active (selected) tabs are a deeper blue, with a vertical gradient
             // to a slightly lighter blue.
             color_active: COLOR_DOCK_TAB_BG_ACTIVE
             color_2_active: COLOR_DOCK_TAB_BG_ACTIVE_BOTTOM
+            // Unfocused active tabs are a pale blue, with a solid blue edge on their left.
+            color_active_unfocused: uniform(COLOR_DOCK_TAB_BG_ACTIVE_UNFOCUSED)
+            color_edge_active_unfocused: uniform(COLOR_DOCK_TAB_EDGE_ACTIVE_UNFOCUSED)
             // Remove the border and rounded corners from the default Tab style
-            border_size: 0.0
             border_radius: 3.0
+
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box_y(
+                    self.overlap_fix,
+                    0.0,
+                    self.rect_size.x - self.overlap_fix,
+                    self.rect_size.y,
+                    self.border_radius,
+                    0.5
+                )
+                let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
+                let color_focused = mix(self.color_active, self.color_2_active, self.pos.y + dither)
+                let color_active = mix(self.color_active_unfocused, color_focused, self.current)
+                let fill = self.color
+                    .mix(self.color_hover, self.hover)
+                    .mix(color_active, self.active)
+                sdf.fill_keep(fill)
+
+                // fill() blurs both sides inward, so we pad by a full blur to keep the edge 4px wide.
+                sdf.rect(self.overlap_fix, 0.0, 4.0 + 1.0 / sdf.aa, self.rect_size.y)
+                sdf.intersect()
+                let edge = self.color_edge_active_unfocused
+                return sdf.fill(vec4(edge.rgb, edge.a * self.active * (1.0 - self.current)))
+            }
         }
 
         animator: Animator{

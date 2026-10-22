@@ -254,10 +254,13 @@ script_mod! {
     mod.widgets.COLOR_POPUP_CLOSE_ICON = #xFFFFFFD0
 
     mod.widgets.COLOR_DOCK_TAB_FG = #xEBEBEB
-    mod.widgets.COLOR_DOCK_TAB_BG = #x252C37
-    mod.widgets.COLOR_DOCK_TAB_BG_HOVER = #x2C3646
+    mod.widgets.COLOR_DOCK_TAB_BG = #x3A3A3A
+    mod.widgets.COLOR_DOCK_TAB_BG_HOVER = #x464646
     mod.widgets.COLOR_DOCK_TAB_BG_ACTIVE = #x0660FE
     mod.widgets.COLOR_DOCK_TAB_BG_ACTIVE_BOTTOM = #x2575EB
+    mod.widgets.COLOR_DOCK_TAB_BG_ACTIVE_UNFOCUSED = #x2F4265
+    mod.widgets.COLOR_DOCK_TAB_FG_ACTIVE_UNFOCUSED = #xC4D9FF
+    mod.widgets.COLOR_DOCK_TAB_EDGE_ACTIVE_UNFOCUSED = #x3D8BFF
     mod.widgets.COLOR_DOCK_TAB_BAR_BG = #x212121F4
     mod.widgets.COLOR_DOCK_TAB_BAR_BG_DRAG = #xE3E3E3
     mod.widgets.COLOR_DOCK_DROP_PREVIEW_MIX = #xFFFFFF00

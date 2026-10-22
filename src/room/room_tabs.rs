@@ -21,8 +21,8 @@ pub struct RoomTabs {
     /// Used to measure the room name so we know how wide to make its tab.
     #[live] tab_title_measure: DrawText,
     /// The set of each tab's buttons, so we don't recreate them on every draw,
-    /// and whether they were last drawn for an active tab (`None` if not yet drawn).
-    #[rust] controls: HashMap<LiveId, (WidgetRef, Option<bool>)>,
+    /// and whether they were last drawn for an active tab and for the focused tab (`None` if not yet drawn).
+    #[rust] controls: HashMap<LiveId, (WidgetRef, Option<(bool, bool)>)>,
     /// Tabs that have visible buttons, which need to receive events.
     #[rust] visible_tabs: HashSet<LiveId>,
     /// State that tracks what a user is doing with a click/press on a tab button
@@ -153,7 +153,7 @@ impl RoomTabs {
     ///
     /// Call this after the dock is drawn (when each tab's position is known),
     /// so it can properly place each button in the right spot.
-    /// Also restyles the overlaid buttons whenever their tab becomes active or inactive.
+    /// Also restyles the overlaid buttons whenever their tab becomes active or inactive, or focused or unfocused.
     fn draw_tab_expand_collapse_buttons(
         &mut self,
         cx: &mut Cx2d,
@@ -181,20 +181,26 @@ impl RoomTabs {
                 continue;
             }
             let is_active = tab.is_active();
-            let (controls, was_active) = self.controls.entry(*tab_id).or_insert_with(|| {
+            let is_focused = tab.is_current();
+            let (controls, drawn_as) = self.controls.entry(*tab_id).or_insert_with(|| {
                 (cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.room_tab_actions.as_object().into())), None)
             });
             let expanded = dock.item(*tab_id).room_action_bar(cx, ids!(room_actions)).is_expanded();
             controls.widget(cx, ids!(expand_room_actions_button)).set_visible(cx, !expanded);
             controls.widget(cx, ids!(collapse_room_actions_button)).set_visible(cx, expanded);
-            if *was_active != Some(is_active) {
-                *was_active = Some(is_active);
+            if *drawn_as != Some((is_active, is_focused)) {
+                *drawn_as = Some((is_active, is_focused));
                 for button_id in [id!(expand_room_actions_button), id!(collapse_room_actions_button)] {
                     let mut button = controls.widget(cx, &[button_id]);
-                    if is_active {
+                    if is_focused {
                         script_apply_eval!(cx, button, {
                             draw_icon +: {color: mod.widgets.COLOR_TEXT_ON_ACCENT}
                             draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_ACTIVE_DOWN}
+                        });
+                    } else if is_active {
+                        script_apply_eval!(cx, button, {
+                            draw_icon +: {color: mod.widgets.COLOR_DOCK_TAB_FG_ACTIVE_UNFOCUSED}
+                            draw_bg +: {color_hover: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_HOVER, color_down: mod.widgets.COLOR_ROOM_TAB_BUTTON_BG_DOWN}
                         });
                     } else {
                         script_apply_eval!(cx, button, {
