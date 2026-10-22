@@ -875,6 +875,8 @@ impl AppMain for App {
         if let Event::MouseUp(e) = event
             && e.button.is_forward()
             && can_navigate_history(cx, &self.ui, &self.app_state)
+            // There's nowhere to go forward to from the AddRoom screen.
+            && !matches!(self.app_state.selected_tab, SelectedTab::AddRoom)
         {
             cx.action(GoForwardAction { steps: 1 });
         }

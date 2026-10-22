@@ -204,7 +204,7 @@ pub fn can_show(cx: &mut Cx) -> impl Fn(&SelectedRoom) -> bool + use<> {
 /// navigational gestures or actions, so this returns false in those cases.
 pub fn can_navigate_history(cx: &mut Cx, ui: &WidgetRef, app_state: &AppState) -> bool {
     if !app_state.logged_in
-        || !matches!(app_state.selected_tab, SelectedTab::Home | SelectedTab::Space { .. })
+        || !matches!(app_state.selected_tab, SelectedTab::Home | SelectedTab::Space { .. } | SelectedTab::AddRoom)
         || is_context_menu_shown(cx, ui)
     {
         return false;
@@ -217,9 +217,13 @@ pub fn can_navigate_history(cx: &mut Cx, ui: &WidgetRef, app_state: &AppState) -
 }
 
 /// Returns the current place: the shown screen, or `None` for home.
+///
+/// While the AddRoom screen is shown, this is the place that it covers.
 pub fn current_place<'a>(cx: &mut Cx, ui: &WidgetRef, app_state: &'a AppState) -> Option<&'a SelectedRoom> {
     // In mobile view mode, the selected screen isn't shown while the rooms list is.
+    // But a screen waiting behind the AddRoom screen is still the current place.
     app_state.selected_room.as_ref().filter(|_| effective_is_desktop(cx)
+        || matches!(app_state.selected_tab, SelectedTab::AddRoom)
         || ui.stack_navigation(cx, ids!(view_stack)).destination_view().is_some()
     )
 }

@@ -684,8 +684,14 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             if let Some(GoBackAction { steps }) = action.downcast_ref() {
                 let app_state = scope.data.get_mut::<AppState>().unwrap();
-                if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), *steps, can_show(cx)) {
-                    self.go_back_to(cx, &mut app_state.nav_history, *steps, previous_place);
+                let mut steps = *steps;
+                // The first step back from the AddRoom screen just closes it.
+                if matches!(app_state.selected_tab, SelectedTab::AddRoom) {
+                    cx.action(NavigationBarAction::CloseAddRoom);
+                    steps -= 1;
+                }
+                if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), steps, can_show(cx)) {
+                    self.go_back_to(cx, &mut app_state.nav_history, steps, previous_place);
                 }
                 continue;
             }
