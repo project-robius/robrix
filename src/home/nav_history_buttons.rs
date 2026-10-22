@@ -172,11 +172,10 @@ pub fn enable_nav_history_buttons(cx: &mut Cx, ui: &WidgetRef, app_state: &AppSt
     }
     let (can_go_back, can_go_forward) = if can_navigate_history(cx, ui, app_state) {
         let can_show = can_show(cx);
-        let nav_history = &app_state.nav_history;
         let current = current_place(cx, ui, app_state);
         (
-            nav_history.previous_place(current, 1, &can_show).is_some(),
-            nav_history.next_place(current, 1, &can_show).is_some(),
+            NavHistoryDirection::Back.places(app_state, current, &can_show).next().is_some(),
+            NavHistoryDirection::Forward.places(app_state, current, &can_show).next().is_some(),
         )
     } else {
         (false, false)

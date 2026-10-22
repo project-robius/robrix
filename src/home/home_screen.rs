@@ -11,7 +11,7 @@ use crate::{
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
         room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt},
         room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt},
-        rooms_list::{AcceptedInviteKind, RoomsListAction},
+        rooms_list::{AcceptedInviteKind, RoomsListAction, RoomsListRef},
         space_lobby::SpaceLobbyScreenWidgetRefExt,
         spaces_bar::SpacesBarAction,
     },
@@ -577,6 +577,11 @@ impl Widget for HomeScreen {
                             page.add_room_screen(cx, ids!(add_room_screen)).search_for_room(cx, address);
                         }
                     }
+                    Some(NavigationBarAction::CloseAddRoom) => {
+                        if matches!(app_state.selected_tab, SelectedTab::AddRoom) {
+                            self.close_add_room(cx, app_state);
+                        }
+                    }
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
                         self.switch_to_tab(cx, app_state, SelectedTab::Space { space_name_id: space_name_id.clone() });
                     }
@@ -810,10 +815,16 @@ impl Widget for HomeScreen {
 
                 // Going back pops the shown screen, or shows the previous screen atop the rooms list.
                 if let Some(GoBackAction { steps }) = action.downcast_ref() && !effective_is_desktop(cx) {
+                    let mut steps = *steps;
+                    // The first step back from the AddRoom screen just closes it.
+                    if matches!(app_state.selected_tab, SelectedTab::AddRoom) {
+                        self.close_add_room(cx, app_state);
+                        steps -= 1;
+                    }
                     if self.view.stack_navigation(cx, ids!(view_stack)).destination_view().is_some() {
-                        self.pop_selected_screen_view(cx, app_state, *steps);
+                        self.pop_selected_screen_view(cx, app_state, steps);
                     } else {
-                        self.go_back_from_rooms_list(cx, app_state, *steps, || true);
+                        self.go_back_from_rooms_list(cx, app_state, steps, || true);
                     }
                 }
 
@@ -891,15 +902,20 @@ impl Widget for HomeScreen {
             self.sync_effective_view_mode(cx, app_state);
         }
 
-        // On the mobile rooms list, the go-back gesture returns to the previous place in the nav history.
+        // The go-back gesture closes the AddRoom screen,
+        // and on the mobile rooms list, it returns to the previous place in the nav history.
         if self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
-            && !effective_is_desktop(cx)
             && (matches!(event, Event::BackPressed { .. }) || matches!(event, Event::MouseUp(e) if e.button.is_back()))
         {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
-            self.go_back_from_rooms_list(cx, app_state, 1, || {
-                event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back())
-            });
+            let should_go_back = || event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back());
+            if matches!(app_state.selected_tab, SelectedTab::AddRoom) {
+                if should_go_back() {
+                    self.close_add_room(cx, app_state);
+                }
+            } else if !effective_is_desktop(cx) {
+                self.go_back_from_rooms_list(cx, app_state, 1, should_go_back);
+            }
         }
 
         // A long click/press on the stack nav header's back button also shows the nav history popup menu.
@@ -1205,6 +1221,22 @@ impl HomeScreen {
         cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
         self.update_active_page_from_selection(cx, app_state);
         self.view.redraw(cx);
+    }
+
+    /// Closes the AddRoom screen by showing the Home or Space tab that it covered.
+    fn close_add_room(&mut self, cx: &mut Cx, app_state: &mut AppState) {
+        // AddRoom doesn't affect which space is selected, so we go back to that space (or Home).
+        let tab = cx.get_global::<RoomsListRef>().get_selected_space()
+            .map_or(SelectedTab::Home, |space_name_id| SelectedTab::Space { space_name_id });
+        self.switch_to_tab(cx, app_state, tab);
+        // In mobile view mode, the screen waiting behind AddRoom is shown again right away.
+        let is_transitioning = self.view.stack_navigation(cx, ids!(view_stack)).is_transitioning();
+        if self.tab_to_restore_on_mobile
+            .take_if(|tab| *tab == app_state.selected_tab && !is_transitioning)
+            .is_some()
+        {
+            self.restore_selected_screen_view(cx, app_state);
+        }
     }
 
     /// Upgrades a room's or space's InviteScreen that is being shown in mobile view mode

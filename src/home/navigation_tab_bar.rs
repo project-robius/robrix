@@ -640,7 +640,7 @@ impl SelectedTab {
 /// There are 3 kinds of actions within this one enum:
 /// 1. "Leading-edge" ("request") actions emitted by the NavigationTabBar
 ///    when the user selects a particular button/space.
-///    * Includes `GoToHome`, `GoToAddRoom`, `GoToSpace`, `OpenSettings`, `CloseSettings`.
+///    * Includes `GoToHome`, `GoToAddRoom`, `CloseAddRoom`, `GoToSpace`, `OpenSettings`, `CloseSettings`.
 /// 2. "Trailing-edge" ("response") actions that are emitted by the `HomeScreen` widget
 ///    in response to a leading-edge action.
 ///    * This includes only the `TabSelected` variant.
@@ -657,6 +657,8 @@ pub enum NavigationBarAction {
         /// A room address (alias, ID, or Matrix link) to fill in and search for.
         search_for: Option<String>,
     },
+    /// Close the add/join/explore room view, returning to the previous Home or Space view.
+    CloseAddRoom,
     /// Go to the Settings view (open the `SettingsScreen`).
     OpenSettings,
     /// Close the Settings view (`SettingsScreen`), returning to the previous view.

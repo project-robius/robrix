@@ -8,7 +8,10 @@
 use makepad_widgets::{makepad_platform::event::finger::{TAP_COUNT_DISTANCE, TAP_COUNT_TIME, TouchState}, *};
 use crate::{
     app::{AppState, SelectedRoom},
-    home::nav_history::{GoBackAction, GoForwardAction, NavHistory, can_navigate_history, can_show, current_place},
+    home::{
+        nav_history::{GoBackAction, GoForwardAction, can_navigate_history, can_show, current_place},
+        navigation_tab_bar::SelectedTab,
+    },
     room::FetchedRoomAvatar,
     shared::{avatar::AvatarWidgetRefExt, context_menu::{BUTTON_HEIGHT, ContextMenuClosed, MENU_PADDING, MENU_WIDTH, is_context_menu_cancelled, is_tap_outside, menu_position_margin}},
 };
@@ -74,14 +77,23 @@ pub enum NavHistoryDirection {
 
 impl NavHistoryDirection {
     /// Returns the places that going this way from the `current` place can reach, from nearest to furthest.
-    fn places<'a>(
+    ///
+    /// The AddRoom screen just covers the `current` place, so going back from it returns there first,
+    /// and going forward from it can't go anywhere.
+    pub fn places<'a>(
         self,
-        nav_history: &'a NavHistory,
+        app_state: &'a AppState,
         current: Option<&'a SelectedRoom>,
         can_show: impl Fn(&SelectedRoom) -> bool + 'a,
     ) -> Box<dyn Iterator<Item = Option<SelectedRoom>> + 'a> {
+        let nav_history = &app_state.nav_history;
+        let is_add_room_shown = matches!(app_state.selected_tab, SelectedTab::AddRoom);
         match self {
+            NavHistoryDirection::Back if is_add_room_shown => Box::new(
+                std::iter::once(current.cloned()).chain(nav_history.previous_places(current, can_show))
+            ),
             NavHistoryDirection::Back => Box::new(nav_history.previous_places(current, can_show)),
+            NavHistoryDirection::Forward if is_add_room_shown => Box::new(std::iter::empty()),
             NavHistoryDirection::Forward => Box::new(nav_history.next_places(current, can_show)),
         }
     }
@@ -259,7 +271,7 @@ impl Widget for NavHistoryMenu {
         // Going back or forward obviously changed the content of the nav history menu.
         let can_show = can_show(cx);
         let are_places_stale = scope.data.get::<AppState>().is_some_and(|app_state| {
-            let mut places = self.direction.places(&app_state.nav_history, self.current.as_ref(), can_show);
+            let mut places = self.direction.places(app_state, self.current.as_ref(), can_show);
             !self.places.iter().all(|(place, _)| places.next().as_ref() == Some(place)) || places.next().is_some()
         });
         if are_places_stale {
@@ -360,7 +372,7 @@ pub fn show_nav_history_menu(cx: &mut Cx, ui: &WidgetRef, app_state: &AppState, 
     // A modal may have opened while the button was held.
     if !can_navigate_history(cx, ui, app_state) { return; }
     let current = current_place(cx, ui, app_state);
-    let places: Vec<_> = action.direction.places(&app_state.nav_history, current, can_show(cx)).collect();
+    let places: Vec<_> = action.direction.places(app_state, current, can_show(cx)).collect();
     if places.is_empty() { return; }
     ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
     let container_rect = ui.view(cx, ids!(overlay_container)).area().rect(cx);
