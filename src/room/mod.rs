@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use makepad_widgets::ScriptVm;
 use matrix_sdk::{RoomDisplayName, RoomHeroWithProfile, RoomState, room_preview::RoomPreview};
-use ruma::{OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, room::{JoinRuleSummary, RoomType}};
+use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, room::{JoinRuleSummary, RoomType}};
 
 use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
@@ -42,6 +42,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
 /// but haven't yet fetched the full room preview,
 /// such as a room to navigate to, or a room to join.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum BasicRoomDetails {
     /// We only know the room's ID, so we'll need to fetch the room preview
     /// to get more info about the room.
@@ -155,6 +156,8 @@ pub struct FetchedRoomPreview {
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The room's topic, if set.
     pub topic: Option<String>,
+    /// The room's avatar URL, if set.
+    pub avatar_url: Option<OwnedMxcUri>,
     /// The number of joined members.
     pub num_joined_members: u64,
     /// The number of active members, if known (joined + invited).
@@ -193,6 +196,7 @@ impl FetchedRoomPreview {
             alias,
             canonical_alias: room_preview.canonical_alias,
             topic: room_preview.topic,
+            avatar_url: room_preview.avatar_url,
             num_joined_members: room_preview.num_joined_members,
             num_active_members: room_preview.num_active_members,
             room_type: room_preview.room_type,

@@ -944,6 +944,34 @@ pub enum MatrixRequest {
         request_id: u64,
         owner: WidgetUid,
     },
+    /// Request to look up the rooms and spaces that the `query` text could exactly be, e.g., a partial alias.
+    ///
+    /// The results are posted as a [`DirectorySearchAction::ExactRooms`](crate::directory_search::DirectorySearchAction::ExactRooms).
+    ResolveRoomSearchQuery {
+        query: String,
+    },
+    /// Request to look up the users that the `query` text could exactly be, e.g., a partial user ID.
+    ///
+    /// The results are posted as a [`DirectorySearchAction::ExactUsers`](crate::directory_search::DirectorySearchAction::ExactUsers).
+    ResolveUserSearchQuery {
+        query: String,
+    },
+    /// Request to search our homeserver's room directory for rooms or spaces matching the `query` text.
+    ///
+    /// If `next_batch` is `Some`, this gets that next page of matches.
+    /// The results are posted as a [`DirectorySearchAction::DirectoryRooms`](crate::directory_search::DirectorySearchAction::DirectoryRooms).
+    SearchRoomDirectory {
+        query: String,
+        kind: crate::directory_search::RoomKind,
+        next_batch: Option<String>,
+    },
+    /// Request to search our homeserver's user directory for the `query` text, getting up to `limit` users.
+    ///
+    /// The results are posted as a [`DirectorySearchAction::DirectoryUsers`](crate::directory_search::DirectorySearchAction::DirectoryUsers).
+    SearchUserDirectory {
+        query: String,
+        limit: u32,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1295,18 +1323,35 @@ async fn matrix_worker_task(
                 let Some(client) = get_client() else { continue };
                 let _knock_room_task = Handle::current().spawn(async move {
                     log!("Sending request to knock on room {room_or_alias_id}...");
+                    // Show the success/failure popup here in case the UI screen that requested the knock
+                    // has been hidden or navigated away from since then.
                     match client.knock(room_or_alias_id.clone(), reason, server_names).await {
                         Ok(room) => {
-                            let _ = room.display_name().await; // populate this room's display name cache
+                            let room_name_id = RoomNameId::from_room(&room).await;
+                            enqueue_popup_notification(
+                                format!(
+                                    "Successfully knocked on {} \"{room_name_id}\".",
+                                    if room.is_space() { "space" } else { "room" },
+                                ),
+                                PopupKind::Success,
+                                Some(4.0),
+                            );
                             Cx::post_action(KnockResultAction::Knocked {
                                 room_or_alias_id,
                                 room,
                             });
                         }
-                        Err(error) => Cx::post_action(KnockResultAction::Failed {
-                            room_or_alias_id,
-                            error,
-                        }),
+                        Err(error) => {
+                            enqueue_popup_notification(
+                                format!("Failed to knock on room.\n\nError: {error}."),
+                                PopupKind::Error,
+                                None,
+                            );
+                            Cx::post_action(KnockResultAction::Failed {
+                                room_or_alias_id,
+                                error,
+                            });
+                        }
                     }
                 });
             }
@@ -1653,6 +1698,26 @@ async fn matrix_worker_task(
                     let items = rank_matching_rooms(&client, &query).await;
                     Cx::post_action(MentionMatches::new(request_id, owner, items));
                 });
+            }
+
+            MatrixRequest::ResolveRoomSearchQuery { query } => {
+                let Some(client) = get_client() else { continue };
+                let _resolve_task = Handle::current().spawn(crate::directory_search::resolve_room_search_query(client, query));
+            }
+
+            MatrixRequest::ResolveUserSearchQuery { query } => {
+                let Some(client) = get_client() else { continue };
+                let _resolve_task = Handle::current().spawn(crate::directory_search::resolve_user_search_query(client, query));
+            }
+
+            MatrixRequest::SearchRoomDirectory { query, kind, next_batch } => {
+                let Some(client) = get_client() else { continue };
+                let _search_task = Handle::current().spawn(crate::directory_search::search_room_directory(client, query, kind, next_batch));
+            }
+
+            MatrixRequest::SearchUserDirectory { query, limit } => {
+                let Some(client) = get_client() else { continue };
+                let _search_task = Handle::current().spawn(crate::directory_search::search_user_directory(client, query, limit));
             }
 
             MatrixRequest::GetNumberUnreadMessages { timeline_kind } => {

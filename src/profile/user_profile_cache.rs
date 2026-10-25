@@ -49,6 +49,21 @@ impl RoomMemberEntry {
     }
 }
 
+/// Inserts the given user profile into the cache, unless the cache already has an entry for that user.
+///
+/// This lets us show a profile that we already got elsewhere, e.g., from a search, without fetching it again.
+pub fn insert_user_profile_if_missing(cx: &mut Cx, user_profile: UserProfile) {
+    let user_id = user_profile.user_id.clone();
+    let was_missing = USER_PROFILE_CACHE.with_borrow_mut(|cache| {
+        let Entry::Vacant(entry) = cache.entry(user_id.clone()) else { return false };
+        entry.insert(UserProfileCacheEntry::Loaded { user_profile, rooms: BTreeMap::new() });
+        true
+    });
+    if was_missing {
+        cx.action(UserProfilesUpdated { user_ids: BTreeSet::from([user_id]) });
+    }
+}
+
 /// Inserts already-known room member info for the given room into the cache,
 /// emitting [`UserProfilesUpdated`] for that user.
 ///
