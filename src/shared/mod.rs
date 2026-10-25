@@ -4,6 +4,7 @@ use crate::settings::app_preferences::Appearance;
 pub mod attachment_download;
 pub mod avatar;
 pub mod collapsible_header;
+pub mod collapsible_label;
 pub mod context_menu;
 pub mod expand_arrow;
 pub mod confirmation_modal;
@@ -52,6 +53,7 @@ pub fn script_mod(vm: &mut ScriptVm, appearance: Appearance) {
     expand_arrow::script_mod(vm);
     unread_badge::script_mod(vm);
     collapsible_header::script_mod(vm);
+    collapsible_label::script_mod(vm);
     timestamp::script_mod(vm);
     room_filter_input_bar::script_mod(vm);
     room_input_popup_menu::script_mod(vm);

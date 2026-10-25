@@ -26,7 +26,7 @@ use matrix_sdk_ui::{
 };
 #[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
-use ruma::{OwnedRoomAliasId, OwnedRoomOrAliasId, RoomId, events::tag::Tags};
+use ruma::{OwnedRoomAliasId, OwnedRoomOrAliasId, RoomId, events::tag::Tags, room::JoinRuleSummary};
 use tokio::{
     runtime::Handle,
     sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::{Instant, error::Elapsed},
@@ -3689,6 +3689,10 @@ struct RoomListServiceRoomInfo {
     alt_aliases: Vec<OwnedRoomAliasId>,
     /// Only ever set for invited rooms.
     inviter_info: Option<InviterInfo>,
+    /// Only ever set for invited rooms.
+    topic: Option<String>,
+    /// Only ever set for invited rooms.
+    join_rule: Option<JoinRuleSummary>,
     num_joined_members: u64,
     num_invited_members: u64,
     /// Whether all of this room's members are fully available in the local store.
@@ -3728,6 +3732,7 @@ impl RoomListServiceRoomInfo {
             }
         );
 
+        let is_invited = room.state() == RoomState::Invited;
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
@@ -3746,6 +3751,8 @@ impl RoomListServiceRoomInfo {
             canonical_alias: room.canonical_alias(),
             alt_aliases: room.alt_aliases(),
             inviter_info,
+            topic: is_invited.then(|| room.topic()).flatten(),
+            join_rule: is_invited.then(|| room.join_rule().map(JoinRuleSummary::from)).flatten(),
             num_joined_members: room.joined_members_count(),
             num_invited_members: room.invited_members_count(),
             members_synced: room.are_members_synced(),
@@ -4580,6 +4587,15 @@ async fn update_room(
             });
         }
 
+        // An invite's topic and join rule might arrive after the invite itself.
+        if old_room.topic != new_room.topic || old_room.join_rule != new_room.join_rule {
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateTopicAndJoinRule {
+                room_id: new_room_id.clone(),
+                topic: new_room.topic.clone(),
+                join_rule: new_room.join_rule.clone(),
+            });
+        }
+
         // Check to see if any room aliases have changed.
         if old_room.canonical_alias != new_room.canonical_alias
             || old_room.alt_aliases != new_room.alt_aliases
@@ -4777,6 +4793,8 @@ async fn add_new_room(
                 room_avatar,
                 canonical_alias: new_room.canonical_alias.clone(),
                 alt_aliases: new_room.alt_aliases.clone(),
+                topic: new_room.topic.clone(),
+                join_rule: new_room.join_rule.clone(),
                 invite_state: Default::default(),
                 is_selected: false,
                 is_direct: new_room.is_direct,
