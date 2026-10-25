@@ -99,32 +99,6 @@ script_mod! {
         }
     }
 
-    // The show more button (to expand) and show less button (to collapse) a tall reply preview.
-    mod.widgets.ReplyToggleButton = RobrixIconButton {
-        visible: false
-        width: Fit, height: Fit
-        spacing: 4
-        padding: Inset{ top: 4, bottom: 4, left: 8, right: 8 }
-        draw_icon +: { color: (COLOR_TEXT_MUTED) }
-        icon_walk: Walk{ width: 10, height: 10 }
-        draw_text +: {
-            text_style: theme.font_regular { font_size: 10.0, line_spacing: 1.2 }
-            color: (COLOR_TEXT_MUTED)
-            color_hover: (COLOR_TEXT_MUTED)
-            color_down: (COLOR_TEXT_MUTED)
-        }
-        draw_bg +: {
-            color: (COLOR_BG_PREVIEW)
-            color_hover: (COLOR_BG_PREVIEW_HOVER)
-            color_down: (COLOR_BG_PREVIEW_DOWN)
-            border_size: 1.0
-            border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-            border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-            border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-            border_radius: 4.0
-        }
-    }
-
     // Wraps a reply preview in a collapsible view.
     mod.widgets.CollapsiblePreview = set_type_default() do #(CollapsiblePreview::register_widget(vm)) {
         visible: false
@@ -156,12 +130,12 @@ script_mod! {
             }
         }
 
-        reply_expand_button := mod.widgets.ReplyToggleButton {
+        reply_expand_button := mod.widgets.ShowMoreLessButton {
             draw_icon +: { svg: (ICON_TRIANGLE_DOWN) }
             text: "Show more…"
         }
 
-        reply_collapse_button := mod.widgets.ReplyToggleButton {
+        reply_collapse_button := mod.widgets.ShowMoreLessButton {
             draw_icon +: { svg: (ICON_TRIANGLE_UP) }
             text: "Show less"
         }

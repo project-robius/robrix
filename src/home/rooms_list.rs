@@ -22,7 +22,7 @@ use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
 use ruma::events::tag::TagName;
 use tokio::sync::mpsc::UnboundedSender;
-use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId, RoomAliasId}};
+use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId, RoomAliasId}};
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
@@ -231,6 +231,12 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         is_space: bool,
     },
+    /// Update the topic and join rule of the given invited room.
+    UpdateTopicAndJoinRule {
+        room_id: OwnedRoomId,
+        topic: Option<String>,
+        join_rule: Option<JoinRuleSummary>,
+    },
     /// Remove the given room from the rooms list
     RemoveRoom {
         room_id: OwnedRoomId,
@@ -396,6 +402,10 @@ pub struct InvitedRoomInfo {
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
     pub alt_aliases: Vec<OwnedRoomAliasId>,
+    /// The topic of this room, if any.
+    pub topic: Option<String>,
+    /// The join rule of this room, if known.
+    pub join_rule: Option<JoinRuleSummary>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub room_avatar: FetchedRoomAvatar,
@@ -1014,6 +1024,12 @@ impl RoomsList {
                         did_invited_rooms_change = true;
                         // Broadcast this update to an already-open InviteScreen that might be showing this room.
                         cx.action(InviteScreenAction::IsSpace { room_id, is_space });
+                    }
+                }
+                RoomsListUpdate::UpdateTopicAndJoinRule { room_id, topic, join_rule } => {
+                    if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        room.topic = topic;
+                        room.join_rule = join_rule;
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state, is_space } => {

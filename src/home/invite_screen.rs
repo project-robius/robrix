@@ -6,7 +6,7 @@
 
 use std::{ops::Deref, rc::Rc};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedRoomId, room::JoinRuleSummary}};
+use matrix_sdk::{RoomState, ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary}};
 
 use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview}, room_preview_cache::{self, CachedRoomPreview}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
@@ -17,6 +17,19 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
+
+    // One part of an invite's details row: the join rule or the member count.
+    mod.widgets.InviteRoomDetailsLabel = Label {
+        width: Fit, height: Fit
+        padding: 0
+        text: ""
+        draw_text +: {
+            text_style: REGULAR_TEXT {
+                font_size: 11,
+            },
+            color: (COLOR_TEXT_SUBTLE)
+        }
+    }
 
     mod.widgets.InviteScreen = set_type_default() do #(InviteScreen::register_widget(vm)) {
         ..mod.widgets.SolidView
@@ -158,46 +171,46 @@ script_mod! {
                 }
             }
 
-            room_details := Label {
-                width: Fill, height: Fit,
-                align: Align{x: 0.5, y: 0},
-                flow: Flow.Right{wrap: true},
-                text: ""
-                draw_text +: {
-                    text_style: REGULAR_TEXT {
-                        font_size: 11,
-                    },
-                    color: (COLOR_TEXT_SUBTLE)
-                }
+            room_details := View {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                align: Align{x: 0.5, y: 0}
+                padding: 6
+                spacing: 16
+                // The same spacing between two regular wrapped lines of text.
+                wrap_spacing: 3.52
+
+                room_join_rule := mod.widgets.InviteRoomDetailsLabel {}
+                room_member_count := mod.widgets.InviteRoomDetailsLabel {}
             }
 
-            room_topic := Label {
-                width: Fill, height: Fit,
-                align: Align{x: 0.5, y: 0},
-                margin: Inset{top: 5},
-                flow: Flow.Right{wrap: true},
-                max_lines: 3
-                text_overflow: Ellipsis
-                text: ""
-                draw_text +: {
-                    text_style: REGULAR_TEXT {
-                        font_size: 12,
-                    },
-                    color: (COLOR_INVITE_SCREEN_TOPIC_TEXT)
+            room_topic := CollapsibleLabel {
+                width: Fill {max: 500}
+                margin: Inset{top: 16, bottom: 6}
+                padding: Inset{left: 6, right: 6}
+                label +: {
+                    align: Align{x: 0.5, y: 0}
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {
+                            font_size: 12,
+                        },
+                        color: (COLOR_INVITE_SCREEN_TOPIC_TEXT)
+                    }
                 }
             }
         }
 
         buttons := View {
             width: Fill, height: Fit
-            // We'd like to use RightWrap, but it doesn't work with x-centered alignment
-            // flow: Flow.Right{wrap: true},
-            flow: Right,
+            flow: Flow.Right{wrap: true},
             align: Align{x: 0.5, y: 0.5}
             margin: Inset{top: 20}
             spacing: 40
+            // matches the gap above reject_and_block_button.
+            wrap_spacing: 22
 
             cancel_button := RobrixNegativeIconButton {
+                width: 135
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon.svg: (ICON_FORBIDDEN)
@@ -206,6 +219,7 @@ script_mod! {
             }
 
             accept_button := RobrixPositiveIconButton {
+                width: 135
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon.svg: (ICON_CHECKMARK)
@@ -247,6 +261,9 @@ script_mod! {
 pub struct InviteDetails {
     pub room_info: BasicRoomDetails,
     pub inviter: Option<InviterInfo>,
+    pub canonical_alias: Option<OwnedRoomAliasId>,
+    pub topic: Option<String>,
+    pub join_rule: Option<JoinRuleSummary>,
 }
 impl Deref for InviteDetails {
     type Target = BasicRoomDetails;
@@ -552,38 +569,34 @@ impl Widget for InviteScreen {
         let invite_room_label = info.room_name_id().to_string();
         room_view.label(cx, ids!(room_name)).set_text(cx, &invite_room_label);
 
-        // Third, show extra details about the room/space from the fetched room preview, if we have it
-        let preview = self.room_preview.as_deref();
-        let alias = preview.and_then(|p| p.canonical_alias.as_ref());
+        // Third, show extra details about the room/space.
+        // These come from the invite itself, except the member count, which only the room preview has.
         let room_alias = room_view.label(cx, ids!(room_alias));
-        room_alias.set_visible(cx, alias.is_some());
-        room_alias.set_text(cx, alias.map_or("", |a| a.as_str()));
+        room_alias.set_visible(cx, info.canonical_alias.is_some());
+        room_alias.set_text(cx, info.canonical_alias.as_ref().map_or("", |a| a.as_str()));
 
-        let join_rule = preview.and_then(|p| p.join_rule.as_ref()).map(|rule| match rule {
+        let join_rule = info.join_rule.as_ref().map(|rule| match rule {
             JoinRuleSummary::Public => "🌐  Public",
             _ => "🔒  Private",
         });
         let room_or_space = if self.is_space { "space" } else { "room" };
+        let room_join_rule = room_view.label(cx, ids!(room_join_rule));
+        room_join_rule.set_visible(cx, join_rule.is_some());
+        if let Some(rule) = join_rule {
+            room_join_rule.set_text(cx, &format!("{rule} {room_or_space}"));
+        }
         // If there are 0 members, that actually means we don't know how many members there are.
-        let num_members = preview.map(|p| p.num_joined_members).filter(|n| *n > 0);
+        let num_members = self.room_preview.as_deref().map(|p| p.num_joined_members).filter(|n| *n > 0);
         let plural = if num_members == Some(1) { "" } else { "s" };
-        let details = match (join_rule, num_members) {
-            (Some(rule), Some(n)) => format!("{rule} {room_or_space}  ·  {n} member{plural}"),
-            (Some(rule), None) => format!("{rule} {room_or_space}"),
-            (None, Some(n)) => format!("{n} member{plural}"),
-            (None, None) => String::new(),
-        };
-        let room_details = room_view.label(cx, ids!(room_details));
-        room_details.set_visible(cx, !details.is_empty());
-        room_details.set_text(cx, &details);
+        let member_count = num_members.map_or_else(
+            || String::from("👥  ?? members"),
+            |n| format!("👥  {n} member{plural}"),
+        );
+        room_view.label(cx, ids!(room_member_count)).set_text(cx, &member_count);
 
-        let topic = preview.and_then(|p| p.topic.as_deref())
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(|t| utils::replace_linebreaks_separators(t, false));
-        let room_topic = room_view.label(cx, ids!(room_topic));
-        room_topic.set_visible(cx, topic.is_some());
-        room_topic.set_text(cx, topic.as_deref().unwrap_or_default());
+        let room_topic = room_view.widget(cx, ids!(room_topic));
+        room_topic.set_visible(cx, info.topic.is_some());
+        room_topic.set_text(cx, info.topic.as_deref().unwrap_or_default());
 
         // Fourth, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(cx, ids!(cancel_button));
@@ -652,6 +665,12 @@ impl InviteScreen {
                     room_avatar: invite.room_avatar.clone(),
                 },
                 inviter: invite.inviter_info.clone(),
+                canonical_alias: invite.canonical_alias.clone(),
+                topic: invite.topic.as_deref()
+                    .map(str::trim)
+                    .filter(|t| !t.is_empty())
+                    .map(str::to_owned),
+                join_rule: invite.join_rule.clone(),
             });
             self.invite_state = invite.invite_state;
             self.is_space = invite.is_space;
