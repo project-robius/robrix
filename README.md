@@ -5,6 +5,7 @@
 
 > [!TIP]
 > ▶️  [Click here to download & install Robrix](https://github.com/project-robius/robrix/releases/latest) on macOS, iOS, Android, Linux, and Windows.
+> On Android, most devices need the `android-aarch64` APK. Devices with a 32-bit ARM system (`armeabi-v7a`, e.g., those reporting `armv7l` or `armv8l`), which can't install that one, need the `android-armv7` APK.
 
 Robrix is a fast, powerful Matrix chat client written from scratch in Rust.
 
@@ -229,6 +230,11 @@ The following table shows which host systems can currently be used to build Robr
    ```
     * You'll need to connect a physical Android device with developer options enabled, or start up an emulator using Android Studio.
         * API version 33 or higher is required, which is Android 13 and up.
+    * The above builds for 64-bit ARM (`arm64-v8a`). To build for a device with a 32-bit ARM system (`armeabi-v7a`), pass `--abi=armv7` before the subcommand in both steps 3 and 4:
+      ```sh
+      cargo makepad android --abi=armv7 install-toolchain --full-ndk
+      cargo makepad android --abi=armv7 run -p robrix --release
+      ```
 
 
 ### iOS / iPadOS
