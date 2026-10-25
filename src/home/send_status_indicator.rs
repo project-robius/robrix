@@ -490,8 +490,10 @@ impl SendStatusIndicatorRef {
     }
 }
 
-fn upload_percent(current_bytes: usize, total_bytes: usize) -> u8 {
-    (current_bytes * 100).checked_div(total_bytes).unwrap_or(0).min(100) as u8
+/// Returns how much of an upload is done, from 0 to 100 percent.
+pub fn upload_percent(current_bytes: usize, total_bytes: usize) -> u8 {
+    // Widen first: `current_bytes * 100` overflows a 32-bit `usize` (e.g., armv7) above ~43 MB.
+    (current_bytes as u128 * 100).checked_div(total_bytes as u128).unwrap_or(0).min(100) as u8
 }
 
 /// Stringifies an upload's progress, e.g. "Uploading... 40% (2 MB / 5 MB)".
@@ -556,3 +558,16 @@ pub fn stringify_send_error(error: &matrix_sdk::Error) -> &'static str {
 const UNVERIFIED_DEVICES_TEXT: &str = "some recipients have unverified devices.";
 const IDENTITY_CHANGED_TEXT: &str = "someone's verified identity has changed.";
 const OWN_VERIFICATION_TEXT: &str = "this device isn't verified yet.";
+
+#[cfg(test)]
+mod tests {
+    use super::upload_percent;
+
+    #[test]
+    fn upload_percent_does_not_overflow() {
+        assert_eq!(upload_percent(45_000_000, 50_000_000), 90);
+        assert_eq!(upload_percent(usize::MAX / 2, usize::MAX), 49);
+        assert_eq!(upload_percent(usize::MAX, usize::MAX), 100);
+        assert_eq!(upload_percent(1, 0), 0);
+    }
+}
