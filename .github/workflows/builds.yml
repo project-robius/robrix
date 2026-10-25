@@ -13,6 +13,7 @@
 # │ macOS 14        │ iOS aarch64     │ cargo-makepad   │
 # │ macOS 14        │ Android         │ cargo-makepad   │
 # │ Ubuntu Latest   │ Android         │ cargo-makepad   │
+# │ Ubuntu Latest   │ Android armv7   │ cargo-makepad   │
 # │ Windows 2022    │ Android         │ cargo-makepad   │
 # └─────────────────┴─────────────────┴─────────────────┘
 
@@ -279,6 +280,42 @@ jobs:
           --config profile.dev.strip=true \
           --config profile.dev.debug-assertions=false
 
+  ## 32-bit ARM (armeabi-v7a), for devices whose Android userspace is 32-bit,
+  ## e.g. those that report `armv8l`. The other Android jobs build arm64 only.
+  build_android_armv7_on_linux:
+    name: Build Android armv7 (Linux Host)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
+
+      - name: Install Android toolchain
+        run: |
+          cargo makepad android --abi=armv7 install-toolchain --full-ndk
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: android-armv7-linux-build-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build Android APK
+        env:
+          RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
+        run: |
+          cargo makepad android --abi=armv7 build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
+
   build_android_on_windows:
     name: Build Android (Windows Host)
     runs-on: windows-2022
@@ -334,6 +371,7 @@ jobs:
       build_ios_on_macos,
       build_android_on_macos,
       build_android_on_linux,
+      build_android_armv7_on_linux,
       build_android_on_windows
     ]
     if: always()
@@ -349,6 +387,7 @@ jobs:
           echo "=== Android Builds ==="
           echo "Android (macOS): ${{ needs.build_android_on_macos.result }}"
           echo "Android (Linux): ${{ needs.build_android_on_linux.result }}"
+          echo "Android armv7 (Linux): ${{ needs.build_android_armv7_on_linux.result }}"
           echo "Android (Windows): ${{ needs.build_android_on_windows.result }}"
 
 concurrency:
