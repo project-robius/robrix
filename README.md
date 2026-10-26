@@ -213,10 +213,11 @@ The following table shows which host systems can currently be used to build Robr
 
 1. Follow all steps in the previous section about desktop builds.
 
-2. Install the `cargo-makepad` build tool:
+2. Install the `cargo-makepad` build tool, from the same Makepad repository and branch that Robrix depends on (the `makepad-widgets` entry in `Cargo.toml`):
    ```sh
-   cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+   cargo install --force --git https://github.com/kevinaboos/makepad.git --branch android_armv7_robrix cargo-makepad
    ```
+   * Robrix's Android app uses a class that this cargo-makepad builds into the APK. An APK built with a cargo-makepad that doesn't have it, such as one from upstream Makepad's `dev` branch, crashes at launch.
 
 ### Android
 3. Use `cargo-makepad` to install the Android toolchain with the full NDK included:
@@ -229,7 +230,7 @@ The following table shows which host systems can currently be used to build Robr
    cargo makepad android run -p robrix --release
    ```
     * You'll need to connect a physical Android device with developer options enabled, or start up an emulator using Android Studio.
-        * API version 33 or higher is required, which is Android 13 and up.
+        * Android 8.0 (API version 26) or newer is required.
     * The above builds for 64-bit ARM (`arm64-v8a`). To build for a device with a 32-bit ARM system (`armeabi-v7a`), pass `--abi=armv7` before the subcommand in both steps 3 and 4:
       ```sh
       cargo makepad android --abi=armv7 install-toolchain --full-ndk

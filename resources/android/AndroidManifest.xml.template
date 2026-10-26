@@ -67,6 +67,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Lets robius-share share files on Android 8 and 9, which have no MediaStore
+             Downloads collection to copy them into. It serves robius-share's copies in
+             the app's cache to apps that are granted access to them. The class comes with
+             cargo-makepad, so build with the cargo-makepad from the Makepad version that
+             Robrix depends on: without the class, the app crashes at launch. -->
+        <provider
+            android:name="dev.makepad.android.MakepadFileProvider"
+            android:authorities="{package_id}.robius.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="dev.makepad.android.MakepadFileProvider.cacheDirs"
+                android:value="robius-share" />
+        </provider>
     </application>
 
     <queries>
