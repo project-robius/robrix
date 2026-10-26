@@ -58,27 +58,32 @@ script_mod! {
     }
 }
 
-/// Handles taps and hovers on the rows of the given list.
+/// Handles taps and hovers on the given rows of a list, e.g., from its `items_with_actions()`.
 ///
-/// Updates `hovered` to the index of the hovered row, and returns the index of the tapped row, if any,
+/// Updates `hovered` to the key of the hovered row, and returns the key of the tapped row, if any,
 /// and whether `hovered` changed.
-pub fn handle_row_actions(list: &PortalListRef, actions: &Actions, hovered: &mut Option<usize>) -> (Option<usize>, bool) {
+pub fn handle_row_actions<K: Copy + PartialEq>(
+    items: impl IntoIterator<Item = (K, WidgetRef)>,
+    is_scrolling: bool,
+    actions: &Actions,
+    hovered: &mut Option<K>,
+) -> (Option<K>, bool) {
     let mut tapped = None;
     let mut hover_changed = false;
-    for (index, item) in list.items_with_actions(actions) {
+    for (key, item) in items {
         let row = item.as_view();
         // Don't treat a touch that drags (a scroll motion) as a regular tap/click.
-        if !list.was_scrolling()
+        if !is_scrolling
             && let Some(fe) = row.finger_up(actions)
             && fe.is_over && fe.is_primary_hit() && fe.was_tap()
         {
-            tapped = Some(index);
+            tapped = Some(key);
         }
         if row.finger_hover_in(actions).is_some() {
-            *hovered = Some(index);
+            *hovered = Some(key);
             hover_changed = true;
         }
-        if row.finger_hover_out(actions).is_some() && *hovered == Some(index) {
+        if row.finger_hover_out(actions).is_some() && *hovered == Some(key) {
             *hovered = None;
             hover_changed = true;
         }
@@ -89,12 +94,26 @@ pub fn handle_row_actions(list: &PortalListRef, actions: &Actions, hovered: &mut
 /// Returns a `ListLoadingRow` or `ListEmptyRow` (from the list's `loading_row` or `empty_row` template)
 /// at the given index of the given list, showing the given text.
 pub fn status_row(cx: &mut Cx, list: &mut PortalList, index: usize, is_loading: bool, text: &str) -> WidgetRef {
-    let (template, label) = if is_loading {
-        (id!(loading_row), ids!(loading_label))
-    } else {
-        (id!(empty_row), ids!(empty_label))
-    };
+    let (template, label) = status_row_template(is_loading);
     let row = list.item(cx, index, template);
     row.child_by_path(label).set_text(cx, text);
     row
+}
+
+/// Draws a `ListLoadingRow` or `ListEmptyRow` (from a `FlatList`'s `loading_row` or `empty_row` template)
+/// with the given ID, showing the given text.
+pub fn draw_flat_list_status_row(cx: &mut Cx2d, scope: &mut Scope, list: &mut FlatList, id: LiveId, is_loading: bool, text: &str) {
+    let (template, label) = status_row_template(is_loading);
+    let Some(row) = list.item(cx, id, template) else { return };
+    row.child_by_path(label).set_text(cx, text);
+    row.draw_all(cx, scope);
+}
+
+/// Returns the template and label of a `ListLoadingRow` if `is_loading`, otherwise of a `ListEmptyRow`.
+fn status_row_template(is_loading: bool) -> (LiveId, &'static [LiveId]) {
+    if is_loading {
+        (id!(loading_row), ids!(loading_label))
+    } else {
+        (id!(empty_row), ids!(empty_label))
+    }
 }

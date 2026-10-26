@@ -11,7 +11,7 @@ use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{OwnedRoomId, events:
 
 use crate::{
     profile::{
-        user_profile::{UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, member_display_name, role_name},
+        user_profile::{RoomMembershipInfo, UserProfile, UserProfilePaneInfo, UserProfileSlidingPaneRef, member_display_name, role_name},
         user_profile_cache,
     },
     room::pane_dock::FRAME_PADDING,
@@ -203,7 +203,8 @@ impl Widget for RoomMembersList {
             self.redraw(cx);
         }
 
-        let (clicked, hover_changed) = handle_row_actions(&self.members_list(), actions, &mut self.hovered_index);
+        let list = self.members_list();
+        let (clicked, hover_changed) = handle_row_actions(list.items_with_actions(actions), list.was_scrolling(), actions, &mut self.hovered_index);
         if hover_changed {
             self.redraw(cx);
         }
@@ -401,12 +402,12 @@ pub fn show_member_profile(
     // Cache the member info first, otherwise the pane would drop it upon its next refresh.
     user_profile_cache::insert_room_member(cx, room_name_id.room_id().clone(), member.clone());
     pane.set_info(cx, UserProfilePaneInfo {
-        profile_and_room_id: UserProfileAndRoomId {
-            user_profile: UserProfile::from(&member),
+        user_profile: UserProfile::from(&member),
+        room: Some(RoomMembershipInfo {
             room_id: room_name_id.room_id().clone(),
-        },
-        room_name: room_name_id.to_string(),
-        room_member: Some(member),
+            room_name: room_name_id.to_string(),
+            room_member: Some(member),
+        }),
     });
     pane.show(cx);
 }

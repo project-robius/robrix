@@ -441,6 +441,13 @@ impl Avatar {
     /// This avatar isn't clickable, so clicks on it go to its parent, e.g., a list row.
     /// Returns `false` if the image is still being fetched, in which case call this again later.
     pub fn show_user(&mut self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>, name: &str) -> bool {
+        self.show_image_or_text(cx, avatar_url, name, TextAvatarBgColor::Default)
+    }
+
+    /// Shows the image at the given avatar URL once it's fetched, and otherwise the first letter of `text`.
+    ///
+    /// Returns `false` if the image is still being fetched, in which case call this again later.
+    fn show_image_or_text(&mut self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>, text: &str, bg_color: TextAvatarBgColor) -> bool {
         // A reused avatar may have had another background color, e.g., for a room.
         match avatar_url.map(|mxc| (mxc, avatar_cache::get_or_fetch_avatar(cx, mxc))) {
             Some((mxc, AvatarCacheEntry::Loaded(data))) => {
@@ -449,20 +456,20 @@ impl Avatar {
                     // While the image is being decoded, show the text avatar as the placeholder.
                     // (Toggling visibility on every call would redraw the whole window.)
                     if self.display_state == AvatarDisplayState::ImageLoading {
-                        self.set_text_label(cx, name);
-                        self.set_text_bg_color(cx, TextAvatarBgColor::Default);
+                        self.set_text_label(cx, text);
+                        self.set_text_bg_color(cx, bg_color);
                     }
                 } else {
-                    self.show_text(cx, Some(TextAvatarBgColor::Default), None, name);
+                    self.show_text(cx, Some(bg_color), None, text);
                 }
                 true
             }
             Some((_, AvatarCacheEntry::Requested)) => {
-                self.show_text(cx, Some(TextAvatarBgColor::Default), None, name);
+                self.show_text(cx, Some(bg_color), None, text);
                 false
             }
             Some((_, AvatarCacheEntry::Failed)) | None => {
-                self.show_text(cx, Some(TextAvatarBgColor::Default), None, name);
+                self.show_text(cx, Some(bg_color), None, text);
                 true
             }
         }
@@ -473,6 +480,20 @@ impl AvatarRef {
     /// See [`Avatar::show_user()`].
     pub fn show_user(&self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>, name: &str) -> bool {
         self.borrow_mut().is_none_or(|mut inner| inner.show_user(cx, avatar_url, name))
+    }
+
+    /// Shows a room's avatar from the rooms list or the avatar cache, else the first letter of its name.
+    ///
+    /// Returns `false` if the image is still being fetched, in which case call this again later.
+    pub fn show_room(&self, cx: &mut Cx, room_id: &OwnedRoomId, avatar_url: Option<&OwnedMxcUri>, name_for_avatar: Option<&str>) -> bool {
+        if cx.has_global::<RoomsListRef>()
+            && let Some(FetchedRoomAvatar::Image(image)) = cx.get_global::<RoomsListRef>().get_room_avatar(room_id)
+            && self.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image)).is_ok()
+        {
+            return true;
+        }
+        let FetchedRoomAvatar::Text(text) = utils::avatar_from_room_name(name_for_avatar) else { return true };
+        self.borrow_mut().is_none_or(|mut inner| inner.show_image_or_text(cx, avatar_url, &text, TextAvatarBgColor::UnknownRoom))
     }
 
     /// Shows the given avatar of a room/space, or the first letter of its name like the rooms list does.

@@ -163,7 +163,7 @@ script_mod! {
             }
         }
 
-        LineH { padding: 15 }
+        membership_divider := LineH { padding: 15 }
 
         action_buttons := View {
             width: Fill, height: Fit
@@ -305,22 +305,30 @@ pub enum UserProfilePaneAction {
 /// Information needed to populate/display the user profile sliding pane.
 #[derive(Clone, Debug)]
 pub struct UserProfilePaneInfo {
-    pub profile_and_room_id: UserProfileAndRoomId,
-    pub room_name: String,
-    pub room_member: Option<RoomMember>,
+    pub user_profile: UserProfile,
+    /// This is `None` if the user was found outside of a room, e.g., by a search.
+    pub room: Option<RoomMembershipInfo>,
 }
 impl Deref for UserProfilePaneInfo {
-    type Target = UserProfileAndRoomId;
+    type Target = UserProfile;
     fn deref(&self) -> &Self::Target {
-        &self.profile_and_room_id
+        &self.user_profile
     }
 }
 impl DerefMut for UserProfilePaneInfo {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.profile_and_room_id
+        &mut self.user_profile
     }
 }
-impl UserProfilePaneInfo {
+
+/// The room that the user profile sliding pane shows a user's membership in.
+#[derive(Clone, Debug)]
+pub struct RoomMembershipInfo {
+    pub room_id: OwnedRoomId,
+    pub room_name: String,
+    pub room_member: Option<RoomMember>,
+}
+impl RoomMembershipInfo {
     fn membership_title(&self) -> String {
         if self.room_name.is_empty() {
             format!("Membership in Room {}", self.room_id.as_str())
@@ -385,6 +393,7 @@ pub struct UserProfileSlidingPane {
     #[live] overlay_bg_color: Vec4f,
 
     #[rust] info: Option<UserProfilePaneInfo>,
+    #[rust] is_showing_current_account: bool,
     #[rust] is_animating_out: bool,
     /// Held while this pane is shown such that `Escape` closes this pane.
     /// This scope is dropped when the pane starts animating out or is reset.
@@ -474,19 +483,24 @@ impl Widget for UserProfileSlidingPane {
             && let Some((new_profile, room_member)) = user_profile_cache::with_user_profile(
                 cx,
                 our_info.user_id.clone(),
-                Some(&our_info.room_id),
+                our_info.room.as_ref().map(|room| &room.room_id),
                 false,
-                |profile, rooms| (profile.clone(), rooms.get(&our_info.room_id).and_then(|entry| entry.loaded()).cloned())
+                |profile, rooms| (
+                    profile.clone(),
+                    our_info.room.as_ref().and_then(|room| rooms.get(&room.room_id)).and_then(|entry| entry.loaded()).cloned(),
+                )
             )
         {
             our_info.user_profile = new_profile;
-            our_info.room_member = room_member;
             // Use the avatar URI from the `room_member`, as it will be the most up-to-date
             // and specific to the room that this user profile sliding pane is currently being shown for.
-            if let Some(avatar_uri) = our_info.room_member.as_ref()
+            if let Some(avatar_uri) = room_member.as_ref()
                 .and_then(|rm| rm.avatar_url().map(|u| u.to_owned()))
             {
                 our_info.avatar_state = AvatarState::Known(Some(avatar_uri));
+            }
+            if let Some(room) = our_info.room.as_mut() {
+                room.room_member = room_member;
             }
             // If we know the avatar URI, try to get/fetch the actual avatar image data.
             our_info.avatar_state.update_from_cache(cx);
@@ -591,26 +605,29 @@ impl Widget for UserProfileSlidingPane {
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
-        self.label(cx, ids!(membership_title_label)).set_text(cx, &info.membership_title());
-        self.label(cx, ids!(membership_status_label)).set_text(cx, info.membership_status());
-        self.label(cx, ids!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
+        self.view(cx, ids!(membership)).set_visible(cx, info.room.is_some());
+        self.view(cx, ids!(membership_divider)).set_visible(cx, info.room.is_some());
+        if let Some(room) = info.room.as_ref() {
+            self.label(cx, ids!(membership_title_label)).set_text(cx, &room.membership_title());
+            self.label(cx, ids!(membership_status_label)).set_text(cx, room.membership_status());
+            self.label(cx, ids!(role_info_label)).set_text(cx, room.role_in_room().as_ref());
+        }
 
         // Draw and show/hide the buttons according to user and room membership info:
         // * `direct_message_button` is hidden if the user is the same as the account user,
         //    since you cannot direct message yourself.
         // * `copy_link_to_user_button` is always enabled with the same text.
-        // * `jump_to_read_receipt_button` is always shown with the same text.
+        // * `jump_to_read_receipt_button` is hidden if there's no room, since there's no timeline to jump in.
         // * `block_user_button` is hidden if the user is the same as the account user,
         //    since you cannot block yourself.
         //    * The button text changes to "Unblock" if the user is already blocked.
-        let is_pane_showing_current_account = info.room_member.as_ref()
-            .map(|rm| rm.is_account_user())
-            .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
-
-        self.button(cx, ids!(direct_message_button)).set_visible(cx, !is_pane_showing_current_account);
+        self.button(cx, ids!(direct_message_button)).set_visible(cx, !self.is_showing_current_account);
+        if info.room.is_none() {
+            self.button(cx, ids!(jump_to_read_receipt_button)).set_visible(cx, false);
+        }
 
         let block_user_button = self.button(cx, ids!(block_user_button));
-        block_user_button.set_visible(cx, !is_pane_showing_current_account);
+        block_user_button.set_visible(cx, !self.is_showing_current_account);
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
         // the blocked state of a user, so we have to maintain it separately.
         let is_blocked = is_user_blocked(&info.user_id);
@@ -632,18 +649,19 @@ impl UserProfileSlidingPane {
 
     /// Sets the info to be displayed in this user profile sliding pane.
     ///
-    /// If the `room_member` field is `None`, this function will attempt to
-    /// retrieve the user's room membership info from the local cache,
+    /// If there's no `room_member` (or no `room` at all), this function will attempt to
+    /// retrieve the user's profile and room membership info from the local cache,
     /// and then submit a request to asynchronously fetch it from the server
     /// if it's not found in the cache.
     pub fn set_info(&mut self, cx: &mut Cx, mut info: UserProfilePaneInfo) {
-        if info.room_member.is_none() {
+        if info.room.as_ref().is_none_or(|room| room.room_member.is_none()) {
+            let room_id = info.room.as_ref().map(|room| &room.room_id);
             match user_profile_cache::with_user_profile(
                 cx,
                 info.user_id.clone(),
-                Some(&info.room_id),
+                room_id,
                 true,
-                |profile, rooms| (profile.clone(), rooms.get(&info.room_id).and_then(|entry| entry.loaded()).cloned())
+                |profile, rooms| (profile.clone(), room_id.and_then(|id| rooms.get(id)).and_then(|entry| entry.loaded()).cloned())
             ) {
                 Some((new_profile, Some(room_member))) => {
                     log!("Found user {} room member info in cache", info.user_id);
@@ -665,7 +683,9 @@ impl UserProfileSlidingPane {
                             .map(|dn| dn.to_owned())
                             .or_else(|| new_profile.username.clone());
                     }
-                    info.room_member = Some(room_member);
+                    if let Some(room) = info.room.as_mut() {
+                        room.room_member = Some(room_member);
+                    }
                 }
                 // We don't have their room member info, so fill in what we can from their profile.
                 Some((new_profile, None)) => {
@@ -688,6 +708,7 @@ impl UserProfileSlidingPane {
                 .show(cx, info.user_id.clone());
         }
 
+        self.is_showing_current_account = current_user_id().is_some_and(|uid| uid == info.user_id);
         self.info = Some(info);
     }
 

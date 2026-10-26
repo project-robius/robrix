@@ -32,7 +32,17 @@ pub fn open_url(url: &str) {
 
 /// Parses a `https://matrix.to/#/...` or `matrix:` link into its Matrix ID and `via` servers.
 pub fn parse_matrix_link(url: &str) -> Option<(MatrixId, Vec<OwnedServerName>)> {
-    MatrixToUri::parse(url)
+    const MATRIX_TO_PREFIX: &str = "https://matrix.to/#/";
+    // ruma panics on an empty segment in a matrix.to link's IDs, e.g., `!abc:x.org//`,
+    // so we drop those first.
+    let matrix_to_url = url.strip_prefix(MATRIX_TO_PREFIX)
+        .map(|rest| rest.split_at(rest.find('?').unwrap_or(rest.len())))
+        .filter(|(ids, _)| ids.split('/').any(str::is_empty))
+        .map_or(Cow::Borrowed(url), |(ids, query)| {
+            let ids = ids.split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
+            Cow::Owned(format!("{MATRIX_TO_PREFIX}{ids}{query}"))
+        });
+    MatrixToUri::parse(&matrix_to_url)
         .map(|uri| (uri.id().clone(), uri.via().to_owned()))
         .or_else(|_| MatrixUri::parse(url).map(|uri| (uri.id().clone(), uri.via().to_owned())))
         .ok()
@@ -1895,5 +1905,55 @@ mod tests_ends_with_href {
     #[test]
     fn test_ends_with_href38() {
         assert!(!ends_with_href(" hrf= "));
+    }
+}
+
+#[cfg(test)]
+mod tests_parse_matrix_link {
+    use super::*;
+
+    #[test]
+    fn empty_segments_dont_panic() {
+        assert!(matches!(
+            parse_matrix_link("https://matrix.to/#/!abc:matrix.org///"),
+            Some((MatrixId::Room(id), _)) if id.as_str() == "!abc:matrix.org"
+        ));
+        assert!(parse_matrix_link("https://matrix.to/#///x").is_none());
+        let Some((MatrixId::Room(id), via)) = parse_matrix_link("https://matrix.to/#/!abc:matrix.org//?via=matrix.org") else {
+            panic!("expected a room link");
+        };
+        assert_eq!(id.as_str(), "!abc:matrix.org");
+        assert_eq!(via.iter().map(|s| s.as_str()).collect::<Vec<_>>(), ["matrix.org"]);
+        // An event link without a room isn't valid.
+        assert!(parse_matrix_link("https://matrix.to/#/$ev:matrix.org///").is_none());
+    }
+
+    #[test]
+    fn parses_matrix_to_links() {
+        assert!(matches!(
+            parse_matrix_link("https://matrix.to/#/#robrix:matrix.org"),
+            Some((MatrixId::RoomAlias(alias), _)) if alias.as_str() == "#robrix:matrix.org"
+        ));
+        assert!(matches!(
+            parse_matrix_link("https://matrix.to/#/@alice:matrix.org"),
+            Some((MatrixId::User(id), _)) if id.as_str() == "@alice:matrix.org"
+        ));
+        let Some((MatrixId::Room(id), via)) = parse_matrix_link("https://matrix.to/#/!abc:matrix.org?via=matrix.org&via=example.org") else {
+            panic!("expected a room link");
+        };
+        assert_eq!(id.as_str(), "!abc:matrix.org");
+        assert_eq!(via.iter().map(|s| s.as_str()).collect::<Vec<_>>(), ["matrix.org", "example.org"]);
+        assert!(matches!(
+            parse_matrix_link("https://matrix.to/#/!abc:matrix.org/$ev:matrix.org"),
+            Some((MatrixId::Event(room, event), _)) if room.as_str() == "!abc:matrix.org" && event.as_str() == "$ev:matrix.org"
+        ));
+    }
+
+    #[test]
+    fn parses_matrix_uris() {
+        assert!(matches!(
+            parse_matrix_link("matrix:r/robrix:matrix.org"),
+            Some((MatrixId::RoomAlias(alias), _)) if alias.as_str() == "#robrix:matrix.org"
+        ));
     }
 }

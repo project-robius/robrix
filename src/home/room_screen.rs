@@ -28,7 +28,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 use matrix_sdk_ui::sync_service::State;
 use crate::{
     app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
-        user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
+        user_profile::{RoomMembershipInfo, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
@@ -1404,17 +1404,20 @@ impl Widget for RoomScreen {
             }
 
             // Handle the action that requests to show the user profile sliding pane.
-            if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
+            if let ShowUserProfileAction::ShowUserProfile(UserProfileAndRoomId { user_profile, room_id }) = action.as_widget_action().cast() {
                 self.show_user_profile(
                     cx,
                     &user_profile_sliding_pane,
                     UserProfilePaneInfo {
-                        profile_and_room_id,
-                        room_name: self.room_name_id.as_ref().map_or_else(
-                            || UNNAMED_ROOM.to_string(),
-                            |r| r.to_string(),
-                        ),
-                        room_member: None,
+                        user_profile,
+                        room: Some(RoomMembershipInfo {
+                            room_id,
+                            room_name: self.room_name_id.as_ref().map_or_else(
+                                || UNNAMED_ROOM.to_string(),
+                                |r| r.to_string(),
+                            ),
+                            room_member: None,
+                        }),
                     },
                 );
             }
@@ -2381,16 +2384,16 @@ impl RoomScreen {
                     cx,
                     pane,
                     UserProfilePaneInfo {
-                        profile_and_room_id: UserProfileAndRoomId {
-                            user_profile: UserProfile {
-                                user_id,
-                                username: None,
-                                avatar_state: AvatarState::Unknown,
-                            },
-                            room_id: room_name_id.room_id().clone(),
+                        user_profile: UserProfile {
+                            user_id,
+                            username: None,
+                            avatar_state: AvatarState::Unknown,
                         },
-                        room_name: room_name_id.to_string(),
-                        room_member: None,
+                        room: Some(RoomMembershipInfo {
+                            room_id: room_name_id.room_id().clone(),
+                            room_name: room_name_id.to_string(),
+                            room_member: None,
+                        }),
                     },
                 );
                 return true;

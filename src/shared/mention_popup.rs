@@ -12,13 +12,10 @@
 use std::sync::Arc;
 use makepad_widgets::*;
 use crate::{
-    avatar_cache::{get_or_fetch_avatar, AvatarCacheEntry},
-    home::rooms_list::RoomsListRef,
-    room::FetchedRoomAvatar,
-    shared::{avatar::{AvatarImage, TextAvatarBgColor, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
-    utils::{self, RoomNameId},
+    shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
+    utils::RoomNameId,
 };
-use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedUserId};
 
 // Note: most of the layout dimensions of the popup have to be calc'd in Rust code,
 //       so they're defined here up front for clarity.
@@ -204,7 +201,7 @@ impl Widget for MentionablePopup {
                 self.redraw(cx);
             }
 
-            let (clicked_item_idx, should_redraw) = handle_row_actions(&list, actions, &mut self.pointer_hover_index);
+            let (clicked_item_idx, should_redraw) = handle_row_actions(list.items_with_actions(actions), list.was_scrolling(), actions, &mut self.pointer_hover_index);
             // Hovering over an item also focuses it for keyboard navigation.
             if should_redraw && let Some(index) = self.pointer_hover_index {
                 self.keyboard_focus_index = Some(index);
@@ -574,7 +571,7 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             new_widget.label(cx, ids!(info.title)).set_text(cx, &name);
             let alias = candidate.alias.as_ref().map(|a| a.as_str()).unwrap_or("");
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, alias);
-            set_room_avatar(cx, &new_widget, candidate.room_name_id.room_id(), candidate.avatar_url.as_ref(), candidate.room_name_id.name_for_avatar());
+            new_widget.avatar(cx, ids!(avatar)).show_room(cx, candidate.room_name_id.room_id(), candidate.avatar_url.as_ref(), candidate.room_name_id.name_for_avatar());
             new_widget
         }
         MentionItem::Command(cmd) => {
@@ -583,26 +580,5 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, cmd.description);
             new_widget
         }
-    }
-}
-
-/// Resolves a room's avatar using the rooms list's metadata or the avatar cache.
-fn set_room_avatar(cx: &mut Cx, row: &WidgetRef, room_id: &OwnedRoomId, avatar_url: Option<&OwnedMxcUri>, name_for_avatar: Option<&str>) {
-    let avatar = row.avatar(cx, ids!(avatar));
-    if cx.has_global::<RoomsListRef>() {
-        if let Some(FetchedRoomAvatar::Image(image)) = cx.get_global::<RoomsListRef>().get_room_avatar(room_id) {
-            let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
-            return;
-        }
-    }
-    if let Some(mxc) = avatar_url
-        && let AvatarCacheEntry::Loaded(data) = get_or_fetch_avatar(cx, mxc)
-    {
-        let image = AvatarImage::from((mxc.clone(), data));
-        let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
-        return;
-    }
-    if let FetchedRoomAvatar::Text(fallback) = utils::avatar_from_room_name(name_for_avatar) {
-        avatar.show_text(cx, Some(TextAvatarBgColor::UnknownRoom), None, &fallback);
     }
 }
