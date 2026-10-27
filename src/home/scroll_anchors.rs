@@ -133,19 +133,19 @@ impl ScrollAnchors {
         Self { anchors: anchor.into_iter().collect(), list_position: (first_id, scroll) }
     }
 
-    /// Returns these anchors minus the ones that expanding or collapsing the group over `group_range` moves.
+    /// Returns these anchors minus the ones that expanding or collapsing the items in `toggled_range` moves.
     ///
-    /// The list draws downwards from its first item, so a toggle moves everything *after* the group's first item,
-    /// unless the list now starts after the group (like when it got collapsed from its last item).
+    /// The list draws downwards from its first item, so a toggle moves everything *after* the range's first item,
+    /// unless the list now starts after the range (like when a group got collapsed from its last item).
     /// If no available anchors exist any more, this falls back to [`Self::at_list_position()`].
-    pub(super) fn through_toggle(mut self, portal_list: &PortalListRef, items: &Vector<Arc<TimelineItem>>, groups: &StateEventGroups, group_range: Range<usize>) -> Self {
+    pub(super) fn through_toggle(mut self, portal_list: &PortalListRef, items: &Vector<Arc<TimelineItem>>, groups: &StateEventGroups, toggled_range: Range<usize>) -> Self {
         let first_id = portal_list.first_id();
-        self.anchors.retain(|anchor| anchor.index >= first_id && (anchor.index <= group_range.start || first_id >= group_range.end));
+        self.anchors.retain(|anchor| anchor.index >= first_id && (anchor.index <= toggled_range.start || first_id >= toggled_range.end));
         if self.anchors.is_empty() {
             return Self::at_list_position(portal_list, items, groups);
         }
-        // The group's first item stays where it starts, but it's laid out the way the toggle left it.
-        if let Some(anchor) = self.anchors.iter_mut().find(|anchor| anchor.index == group_range.start) {
+        // The range's first item stays where it starts, but it's laid out the way the toggle left it.
+        if let Some(anchor) = self.anchors.iter_mut().find(|anchor| anchor.index == toggled_range.start) {
             anchor.layout = ItemLayout::of_item_at(items, groups, anchor.index);
         }
         self.list_position = (first_id, portal_list.scroll_position());

@@ -218,6 +218,14 @@ script_mod! {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+enum LinkPreviewAction {
+    /// The user clicked the button that shows or hides the previews past the first few.
+    Toggled { is_expanded: bool },
+    #[default]
+    None,
+}
+
 #[derive(Script, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct LinkPreview {
     #[deref]
@@ -314,6 +322,7 @@ impl Widget for LinkPreview {
             if expand_btn.clicked(actions) || collapse_btn.clicked(actions) {
                 self.is_expanded = !self.is_expanded;
                 self.update_button_and_visibility(cx);
+                cx.widget_action(self.widget_uid(), LinkPreviewAction::Toggled { is_expanded: self.is_expanded });
                 cx.redraw_all();
             }
         }
@@ -385,6 +394,23 @@ impl LinkPreview {
 }
 
 impl LinkPreviewRef {
+    /// If the user just expanded or collapsed these link previews, returns whether they're now expanded.
+    pub fn toggled(&self, actions: &Actions) -> Option<bool> {
+        actions.filter_widget_actions(self.widget_uid()).find_map(|action| match action.cast() {
+            LinkPreviewAction::Toggled { is_expanded } => Some(is_expanded),
+            LinkPreviewAction::None => None,
+        })
+    }
+
+    /// Sets whether all of these link previews are shown, or just the first few.
+    pub fn set_expanded(&self, cx: &mut Cx, is_expanded: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if inner.is_expanded != is_expanded {
+            inner.is_expanded = is_expanded;
+            inner.update_button_and_visibility(cx);
+        }
+    }
+
     /// Clears any displayed link preview(s), resetting this widget to its empty state.
     ///
     /// Needed for messages that never show link previews (e.g. redacted messages).
