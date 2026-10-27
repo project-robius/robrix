@@ -9,6 +9,17 @@ script_mod! {
     use mod.widgets.*
 
 
+    // The little "X" button inside a text input that clears its text, shown only while it has text.
+    mod.widgets.ClearTextButton = RobrixNeutralIconButton {
+        visible: false,
+        margin: 0
+        padding: Inset{top: 5, bottom: 5, left: 9, right: 9},
+        spacing: 0,
+        align: Align{x: 0.5, y: 0.5}
+        draw_icon.svg: (ICON_CLOSE)
+        icon_walk: Walk{width: Fit, height: 10, margin: 0}
+    }
+
     mod.widgets.RoomFilterInputBar = set_type_default() do #(RoomFilterInputBar::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
@@ -66,15 +77,7 @@ script_mod! {
             }
         }
 
-        clear_button := RobrixNeutralIconButton {
-            visible: false,
-            margin: 0
-            padding: Inset{top: 5, bottom: 5, left: 9, right: 9},
-            spacing: 0,
-            align: Align{x: 0.5, y: 0.5}
-            draw_icon.svg: (ICON_CLOSE)
-            icon_walk: Walk{width: Fit, height: 10, margin: 0}
-        }
+        clear_button := mod.widgets.ClearTextButton {}
     }
 }
 

@@ -5520,7 +5520,7 @@ async fn fetch_room_preview_with_avatar(
         avatar_from_room_name(room_preview.name.as_deref())
     };
     let alias = <&RoomId>::try_from(room).err().map(ToOwned::to_owned);
-    Ok(FetchedRoomPreview::from(room_preview, room_avatar, via, alias))
+    Ok(FetchedRoomPreview::from(client, room_preview, room_avatar, via, alias))
 }
 
 /// Resolves a room link to determine whether we should show it as a room, space, or event.

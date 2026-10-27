@@ -202,11 +202,11 @@ impl RoomSearchResult {
     }
 
     /// Converts the preview of a room that we looked up by the given alias or ID.
-    fn from_preview(preview: RoomPreview, address: OwnedRoomOrAliasId, via: Vec<OwnedServerName>) -> Self {
+    fn from_preview(client: &Client, preview: RoomPreview, address: OwnedRoomOrAliasId, via: Vec<OwnedServerName>) -> Self {
         let room_avatar = utils::avatar_from_room_name(preview.name.as_deref());
         let alias = <&RoomId>::try_from(&*address).err().map(ToOwned::to_owned);
         Self {
-            preview: FetchedRoomPreview::from(preview, room_avatar, via, alias),
+            preview: FetchedRoomPreview::from(client, preview, room_avatar, via, alias),
             is_exact_match: true,
         }
     }
@@ -237,6 +237,8 @@ impl RoomSearchResult {
                 room_name_id,
                 via: own_server.into_iter().collect(),
                 alias: None,
+                // The room directory doesn't say which rooms a restricted join rule allows.
+                is_in_allowed_room: false,
                 canonical_alias: public_room.canonical_alias,
                 topic: public_room.topic,
                 avatar_url: public_room.avatar_url.filter(|url| url.is_valid()),
@@ -323,7 +325,7 @@ pub async fn resolve_room_search_query(client: Client, query: String) {
             // We're in this room, so its preview comes from our own copy of it.
             let address = OwnedRoomOrAliasId::from(room.room_id().to_owned());
             if let Ok(preview) = client.get_room_preview(&address, Vec::new()).await {
-                joined_rooms.push(RoomSearchResult { is_exact_match: false, ..RoomSearchResult::from_preview(preview, address, Vec::new()) });
+                joined_rooms.push(RoomSearchResult { is_exact_match: false, ..RoomSearchResult::from_preview(&client, preview, address, Vec::new()) });
             }
         }
     }
@@ -344,7 +346,7 @@ pub async fn resolve_room_search_query(client: Client, query: String) {
                     .ok()?;
             }
             let preview = client.get_room_preview(&address, via.clone()).await.ok()?;
-            Some(RoomSearchResult::from_preview(preview, address, via))
+            Some(RoomSearchResult::from_preview(client, preview, address, via))
         }
     })).await;
 
