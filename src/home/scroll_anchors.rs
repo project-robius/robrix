@@ -310,7 +310,7 @@ impl ItemLayout {
     fn of_item_at(items: &Vector<Arc<TimelineItem>>, groups: &StateEventGroups, index: usize) -> Self {
         let is_compact = items.get(index).and_then(|item| item.as_event()).is_some_and(|event|
             matches!(event.content(), TimelineItemContent::MsgLike(_))
-                && uses_compact_view(index.checked_sub(1).and_then(|prev| items.get(prev)), event)
+                && uses_compact_view(items, index, event)
         );
         Self { placement: groups.placement_of(index), is_compact }
     }
