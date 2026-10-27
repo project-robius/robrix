@@ -1085,6 +1085,21 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
+                // Handle a click on the "Show more links" or "Show fewer links" button under a message's link previews.
+                if let Some(is_expanded) = wr.link_preview(cx, ids!(content.link_preview_view)).toggled(actions) {
+                    if let Some(tl) = self.tl_state.as_mut()
+                        && let Some(event) = tl.items.get(index).and_then(|item| item.as_event())
+                    {
+                        if is_expanded {
+                            tl.expanded_link_previews.insert(event.identifier());
+                        } else {
+                            tl.expanded_link_previews.remove(&event.identifier());
+                        }
+                    }
+                    self.handle_preview_toggled(cx, index, is_expanded, &portal_list);
+                    continue;
+                }
+
                 // Handle the invite_user_button (in a SmallStateEvent) being clicked.
                 if wr.button(cx, ids!(invite_user_button)).clicked(actions) {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
@@ -1570,6 +1585,7 @@ impl Widget for RoomScreen {
                                 &self.pinned_events,
                                 &tl_state.pending_downloads,
                                 &tl_state.expanded_reply_previews,
+                                &tl_state.expanded_link_previews,
                                 is_newest_sent,
                                 is_blocked_by_failed_send,
                                 tl_state.is_encrypted,
@@ -2857,13 +2873,13 @@ impl RoomScreen {
                         loading_pane
                     );
                 }
-                MessageAction::ToggleReplyPreviewExpanded(message_id) => {
-                    if let Some(tl) = self.tl_state.as_mut() {
-                        if !tl.expanded_reply_previews.remove(message_id) {
-                            tl.expanded_reply_previews.insert(message_id.clone());
-                        }
+                MessageAction::ToggleReplyPreviewExpanded(details) => {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let was_expanded = tl.expanded_reply_previews.remove(&details.timeline_event_id);
+                    if !was_expanded {
+                        tl.expanded_reply_previews.insert(details.timeline_event_id.clone());
                     }
-                    self.redraw(cx);
+                    self.handle_preview_toggled(cx, details.item_id, !was_expanded, portal_list);
                 }
                 MessageAction::JumpToEvent(event_id) => {
                     self.jump_to_event(
@@ -2992,6 +3008,26 @@ impl RoomScreen {
         } else {
             anchors.through_toggle(portal_list, &tl.items, &tl.state_event_groups, group.range.clone())
         });
+        self.redraw(cx);
+    }
+
+    /// Keeps the timeline in place after the reply preview or link previews in the message at `index`
+    /// got expanded or collapsed.
+    fn handle_preview_toggled(&mut self, cx: &mut Cx, index: usize, is_expanded: bool, portal_list: &PortalListRef) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        let anchors = ScrollAnchors::take(&mut tl.scroll_anchors, portal_list, &tl.items, &tl.state_event_groups);
+        let next = tl.next_drawn_index(index);
+        // If the preview got collapsed while the message's top is scrolled up (even partly) out of view,
+        // keep the item after the message where it is on screen, so the preview's button doesn't move.
+        // After the newest message that's the spot past the end, which a list at its end keeps in place anyway.
+        if !is_expanded
+            && (next < tl.items.len() || !portal_list.is_at_end())
+            && let Some(slot) = portal_list.drawn_slot(index)
+            && slot.start < 0.0
+        {
+            portal_list.set_first_id_and_scroll_in_place(next, slot.start + slot.size);
+        }
+        tl.scroll_anchors = Some(anchors.through_toggle(portal_list, &tl.items, &tl.state_event_groups, index .. index + 1));
         self.redraw(cx);
     }
 
@@ -3178,6 +3214,7 @@ impl RoomScreen {
                     tombstone_info,
                     pending_downloads: SmallVec::new(),
                     expanded_reply_previews: HashSet::new(),
+                    expanded_link_previews: HashSet::new(),
                     state_event_groups: StateEventGroups::default(),
                     pending_knocks: PendingKnocks::default(),
                     scroll_anchors: None,
@@ -4374,6 +4411,9 @@ struct TimelineUiState {
     /// Collapsed reply previews (their default state) are absent from this set.
     expanded_reply_previews: HashSet<TimelineEventItemId>,
 
+    /// Messages whose link previews the user has expanded to show all of them, not just the first few.
+    expanded_link_previews: HashSet<TimelineEventItemId>,
+
     /// Contiguous groups of small state events that can be collapsed together.
     state_event_groups: StateEventGroups,
 
@@ -4613,6 +4653,7 @@ fn populate_message_view(
     pinned_events: &[OwnedEventId],
     pending_downloads: &[PendingDownload],
     expanded_reply_previews: &HashSet<TimelineEventItemId>,
+    expanded_link_previews: &HashSet<TimelineEventItemId>,
     is_newest_sent: bool,
     is_blocked_by_failed_send: bool,
     is_room_encrypted: bool,
@@ -5056,6 +5097,8 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content:
     // the reactions, the read receipts avatar row, the reply preview.
     if !used_cached_item {
+        item.link_preview(cx, ids!(content.link_preview_view))
+            .set_expanded(cx, expanded_link_previews.contains(&timeline_event_id));
         // Redacted messages must never show reactions, even if the SDK still reports some.
         let reactions = (!matches!(msg_like_content.kind, MsgLikeKind::Redacted))
             .then(|| event_tl_item.reactions());
@@ -6110,7 +6153,7 @@ pub enum MessageAction {
     /// e.g., a replied-to message.
     JumpToRelated(MessageDetails),
     /// The user clicked the "Show more" or "Show less" button on a tall reply preview.
-    ToggleReplyPreviewExpanded(TimelineEventItemId),
+    ToggleReplyPreviewExpanded(MessageDetails),
     /// The user clicked the thread summary on a thread-root message.
     OpenThread(OwnedEventId),
     /// The user requested to jump to a specific event in this room.
@@ -6266,12 +6309,11 @@ impl Widget for Message {
                 if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                     // Tapping on a collapsed reply preview expands it.
                     // Tapping on an expanded reply preview jumps to the replied-to message.
+                    let details = self.details.clone().unwrap(); // guaranteed to be Some()
                     let action = if reply.is_collapsed() {
-                        MessageAction::ToggleReplyPreviewExpanded(
-                            self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
-                        )
+                        MessageAction::ToggleReplyPreviewExpanded(details)
                     } else {
-                        MessageAction::JumpToRelated(self.details.clone().unwrap()) // guaranteed to be Some()
+                        MessageAction::JumpToRelated(details)
                     };
                     cx.widget_action(room_screen_widget_uid, action);
                 }
@@ -6402,9 +6444,7 @@ impl Widget for Message {
             if reply_expand_button.clicked(actions) || reply_collapse_button.clicked(actions)             {
                 cx.widget_action(
                     room_screen_widget_uid,
-                    MessageAction::ToggleReplyPreviewExpanded(
-                        self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
-                    ),
+                    MessageAction::ToggleReplyPreviewExpanded(self.details.clone().unwrap()), // guaranteed to be Some()
                 );
                 reply_expand_button.reset_hover(cx);
                 reply_collapse_button.reset_hover(cx);
