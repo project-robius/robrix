@@ -52,13 +52,15 @@ script_mod! {
             }
         },
 
-        View {
-            width: Fit, height: Fit,
+        // As wide as the cloud icons, so the title doesn't move when the narrower spinner shows.
+        sync_status := View {
+            width: 26, height: Fit,
             margin: Inset{right: 3}
             flow: Overlay,
+            align: Align{x: 0.5}
 
             loading_spinner := LoadingSpinner {
-                visible: false,
+                visible: true,
                 width: 20,
                 height: 20,
                 draw_bg +: {
@@ -80,7 +82,7 @@ script_mod! {
             }
 
             synced_icon := View {
-                visible: true,
+                visible: false,
                 width: Fit, height: Fit,
                 Icon {
                     draw_icon +: {
@@ -94,7 +96,7 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomsListHeader {
     #[deref] view: View,
 
@@ -103,9 +105,21 @@ pub struct RoomsListHeader {
     #[live] tooltip_bg_color_synced: Vec4f,
 
     #[rust(State::Idle)] sync_state: State,
+    #[rust(true)] is_syncing: bool,
+    #[rust] sync_status_area: Area,
+    #[rust] shown_tooltip: Option<SyncStatus>,
 
     /// Used for updating the name of the currently-selected space.
     #[rust] displayed_space: Option<OwnedRoomId>,
+}
+
+impl ScriptHook for RoomsListHeader {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.is_syncing = cx.global::<IsSyncingGlobal>().0.unwrap_or(true);
+            self.show_sync_status(cx);
+        });
+    }
 }
 
 impl Widget for RoomsListHeader {
@@ -114,15 +128,8 @@ impl Widget for RoomsListHeader {
             for action in actions {
                 match action.downcast_ref() {
                     Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) => {
-                        // If we are offline, keep showing the offline_icon,
-                        // as showing the loading_spinner would be misleading if we're offline.
-                        if matches!(self.sync_state, State::Offline) {
-                            continue;
-                        }
-                        self.view.view(cx, ids!(loading_spinner)).set_visible(cx, *is_syncing);
-                        self.view.view(cx, ids!(synced_icon)).set_visible(cx, !*is_syncing);
-                        self.view.view(cx, ids!(offline_icon)).set_visible(cx, false);
-                        self.redraw(cx);
+                        self.is_syncing = *is_syncing;
+                        self.show_sync_status(cx);
                         continue;
                     }
                     Some(RoomsListHeaderAction::StateUpdate(new_state)) => {
@@ -130,9 +137,6 @@ impl Widget for RoomsListHeader {
                             continue;
                         }
                         if matches!(new_state, State::Offline) {
-                            self.view.view(cx, ids!(loading_spinner)).set_visible(cx, false);
-                            self.view.view(cx, ids!(synced_icon)).set_visible(cx, false);
-                            self.view.view(cx, ids!(offline_icon)).set_visible(cx, true);
                             enqueue_popup_notification(
                                 "Cannot reach the Matrix homeserver. Please check your connection.",
                                 PopupKind::Error,
@@ -141,12 +145,6 @@ impl Widget for RoomsListHeader {
                             // Since there is no timeout for fetching media, send an action to ImageViewer when syncing is offline.
                             cx.action(ImageViewerAction::Show(LoadState::Error(ImageViewerError::Offline)));
                         } else if matches!(self.sync_state, State::Offline) {
-                            // Transitioning away from Offline: reset to the default
-                            // loading state so the sync indicator can take over again.
-                            self.view.view(cx, ids!(loading_spinner)).set_visible(cx, true);
-                            self.view.view(cx, ids!(synced_icon)).set_visible(cx, false);
-                            self.view.view(cx, ids!(offline_icon)).set_visible(cx, false);
-
                             // Clear stale `Requested`/`Failed` entries from global caches,
                             // as any requests submitted while offline have likely failed,
                             // leaving entries that permanently block re-fetching.
@@ -162,7 +160,7 @@ impl Widget for RoomsListHeader {
                             SignalToUI::set_ui_signal();
                         }
                         self.sync_state = new_state.clone();
-                        self.redraw(cx);
+                        self.show_sync_status(cx);
                         continue;
                     }
                     _ => {}
@@ -194,41 +192,72 @@ impl Widget for RoomsListHeader {
         }
 
         // Show tooltips for the sync status icons.
-        for (view, text, bg_color) in [
-            (self.view.view(cx, ids!(loading_spinner)), "Syncing...",   self.tooltip_bg_color_syncing),
-            (self.view.view(cx, ids!(offline_icon)),    "Offline",      self.tooltip_bg_color_offline),
-            (self.view.view(cx, ids!(synced_icon)),     "Fully synced", self.tooltip_bg_color_synced),
-        ] {
-            if !view.visible() {
-                continue;
+        match event.hits(cx, self.sync_status_area) {
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => self.show_sync_status_tooltip(cx, false),
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => self.show_sync_status_tooltip(cx, false),
+            Hit::FingerHoverOut(_) => {
+                self.shown_tooltip = None;
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
             }
-            match event.hits(cx, view.area()) {
-                Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
-                    cx.widget_action(
-                        self.widget_uid(),
-                        TooltipAction::HoverIn {
-                            text: text.to_string(),
-                            widget_rect: view.area().rect(cx),
-                            options: CalloutTooltipOptions {
-                                bg_color: Some(bg_color),
-                                position: TooltipPosition::Left,
-                                ..Default::default()
-                            },
-                        },
-                    );
-                }
-                Hit::FingerHoverOut(_) => {
-                    cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
-                }
-                _ => {}
-            }
+            _ => {}
         }
 
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
+        let step = self.view.draw_walk(cx, scope, walk);
+        self.sync_status_area = self.view.child(live_id!(sync_status)).area();
+        step
+    }
+}
+
+impl RoomsListHeader {
+    fn get_sync_status(&self) -> SyncStatus {
+        // If we are offline, keep showing the offline_icon,
+        // as showing the loading_spinner would be misleading if we're offline.
+        if matches!(self.sync_state, State::Offline) {
+            SyncStatus::Offline
+        } else if self.is_syncing {
+            SyncStatus::Syncing
+        } else {
+            SyncStatus::Synced
+        }
+    }
+
+    fn show_sync_status(&mut self, cx: &mut Cx) {
+        let sync_status = self.get_sync_status();
+        self.view.view(cx, ids!(loading_spinner)).set_visible(cx, sync_status == SyncStatus::Syncing);
+        self.view.view(cx, ids!(offline_icon)).set_visible(cx, sync_status == SyncStatus::Offline);
+        self.view.view(cx, ids!(synced_icon)).set_visible(cx, sync_status == SyncStatus::Synced);
+        // If the sync status changed while its tooltip was shown, update the tooltip to match.
+        if self.shown_tooltip.is_some_and(|shown| shown != sync_status) {
+            self.show_sync_status_tooltip(cx, true);
+        }
+    }
+
+    /// Shows the sync status tooltip, or with `only_if_shown`, just updates it if it's still showing.
+    fn show_sync_status_tooltip(&mut self, cx: &mut Cx, only_if_shown: bool) {
+        let sync_status = self.get_sync_status();
+        let (text, bg_color) = match sync_status {
+            SyncStatus::Syncing => ("Syncing...", self.tooltip_bg_color_syncing),
+            SyncStatus::Offline => ("Offline", self.tooltip_bg_color_offline),
+            SyncStatus::Synced => ("Fully synced", self.tooltip_bg_color_synced),
+        };
+        let text = text.to_string();
+        let widget_rect = self.sync_status_area.rect(cx);
+        let options = CalloutTooltipOptions {
+            bg_color: Some(bg_color),
+            position: TooltipPosition::Left,
+            ..Default::default()
+        };
+        self.shown_tooltip = Some(sync_status);
+        let action = if only_if_shown {
+            TooltipAction::Update { text, widget_rect, options }
+        } else {
+            TooltipAction::HoverIn { text, widget_rect, options }
+        };
+        cx.widget_action(self.widget_uid(), action);
     }
 }
 
@@ -240,4 +269,16 @@ pub enum RoomsListHeaderAction {
     SetSyncStatus(bool),
     /// An action received by the RoomsListHeader indicating the sync service state has changed.
     StateUpdate(State),
+}
+
+/// A `Cx` global holding the latest [`RoomsListHeaderAction::SetSyncStatus`] value,
+/// which a `RoomsListHeader` shows when it's created.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IsSyncingGlobal(pub Option<bool>);
+
+#[derive(Clone, Copy, PartialEq)]
+enum SyncStatus {
+    Syncing,
+    Offline,
+    Synced,
 }

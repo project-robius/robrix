@@ -22,7 +22,7 @@ use matrix_sdk::Error;
 #[cfg(not(target_os = "ios"))]
 use matrix_sdk::utils::local_server::{LocalServerBuilder, LocalServerResponse};
 use matrix_sdk_ui::{
-    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
+    RoomListService, Timeline, encryption_sync_service, room_list_service::{self, RoomListItem, RoomListLoadingState, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 #[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
@@ -4054,7 +4054,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         // Attempt to load the previously-saved app state.
         // One-shot, drops on its own; not tracked.
         handle_load_app_state(logged_in_user_id.to_owned());
-        subscriber_task_handles.push(handle_sync_indicator_subscriber(&sync_service));
+        subscriber_task_handles.push(handle_room_list_service_state_subscriber(sync_service.room_list_service().state()));
         subscriber_task_handles.push(handle_sync_service_state_subscriber(sync_service.state()));
 
         let room_list_service = sync_service.room_list_service();
@@ -5379,27 +5379,36 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
     })
 }
 
-fn handle_sync_indicator_subscriber(sync_service: &SyncService) -> JoinHandle<()> {
-    /// Duration for sync indicator delay before showing
-    const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(100);
-    /// Duration for sync indicator delay before hiding
-    const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
-    let sync_indicator_stream = sync_service
-        .room_list_service()
-        .sync_indicator(
-            SYNC_INDICATOR_DELAY,
-            SYNC_INDICATOR_HIDE_DELAY
-        );
+fn handle_room_list_service_state_subscriber(mut subscriber: Subscriber<room_list_service::State>) -> JoinHandle<()> {
+    /// How long the room list service can go without a sync response while it's running
+    /// before we stop calling it fully synced: 30s for the server to answer an idle long-poll, plus slack for slow networks.
+    const STALLED_SYNC_TIMEOUT: Duration = Duration::from_secs(40);
 
+    let state = subscriber.get();
+    log!("Initial room list service state is {state:?}");
     Handle::current().spawn(async move {
-       let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
-
-        while let Some(indicator) = sync_indicator_stream.next().await {
-            let is_syncing = match indicator {
-                SyncIndicator::Show => true,
-                SyncIndicator::Hide => false,
+        let mut is_syncing = !matches!(state, room_list_service::State::Running);
+        Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
+        loop {
+            // We get a state update after every sync response, even if the state didn't change,
+            // so going this long without one while running means the sync has stalled.
+            let next_state = if is_syncing {
+                subscriber.next().await
+            } else if let Ok(next_state) = tokio::time::timeout(STALLED_SYNC_TIMEOUT, subscriber.next()).await {
+                next_state
+            } else {
+                log!("The room list service hasn't received a sync response in {STALLED_SYNC_TIMEOUT:?}.");
+                is_syncing = true;
+                Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
+                continue;
             };
-            Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
+            let Some(state) = next_state else { break };
+            let is_now_syncing = !matches!(state, room_list_service::State::Running);
+            if is_now_syncing != is_syncing {
+                is_syncing = is_now_syncing;
+                log!("Received a room list service state update: {state:?}");
+                Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
+            }
         }
     })
 }

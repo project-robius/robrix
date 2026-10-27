@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
     avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::{clear_room_preview_cache, process_room_preview_updates}, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::{IsSyncingGlobal, RoomsListHeaderAction}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -383,6 +383,13 @@ impl MatchEvent for App {
                 }
                 // Do NOT continue here — let the action propagate to the LoginScreen widget,
                 // which will open the login_status_modal to show the failure message.
+            }
+
+            // The RoomsListHeader doesn't exist until the home screen is first drawn,
+            // so we keep the latest sync status for it to show once it's created.
+            if let Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) = action.downcast_ref() {
+                cx.global::<IsSyncingGlobal>().0 = Some(*is_syncing);
+                continue;
             }
 
             // Handle actions for the file upload modal.

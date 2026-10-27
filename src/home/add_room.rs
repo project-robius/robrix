@@ -42,10 +42,8 @@ script_mod! {
     }
 
     // Search results in sections, each with an optional header, its rows, and a "Load more" button.
-    // These rows have their own draw list, so they aren't redrawn whenever a text input's cursor blinks.
     let SearchResultsList = View {
         width: Fill, height: Fit
-        new_batch: true
         list := FlatList {
             width: Fill, height: Fit
             margin: Inset{left: 5, right: 5, bottom: 5}
