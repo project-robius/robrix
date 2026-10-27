@@ -150,7 +150,7 @@ script_mod! {
 
         list_item_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
         list_item_marker_pad: 8.0
-        list_item_walk: Walk{ width: Fill, height: Fit, margin: Inset{ left: 0, right: 0, top: 1, bottom: 7 } }
+        list_item_walk: Walk{ width: Fill, height: Fit, margin: Inset{ left: 0, right: 0, top: 7, bottom: 7 } }
         table_walk: Walk{ width: Fill, height: Fit }
         table_layout: Layout{ flow: Flow.Down }
         table_row_walk: Walk{ width: Fill, height: Fit }
