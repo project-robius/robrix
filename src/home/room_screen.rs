@@ -21,7 +21,7 @@ use matrix_sdk::{
     }
 };
 use matrix_sdk_ui::timeline::{
-    self, EmbeddedEvent, EventSendState, EventTimelineItem, InReplyToDetails, MsgLikeContent, MsgLikeKind, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EventSendState, EventTimelineItem, InReplyToDetails, MsgLikeContent, MsgLikeKind, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent
 };
 use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
@@ -40,6 +40,7 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::backwards_pagination::BackwardsPaginationState;
 use crate::home::scroll_anchors::ScrollAnchors;
+use crate::home::read_marker::{ReadMarkerState, is_read_marker};
 use crate::home::state_event_group::{self, StateEventGroups};
 use crate::home::small_state_event::{populate_small_state_event, populate_group_summary_item};
 use crate::home::timeline_items::{ChangedItems, ItemDraw, PendingKnocks, TimelineInfo, date_divider_text, divider_span_end, index_of_event, item_draw, uses_compact_view};
@@ -576,49 +577,6 @@ script_mod! {
     }
 
 
-    // The view used for each day divider in a room's timeline.
-    // The date text is centered between two horizontal lines.
-    mod.widgets.DateDivider = View {
-        width: Fill,
-        height: Fit,
-        margin: Inset{top: 7.0, bottom: 7.0}
-        flow: Right,
-        padding: Inset{left: 7.0, right: 7.0},
-        spacing: 0.0,
-        align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
-
-        left_line := LineH { }
-
-        date := Label {
-            padding: Inset{left: 7.0, right: 7.0}
-            draw_text +: {
-                text_style: TEXT_SUB {},
-                color: (COLOR_DIVIDER_DARK)
-            }
-            text: "<date>"
-        }
-
-        right_line := LineH { }
-    }
-
-    // The view used for the divider indicating where the user's last-viewed message is.
-    // This is implemented as a DateDivider with a different color and a fixed text label.
-    mod.widgets.ReadMarker = mod.widgets.DateDivider {
-        left_line := LineH {
-            draw_bg.color: (mod.widgets.COLOR_READ_MARKER)
-        }
-
-        date := Label {
-            draw_text.color: (mod.widgets.COLOR_READ_MARKER)
-            text: "New Messages"
-        }
-
-        right_line := LineH {
-            draw_bg.color: (mod.widgets.COLOR_READ_MARKER)
-        }
-    }
-
-
     // The top space is used to display a loading message while the room is being paginated.
     mod.widgets.TopSpace = SolidView {
         visible: false,
@@ -990,6 +948,11 @@ impl Widget for RoomScreen {
             && !loading_pane.is_currently_shown(cx)
         {
             self.send_read_receipts_for_visible_events(cx, &portal_list);
+        }
+
+        // Draw the next step of the read marker's animation.
+        if self.tl_state.as_ref().is_some_and(|tl| tl.read_marker.is_next_frame(event)) {
+            portal_list.redraw(cx);
         }
 
         // Perform a jump that was waiting for the timeline to be drawn.
@@ -1558,6 +1521,7 @@ impl Widget for RoomScreen {
             // instead of drawing them only for them to be invisible anyway, a big perf win!
             list.set_skipped_ranges(tl_state.state_event_groups.collapsed_ranges());
             list.bounce_at_start = tl_state.backwards_pagination.is_fully_paginated();
+            tl_state.read_marker.prepare_for_draw();
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
@@ -1588,7 +1552,6 @@ impl Widget for RoomScreen {
                             item_drawn_status,
                         ),
                         ItemDraw::Message(event_tl_item, msg_like_content) => {
-                            let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                             let is_newest_sent = tl_state.index_of_last_own_sent == Some(tl_idx);
                             let is_blocked_by_failed_send = tl_state.index_of_first_own_failed.is_some_and(|i| i < tl_idx);
                             populate_message_view(
@@ -1598,7 +1561,7 @@ impl Widget for RoomScreen {
                                 &tl_state.kind,
                                 event_tl_item,
                                 msg_like_content,
-                                prev_event,
+                                tl_items,
                                 &mut tl_state.media_cache,
                                 &mut tl_state.link_preview_cache,
                                 &tl_state.fetched_thread_summaries,
@@ -1637,6 +1600,7 @@ impl Widget for RoomScreen {
                         }
                         ItemDraw::ReadMarker => {
                             let item = list.item(cx, item_id, id!(ReadMarker));
+                            tl_state.read_marker.populate_item(&item);
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         ItemDraw::Empty => (list.item(cx, item_id, id!(ZeroHeightItem)), ItemDrawnStatus::both_drawn()),
@@ -1660,9 +1624,11 @@ impl Widget for RoomScreen {
                     item
                 };
                 item.draw_all(cx, scope);
+                tl_state.read_marker.draw_outgoing_marker_after(cx, scope, tl_items, item_id);
             }
 
             tl_state.scroll_anchors = None;
+            tl_state.read_marker.finish_draw(cx);
 
             // If the list is not filling the viewport (and back pagination isn't already in-progress),
             // then we need to back paginate the timeline until we have enough history to fill the viewport.
@@ -1855,6 +1821,10 @@ impl RoomScreen {
                     let changes = ChangedItems::between(&tl.items, &new_items, first_change, num_unchanged_at_end);
                     // Knocks that were changed (answered or not) might need us to recalculate collapsed groups.
                     let changed_knocks = tl.pending_knocks.update(&tl.items, &new_items, &changes);
+
+                    if !was_timeline_reset {
+                        tl.read_marker.animate_if_moved(cx, &tl.items, &new_items, &changes, &tl.state_event_groups);
+                    }
 
                     // Whether older events were added, even if they're not visible (like in a collapsed group).
                     let added_older_events = new_items.iter().find_map(|i| i.as_event()?.event_id())
@@ -3211,6 +3181,7 @@ impl RoomScreen {
                     state_event_groups: StateEventGroups::default(),
                     pending_knocks: PendingKnocks::default(),
                     scroll_anchors: None,
+                    read_marker: ReadMarkerState::default(),
                 };
                 timeline_state_store::mark_taken(cx, &tl_state.kind, owner);
                 (tl_state, true)
@@ -3463,6 +3434,7 @@ impl RoomScreen {
         tl.saved_state = state;
         // Clear room_members to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
+        tl.read_marker = ReadMarkerState::default();
         // Store this Timeline's `TimelineUiState` until a RoomScreen shows it again.
         timeline_state_store::put_back(self.widget_uid(), tl);
     }
@@ -3718,7 +3690,7 @@ impl RoomScreen {
             .iter()
             .rev()
             .take(num_items_below_view)
-            .any(|item| matches!(item.kind(), TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker)));
+            .any(|item| is_read_marker(item));
         if is_marker_below_view { return; }
 
         // Never move the marker backwards past a FullyRead we already sent.
@@ -4416,6 +4388,9 @@ struct TimelineUiState {
     /// (see [`ScrollAnchors::take()`]). They're kept while the timeline is hidden too, so the updates
     /// it gets in the meantime keep those items in place.
     scroll_anchors: Option<ScrollAnchors>,
+
+    /// Animates the read marker out of its old spot and into its new one.
+    read_marker: ReadMarkerState,
 }
 
 impl TimelineUiState {
@@ -4629,7 +4604,7 @@ fn populate_message_view(
     timeline_kind: &TimelineKind,
     event_tl_item: &EventTimelineItem,
     msg_like_content: &MsgLikeContent,
-    prev_event: Option<&Arc<TimelineItem>>,
+    tl_items: &Vector<Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     link_preview_cache: &mut LinkPreviewCache,
     fetched_thread_summaries: &HashMap<OwnedEventId, FetchedThreadSummary>,
@@ -4650,7 +4625,7 @@ fn populate_message_view(
     let mut is_server_notice = false; // whether this message is a Server Notice
 
     // Certain kinds of messages might set this to false anyway (to use the full Message) that.
-    let mut use_compact_view = uses_compact_view(prev_event, event_tl_item);
+    let mut use_compact_view = uses_compact_view(tl_items, item_id, event_tl_item);
 
     let has_html_body: bool;
 

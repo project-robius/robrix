@@ -16,6 +16,7 @@ use ruma::{EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedUserId, UserI
 use crate::{
     event_preview::{membership_and_reason, membership_of, membership_transition_of, plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_membership_transition, text_preview_of_other_message_like, text_preview_of_other_state},
     home::{
+        read_marker::is_read_marker,
         state_event_group::{GroupItems, GroupableEvent, GroupingKind, StateEventGroup, StateEventGroups},
         state_event_summary::Membership,
     },
@@ -101,7 +102,12 @@ pub(super) fn item_draw<'a>(
 /// Returns whether a message gets the more compact view that hides its sender's profile info.
 ///
 /// That's when the previous message (including stickers) was sent by the same user within 10 minutes.
-pub(super) fn uses_compact_view(prev_item: Option<&Arc<TimelineItem>>, event_tl_item: &EventTimelineItem) -> bool {
+/// The read marker in between doesn't count, so moving it never changes how a message is laid out.
+pub(super) fn uses_compact_view(items: &Vector<Arc<TimelineItem>>, index: usize, event_tl_item: &EventTimelineItem) -> bool {
+    let prev_item = index.checked_sub(1).and_then(|prev| match items.get(prev) {
+        Some(item) if is_read_marker(item) => items.get(prev.checked_sub(1)?),
+        item => item,
+    });
     let Some(TimelineItemKind::Event(prev_event_tl_item)) = prev_item.map(|item| item.kind()) else {
         return false;
     };
@@ -273,7 +279,7 @@ fn membership_event_about(item: &TimelineItem) -> Option<(&UserId, bool)> {
 }
 
 /// Iterates over the given items within `range`, ignoring any part of `range` past the last item.
-fn items_in<'a, T>(items: &'a Vector<Arc<T>>, range: &Range<usize>) -> impl Iterator<Item = &'a Arc<T>> {
+pub(super) fn items_in<'a, T>(items: &'a Vector<Arc<T>>, range: &Range<usize>) -> impl Iterator<Item = &'a Arc<T>> {
     items.focus().narrow(range.start.min(items.len())..range.end.min(items.len())).into_iter()
 }
 

@@ -872,6 +872,14 @@ impl StateEventGroups {
         next.min(num_items.saturating_sub(1)).max(index + 1)
     }
 
+    /// Returns the index of the last item at or before `index` that the timeline's list draws.
+    ///
+    /// That's `index` itself, unless it's hidden in a collapsed group (see [`Self::collapsed_ranges()`]).
+    pub fn last_drawn_at_or_before(&self, index: usize) -> usize {
+        let i = self.collapsed_ranges.partition_point(|range| range.end <= index);
+        self.collapsed_ranges.get(i).filter(|range| range.start <= index).map_or(index, |range| range.start.saturating_sub(1))
+    }
+
     /// Recomputes which items are hidden in collapsed groups (see [`Self::collapsed_ranges()`]).
     ///
     /// This always starts from scratch, since a collapsed group's last day divider
@@ -1914,6 +1922,8 @@ mod tests {
         assert_eq!(groups.collapsed_ranges(), [2..4, 5..7]);
         let next = |i| groups.next_drawn_after(i, items.len());
         assert_eq!((next(0), next(1), next(4), next(5), next(6), next(7)), (1, 4, 7, 7, 7, 8));
+        let last_drawn = |i| groups.last_drawn_at_or_before(i);
+        assert_eq!((last_drawn(1), last_drawn(3), last_drawn(4), last_drawn(6), last_drawn(7)), (1, 1, 4, 4, 7));
         // Nothing gets skipped once it's expanded.
         groups.toggle(1, &items);
         assert!(groups.collapsed_ranges().is_empty());
@@ -2169,6 +2179,8 @@ mod tests {
             // ...except for the last item, which always gets drawn.
             let next = (i + 1..items.len()).find(|&j| j + 1 == items.len() || !skipped(j)).unwrap_or(i + 1);
             assert_eq!(groups.next_drawn_after(i, items.len()), next, "drawing down from {i}");
+            let last_drawn = (0..=i).rev().find(|&j| !skipped(j)).unwrap_or(0);
+            assert_eq!(groups.last_drawn_at_or_before(i), last_drawn, "last drawn at or before {i}");
         }
     }
 

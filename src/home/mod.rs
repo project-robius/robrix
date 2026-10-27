@@ -41,6 +41,7 @@ pub mod timeline_items;
 pub mod state_event_group;
 pub mod state_event_summary;
 pub mod scroll_anchors;
+pub mod read_marker;
 
 pub fn script_mod(vm: &mut ScriptVm) {
     search_messages::script_mod(vm);
@@ -67,6 +68,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     failed_send_banner::script_mod(vm);
     room_pane_screen::script_mod(vm);
     state_event_group::script_mod(vm);
+    read_marker::script_mod(vm);
     room_screen::script_mod(vm);
     rooms_sidebar::script_mod(vm);
     welcome_screen::script_mod(vm);
