@@ -37,7 +37,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, send_status_indicator::stringify_send_error, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::stringify_send_error, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -5387,27 +5387,36 @@ fn handle_room_list_service_state_subscriber(mut subscriber: Subscriber<room_lis
     let state = subscriber.get();
     log!("Initial room list service state is {state:?}");
     Handle::current().spawn(async move {
-        let mut is_syncing = !matches!(state, room_list_service::State::Running);
-        Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
+        let (last_synced_at_sender, last_synced_at_receiver) = watch::channel(None);
+        let post_sync_status = |is_fully_synced| Cx::post_action(RoomsListHeaderAction::SetSyncStatus(RoomListSyncStatus {
+            is_fully_synced,
+            last_sync_time: last_synced_at_receiver.clone(),
+        }));
+        let mut is_fully_synced = matches!(state, room_list_service::State::Running);
+        post_sync_status(is_fully_synced);
         loop {
             // We get a state update after every sync response, even if the state didn't change,
             // so going this long without one while running means the sync has stalled.
-            let next_state = if is_syncing {
+            let next_state = if !is_fully_synced {
                 subscriber.next().await
             } else if let Ok(next_state) = tokio::time::timeout(STALLED_SYNC_TIMEOUT, subscriber.next()).await {
                 next_state
             } else {
                 log!("The room list service hasn't received a sync response in {STALLED_SYNC_TIMEOUT:?}.");
-                is_syncing = true;
-                Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
+                is_fully_synced = false;
+                post_sync_status(is_fully_synced);
                 continue;
             };
             let Some(state) = next_state else { break };
-            let is_now_syncing = !matches!(state, room_list_service::State::Running);
-            if is_now_syncing != is_syncing {
-                is_syncing = is_now_syncing;
+            // Every state update besides these comes right after a sync response.
+            if !matches!(state, room_list_service::State::Error { .. } | room_list_service::State::Terminated { .. }) {
+                last_synced_at_sender.send_replace(Some(MilliSecondsSinceUnixEpoch::now()));
+            }
+            let is_now_fully_synced = matches!(state, room_list_service::State::Running);
+            if is_now_fully_synced != is_fully_synced {
+                is_fully_synced = is_now_fully_synced;
                 log!("Received a room list service state update: {state:?}");
-                Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
+                post_sync_status(is_fully_synced);
             }
         }
     })
