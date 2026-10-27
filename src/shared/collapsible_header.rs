@@ -103,13 +103,22 @@ pub enum CollapsibleHeaderAction {
     None,
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct CollapsibleHeader {
     #[deref] view: View,
-    #[rust(true)] is_expanded: bool,
+    /// A reload (like a theme switch) resets `#[live]` fields,
+    /// so this only seeds `is_expanded` once, when the header is created.
+    #[live(true)] starts_expanded: bool,
+    #[rust] is_expanded: bool,
     #[rust] category: HeaderCategory,
     #[rust] num_unread_mentions: u64,
     #[rust] num_unread_messages: u64,
+}
+
+impl ScriptHook for CollapsibleHeader {
+    fn on_after_new(&mut self, _vm: &mut ScriptVm) {
+        self.is_expanded = self.starts_expanded;
+    }
 }
 
 impl Widget for CollapsibleHeader {
@@ -134,7 +143,10 @@ impl Widget for CollapsibleHeader {
         if let Some(mut arrow) = self.view.child_by_path(ids!(collapse_icon)).borrow_mut::<ExpandArrow>() {
             arrow.set_is_open_no_animate(self.is_expanded);
         }
-        self.view.child_by_path(ids!(label)).set_text(cx, self.category.as_str());
+        // Headers outside the rooms list have no category, so they keep their DSL label text.
+        if !matches!(self.category, HeaderCategory::None) {
+            self.view.child_by_path(ids!(label)).set_text(cx, self.category.as_str());
+        }
         self.view.child_by_path(ids!(unread_badge))
             .as_unread_badge()
             .update_counts(false, self.num_unread_mentions, self.num_unread_messages);
@@ -174,5 +186,9 @@ impl CollapsibleHeaderRef {
             inner.num_unread_mentions = num_unread_mentions;
             inner.num_unread_messages = num_unread_messages;
         }
+    }
+
+    pub fn is_expanded(&self) -> bool {
+        self.borrow().is_some_and(|inner| inner.is_expanded)
     }
 }
