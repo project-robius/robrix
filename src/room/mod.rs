@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use makepad_widgets::ScriptVm;
-use matrix_sdk::{RoomDisplayName, RoomHeroWithProfile, RoomState, room_preview::RoomPreview};
+use matrix_sdk::{Client, RoomDisplayName, RoomHeroWithProfile, RoomState, room_preview::RoomPreview};
 use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, room::{JoinRuleSummary, RoomType}};
 
 use crate::shared::avatar::AvatarImage;
@@ -149,6 +149,8 @@ pub struct FetchedRoomPreview {
     pub via: Vec<OwnedServerName>,
     /// The alias this preview was fetched through, if any, which can also be used to join the room.
     pub alias: Option<OwnedRoomAliasId>,
+    /// Whether we've joined any of the rooms whose members can join this one, if its join rule is restricted.
+    pub is_in_allowed_room: bool,
 
     // Below: copied from the `RoomPreview` struct.
 
@@ -180,6 +182,7 @@ pub struct FetchedRoomPreview {
 }
 impl FetchedRoomPreview {
     pub fn from(
+        client: &Client,
         room_preview: RoomPreview,
         room_avatar: FetchedRoomAvatar,
         via: Vec<OwnedServerName>,
@@ -189,11 +192,19 @@ impl FetchedRoomPreview {
             RoomDisplayName::Empty,
             RoomDisplayName::Named,
         );
+        let is_in_allowed_room = match &room_preview.join_rule {
+            Some(JoinRuleSummary::Restricted(restricted) | JoinRuleSummary::KnockRestricted(restricted)) => {
+                restricted.allowed_room_ids.iter()
+                    .any(|room_id| client.get_room(room_id).is_some_and(|room| room.state() == RoomState::Joined))
+            }
+            _ => false,
+        };
         Self {
             room_name_id: RoomNameId::new(display_name, room_preview.room_id),
             room_avatar,
             via,
             alias,
+            is_in_allowed_room,
             canonical_alias: room_preview.canonical_alias,
             topic: room_preview.topic,
             avatar_url: room_preview.avatar_url,
