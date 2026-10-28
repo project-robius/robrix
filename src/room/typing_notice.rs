@@ -2,8 +2,6 @@
 
 use makepad_widgets::*;
 
-use crate::shared::bouncing_dots::BouncingDotsWidgetExt;
-
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -65,12 +63,19 @@ pub struct TypingNotice {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+    /// Whether we're animating out, after which we stop drawing.
+    #[rust] is_hiding: bool,
 }
 
 impl Widget for TypingNotice {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
+        }
+        // Stop drawing once we've began animated out.
+        if self.is_hiding && !self.animator.is_track_animating(id!(typing_notice_animator)) {
+            self.is_hiding = false;
+            self.view.set_visible(cx, false);
         }
         self.view.handle_event(cx, event, scope);
     }
@@ -87,7 +92,10 @@ impl TypingNotice {
             [] => {
                 // Animate out the typing notice view (sliding it out towards the bottom).
                 self.animator_toggle(cx, false, animate, ids!(typing_notice_animator.show), ids!(typing_notice_animator.hide));
-                self.view.bouncing_dots(cx, ids!(bouncing_dots)).stop_animation(cx);
+                match animate {
+                    Animate::Yes => self.is_hiding = true,
+                    Animate::No => self.view.set_visible(cx, false),
+                }
                 self.redraw(cx);
                 return;
             }
@@ -107,10 +115,9 @@ impl TypingNotice {
         // Set the typing notice text and make its view visible.
         self.view.label(cx, ids!(typing_label)).set_text(cx, &typing_notice_text);
         self.view.set_visible(cx, true);
+        self.is_hiding = false;
         // Animate in the typing notice view (sliding it up from the bottom).
         self.animator_toggle(cx, true, animate, ids!(typing_notice_animator.show), ids!(typing_notice_animator.hide));
-        // Start the typing notice text animation of bouncing dots.
-        self.view.bouncing_dots(cx, ids!(bouncing_dots)).start_animation(cx);
     }
 }
 

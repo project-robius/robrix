@@ -849,10 +849,27 @@ impl Widget for MatrixHtmlSpan {
 }
 
 
-#[derive(ScriptHook, Script, Widget)]
+#[derive(Script, Widget)]
 pub struct HtmlOrPlaintext {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    /// The child widgets we set content on, looked up once since rooms list rows set it on every draw.
+    #[rust] child_refs: Option<HtmlOrPlaintextChildRefs>,
+}
+
+struct HtmlOrPlaintextChildRefs {
+    html_view: ViewRef,
+    plaintext_view: ViewRef,
+    html: HtmlRef,
+    pt_label: LabelRef,
+}
+
+impl ScriptHook for HtmlOrPlaintext {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        if apply.is_reload() {
+            self.child_refs = None;
+        }
+    }
 }
 
 impl Widget for HtmlOrPlaintext {
@@ -866,18 +883,29 @@ impl Widget for HtmlOrPlaintext {
 }
 
 impl HtmlOrPlaintext {
+    fn child_refs(&mut self, cx: &mut Cx) -> &mut HtmlOrPlaintextChildRefs {
+        self.child_refs.get_or_insert_with(|| HtmlOrPlaintextChildRefs {
+            html_view: self.view.view(cx, ids!(html_view)),
+            plaintext_view: self.view.view(cx, ids!(plaintext_view)),
+            html: self.view.html(cx, ids!(html_view.html)),
+            pt_label: self.view.label(cx, ids!(plaintext_view.pt_label)),
+        })
+    }
+
     /// Sets the plaintext content and makes it visible, hiding the rich HTML content.
     pub fn show_plaintext<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
-        self.view(cx, ids!(html_view)).set_visible(cx, false);
-        self.view(cx, ids!(plaintext_view)).set_visible(cx, true);
-        self.label(cx, ids!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
+        let child_refs = self.child_refs(cx);
+        child_refs.html_view.set_visible(cx, false);
+        child_refs.plaintext_view.set_visible(cx, true);
+        child_refs.pt_label.set_text(cx, text.as_ref());
     }
 
     /// Sets the HTML content, making the HTML visible and the plaintext invisible.
     pub fn show_html<T: AsRef<str>>(&mut self, cx: &mut Cx, html_body: T) {
-        self.html(cx, ids!(html_view.html)).set_text(cx, html_body.as_ref());
-        self.view(cx, ids!(html_view)).set_visible(cx, true);
-        self.view(cx, ids!(plaintext_view)).set_visible(cx, false);
+        let child_refs = self.child_refs(cx);
+        child_refs.html.set_text(cx, html_body.as_ref());
+        child_refs.html_view.set_visible(cx, true);
+        child_refs.plaintext_view.set_visible(cx, false);
     }
 }
 
@@ -889,7 +917,7 @@ impl HtmlOrPlaintext {
     /// This does nothing on the very first draw (before items are created),
     /// but future draws will have the given color.
     pub fn set_link_color(&mut self, cx: &mut Cx, color: Option<Vec4>) {
-        let html_ref = self.html(cx, ids!(html_view.html));
+        let html_ref = self.child_refs(cx).html.clone();
         let Some(html) = html_ref.borrow() else { return };
         // Visit all of the TextFlow's cached items to see if any are RobrixHtmlLinks.
         html.text_flow.children(&mut |_id, item| {
