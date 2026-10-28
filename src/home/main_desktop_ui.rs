@@ -657,7 +657,7 @@ impl MainDesktopUI {
 impl WidgetMatchEvent for MainDesktopUI {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let mut should_save_dock_action: bool = false;
-        if let Some(tab_id) = self.room_tabs.expansion_clicked(cx, actions, &self.open_rooms)
+        if let Some(tab_id) = self.room_tabs.expansion_clicked(actions, &self.open_rooms)
             && let Some(room) = self.open_rooms.get(&tab_id).cloned()
         {
             let app_state = scope.data.get_mut::<AppState>().unwrap();

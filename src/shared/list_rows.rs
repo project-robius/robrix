@@ -60,7 +60,7 @@ script_mod! {
 
 /// Handles taps and hovers on the given rows of a list, e.g., from its `items_with_actions()`.
 ///
-/// Updates `hovered` to the key of the hovered row, and returns the key of the tapped row, if any,
+/// Updates `hovered` to the key of the hovered (or pressed) row, and returns the key of the tapped row, if any,
 /// and whether `hovered` changed.
 pub fn handle_row_actions<K: Copy + PartialEq>(
     items: impl IntoIterator<Item = (K, WidgetRef)>,
@@ -72,12 +72,21 @@ pub fn handle_row_actions<K: Copy + PartialEq>(
     let mut hover_changed = false;
     for (key, item) in items {
         let row = item.as_view();
-        // Don't treat a touch that drags (a scroll motion) as a regular tap/click.
-        if !is_scrolling
-            && let Some(fe) = row.finger_up(actions)
-            && fe.is_over && fe.is_primary_hit() && fe.was_tap()
-        {
-            tapped = Some(key);
+        // A touch has no hover, so we highlight the row it presses until the finger lifts.
+        if row.finger_down(actions).is_some() && *hovered != Some(key) {
+            *hovered = Some(key);
+            hover_changed = true;
+        }
+        if let Some(fe) = row.finger_up(actions) {
+            // Don't treat a touch that drags (a scroll motion) as a regular tap/click.
+            if !is_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                tapped = Some(key);
+            }
+            // Only a mouse that's still over the row keeps it hovered.
+            if !(fe.is_over && fe.device.has_hovers()) && *hovered == Some(key) {
+                *hovered = None;
+                hover_changed = true;
+            }
         }
         if row.finger_hover_in(actions).is_some() {
             *hovered = Some(key);

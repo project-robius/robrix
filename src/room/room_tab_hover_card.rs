@@ -116,8 +116,7 @@ impl RoomTabHoverCard {
             .view(cx, ids!(content)).area().rect(cx);
         if card.contains(pos) { return true; }
         let Some(tab_id) = self.tab_id else { return false; };
-        let tab = dock
-            .widget(cx, &[TabBar::tab_node_name(tab_id)]).area().clipped_rect(cx);
+        let tab = dock.tab_widget(tab_id).area().clipped_rect(cx);
         let left = tab.pos.x.max(card.pos.x);
         let right = (tab.pos.x + tab.size.x).min(card.pos.x + card.size.x);
         let (top, bottom) = if card.pos.y >= tab.pos.y + tab.size.y {
@@ -148,8 +147,7 @@ impl RoomTabHoverCard {
         match event {
             Event::MouseMove(mouse) => {
                 let is_over_current_tab = self.tab_id.is_some_and(|tab_id| {
-                    let rect = dock.widget(cx, &[TabBar::tab_node_name(tab_id)])
-                        .area().clipped_rect(cx);
+                    let rect = dock.tab_widget(tab_id).area().clipped_rect(cx);
                     if rect.size.x > 0.0 && rect.size.y > 0.0 {
                         rect.contains(mouse.abs)
                     } else {
@@ -173,8 +171,7 @@ impl RoomTabHoverCard {
                 let hovered = rooms.keys().copied().find(|id| {
                     // Only do hit-testing after drawing, when the native tab's final area rect
                     // is available, including the overlaid action buttons.
-                    let rect = dock.widget(cx, &[TabBar::tab_node_name(*id)])
-                        .area().clipped_rect(cx);
+                    let rect = dock.tab_widget(*id).area().clipped_rect(cx);
                     rect.size.x > 0.0 && rect.size.y > 0.0 && rect.contains(mouse.abs)
                 });
                 let changed = hovered != self.tab_id;
@@ -214,7 +211,7 @@ impl RoomTabHoverCard {
         let name = room.display_name();
         let avatar_data = room.get_or_fetch_avatar(cx);
         let content_changed = self.drawn_content.as_ref() != Some(&(tab_id, name.clone(), avatar_data.clone()));
-        let tab_rect = dock.widget(cx, &[TabBar::tab_node_name(tab_id)]).area().clipped_rect(cx);
+        let tab_rect = dock.tab_widget(tab_id).area().clipped_rect(cx);
 
         // A redraw can temporarily invalidate a tab's area.
         // That doesn't mean the mouse hovered-out, so just wait for the next redraw.

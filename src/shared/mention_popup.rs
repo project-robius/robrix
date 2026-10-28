@@ -201,9 +201,12 @@ impl Widget for MentionablePopup {
                 self.redraw(cx);
             }
 
-            let (clicked_item_idx, should_redraw) = handle_row_actions(list.items_with_actions(actions), list.was_scrolling(), actions, &mut self.pointer_hover_index);
+            let items = list.items_with_actions(actions);
+            // A touch pressing an item highlights it like a hover does, but it shouldn't move the keyboard focus.
+            let is_pressed = items.iter().any(|(_, item)| item.as_view().finger_down(actions).is_some());
+            let (clicked_item_idx, should_redraw) = handle_row_actions(items, list.was_scrolling(), actions, &mut self.pointer_hover_index);
             // Hovering over an item also focuses it for keyboard navigation.
-            if should_redraw && let Some(index) = self.pointer_hover_index {
+            if should_redraw && !is_pressed && let Some(index) = self.pointer_hover_index {
                 self.keyboard_focus_index = Some(index);
             }
             if let Some(index) = clicked_item_idx {

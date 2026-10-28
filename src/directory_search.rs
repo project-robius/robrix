@@ -14,8 +14,8 @@ use ruma::{
 
 use crate::{profile::user_profile::UserProfile, room::FetchedRoomPreview, shared::avatar::AvatarState, utils::{self, RoomNameId}};
 
-/// How many results we ask for at a time, which is the spec's default for user directory searches.
-pub const SEARCH_PAGE_SIZE: u32 = 10;
+/// How many results we ask for at a time.
+pub const SEARCH_PAGE_SIZE: u32 = 20;
 
 /// Whether a room directory search is for rooms or for spaces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

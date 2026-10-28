@@ -867,6 +867,7 @@ struct RoomScreenWidgetRefs {
     user_profile_sliding_pane: UserProfileSlidingPaneRef,
     loading_pane: LoadingPaneRef,
     room_input_popup_menu: RoomInputPopupMenuRef,
+    top_space: ViewRef,
 }
 
 impl Drop for RoomScreen {
@@ -916,6 +917,7 @@ impl Widget for RoomScreen {
             user_profile_sliding_pane,
             loading_pane,
             room_input_popup_menu,
+            ..
         } = self.cached_widget_refs(cx);
 
         let is_pane_shown = loading_pane.is_currently_shown(cx)
@@ -1504,7 +1506,7 @@ impl Widget for RoomScreen {
         }
 
         self.update_top_space_visibility(cx);
-        let top_space = self.view.view(cx, ids!(top_space));
+        let top_space = self.cached_widget_refs(cx).top_space;
 
         let room_screen_widget_uid = self.widget_uid();
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -3765,6 +3767,7 @@ impl RoomScreen {
             user_profile_sliding_pane: self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)),
             loading_pane: self.loading_pane(cx, ids!(loading_pane)),
             room_input_popup_menu: self.room_input_popup_menu(cx, ids!(room_input_popup_menu)),
+            top_space: self.view.view(cx, ids!(top_space)),
         };
         self.cached_refs = Some(refs.clone());
         refs
@@ -3787,9 +3790,9 @@ impl RoomScreen {
     /// Shows the loading indicator for when we're fetching older messages.
     ///
     /// We keep the indicator visible until the UI has actually processed the new items.
-    fn update_top_space_visibility(&self, cx: &mut Cx) {
+    fn update_top_space_visibility(&mut self, cx: &mut Cx) {
         let is_loading = self.tl_state.as_ref().is_some_and(|tl| tl.backwards_pagination.is_loading());
-        self.view.view(cx, ids!(top_space)).set_visible(cx, is_loading);
+        self.cached_widget_refs(cx).top_space.set_visible(cx, is_loading);
     }
 }
 
@@ -6232,6 +6235,7 @@ pub struct Message {
 
     // Belowhere: cached references to child widgets, for efficiency.
     #[rust] replied_to_message_view: Option<CollapsiblePreviewRef>,
+    #[rust] replied_to_message_content: Option<WidgetRef>,
     #[rust] thread_root_summary_view: Option<ViewRef>,
     #[rust] send_status_indicator: Option<SendStatusIndicatorRef>,
 }
@@ -6240,6 +6244,7 @@ impl ScriptHook for Message {
     fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
         // A script reload changes the Message's children; invalidate the ones we cached.
         self.replied_to_message_view = None;
+        self.replied_to_message_content = None;
         self.thread_root_summary_view = None;
         self.send_status_indicator = None;
     }
@@ -6296,7 +6301,9 @@ impl Widget for Message {
         // because we don't want any widgets within the replied-to message to be
         // clickable or otherwise interactive.
         let reply = self.replied_to_message_view(cx);
-        let reply_content_area = reply.content_area(cx);
+        let reply_content_area = self.replied_to_message_content
+            .get_or_insert_with(|| reply.widget(cx, ids!(preview_content)))
+            .area();
         let reply_hit = event.hits(cx, reply_content_area);
         match reply_hit {
             Hit::FingerHoverIn(..) => {

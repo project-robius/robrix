@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::{ScrollPhase, finger::TAP_COUNT_DISTANCE};
 use crate::{app::SelectedRoom, utils};
-use super::{room_action_bar::RoomActionBarWidgetRefExt, room_tab_hover_card::RoomTabHoverCardWidgetExt};
+use super::{room_action_bar::{RoomActionBarRef, RoomActionBarWidgetRefExt}, room_tab_hover_card::RoomTabHoverCardWidgetExt};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -22,7 +22,7 @@ pub struct RoomTabs {
     #[live] tab_title_measure: DrawText,
     /// The set of each tab's buttons, so we don't recreate them on every draw,
     /// and whether they were last drawn for an active tab and for the focused tab (`None` if not yet drawn).
-    #[rust] controls: HashMap<LiveId, (WidgetRef, Option<(bool, bool)>)>,
+    #[rust] controls: HashMap<LiveId, TabControls>,
     /// Tabs that have visible buttons, which need to receive events.
     #[rust] visible_tabs: HashSet<LiveId>,
     /// State that tracks what a user is doing with a click/press on a tab button
@@ -66,17 +66,16 @@ impl RoomTabs {
         let mut tab_buttons = Vec::new();
         for tab_id in &self.visible_tabs {
             if !rooms.contains_key(tab_id) { continue; }
-            if let Some((controls, _)) = self.controls.get(tab_id) {
-                for button_id in [id!(expand_room_actions_button), id!(collapse_room_actions_button)] {
-                    tab_buttons.push((*tab_id, controls.button(cx, &[button_id])));
-                }
+            if let Some(controls) = self.controls.get(tab_id) {
+                tab_buttons.push((*tab_id, controls.expand_button.clone()));
+                tab_buttons.push((*tab_id, controls.collapse_button.clone()));
             }
         }
         let actions = cx.capture_actions(|cx| {
             for tab_id in &self.visible_tabs {
                 if !rooms.contains_key(tab_id) { continue; }
-                if let Some((controls, _)) = self.controls.get(tab_id) {
-                    controls.handle_event(cx, event, scope);
+                if let Some(controls) = self.controls.get(tab_id) {
+                    controls.widget.handle_event(cx, event, scope);
                 }
             }
             view.handle_event(cx, event, scope);
@@ -101,14 +100,12 @@ impl RoomTabs {
     }
 
     /// Returns the ID of the tab whose expand/collapse button was clicked, if any.
-    pub fn expansion_clicked(&self, cx: &mut Cx, actions: &Actions, rooms: &HashMap<LiveId, SelectedRoom>) -> Option<LiveId> {
+    pub fn expansion_clicked(&self, actions: &Actions, rooms: &HashMap<LiveId, SelectedRoom>) -> Option<LiveId> {
         let mut clicked = None;
         for tab_id in &self.visible_tabs {
             if !rooms.contains_key(tab_id) { continue; }
-            let Some((controls, _)) = self.controls.get(tab_id) else { continue };
-            if controls.button(cx, ids!(expand_room_actions_button)).clicked(actions)
-                || controls.button(cx, ids!(collapse_room_actions_button)).clicked(actions)
-            {
+            let Some(controls) = self.controls.get(tab_id) else { continue };
+            if controls.expand_button.clicked(actions) || controls.collapse_button.clicked(actions) {
                 clicked = Some(*tab_id);
             }
         }
@@ -124,7 +121,7 @@ impl RoomTabs {
     fn update_room_tab_sizes(&mut self, cx: &mut Cx2d, dock: &DockRef, rooms: &HashMap<LiveId, SelectedRoom>) -> bool {
         let mut changed = false;
         for (tab_id, room) in rooms {
-            let tab = dock.widget(cx, &[TabBar::tab_node_name(*tab_id)]);
+            let tab = dock.tab_widget(*tab_id);
             if let Some(mut tab) = tab.borrow_mut::<Tab>() {
                 let right = if matches!(room, SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. }) {
                     // Include a 4px gap before the expansion control.
@@ -172,7 +169,7 @@ impl RoomTabs {
             if !matches!(room, SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. }) {
                 continue;
             }
-            let tab_widget = dock.widget(cx, &[TabBar::tab_node_name(*tab_id)]);
+            let tab_widget = dock.tab_widget(*tab_id);
             let Some(tab) = tab_widget.borrow::<Tab>() else { continue };
             let Some(bar_rect) = tab_bar_rects.get(tab_id) else { continue };
             let rect = tab.area().rect(cx);
@@ -182,16 +179,27 @@ impl RoomTabs {
             }
             let is_active = tab.is_active();
             let is_focused = tab.is_current();
-            let (controls, drawn_as) = self.controls.entry(*tab_id).or_insert_with(|| {
-                (cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.room_tab_actions.as_object().into())), None)
+            let controls = self.controls.entry(*tab_id).or_insert_with(|| {
+                let widget = cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.room_tab_actions.as_object().into()));
+                TabControls {
+                    expand_button: widget.button(cx, ids!(expand_room_actions_button)),
+                    collapse_button: widget.button(cx, ids!(collapse_room_actions_button)),
+                    widget,
+                    action_bar: None,
+                    drawn_as: None,
+                }
             });
-            let expanded = dock.item(*tab_id).room_action_bar(cx, ids!(room_actions)).is_expanded();
-            controls.widget(cx, ids!(expand_room_actions_button)).set_visible(cx, !expanded);
-            controls.widget(cx, ids!(collapse_room_actions_button)).set_visible(cx, expanded);
-            if *drawn_as != Some((is_active, is_focused)) {
-                *drawn_as = Some((is_active, is_focused));
-                for button_id in [id!(expand_room_actions_button), id!(collapse_room_actions_button)] {
-                    let mut button = controls.widget(cx, &[button_id]);
+            let body = dock.item(*tab_id);
+            let body_uid = body.widget_uid();
+            if controls.action_bar.as_ref().is_none_or(|(uid, _)| *uid != body_uid) {
+                controls.action_bar = Some((body_uid, body.room_action_bar(cx, ids!(room_actions))));
+            }
+            let expanded = controls.action_bar.as_ref().is_some_and(|(_, action_bar)| action_bar.is_expanded());
+            controls.expand_button.set_visible(cx, !expanded);
+            controls.collapse_button.set_visible(cx, expanded);
+            if controls.drawn_as != Some((is_active, is_focused)) {
+                controls.drawn_as = Some((is_active, is_focused));
+                for mut button in [controls.expand_button.clone(), controls.collapse_button.clone()] {
                     if is_focused {
                         script_apply_eval!(cx, button, {
                             draw_icon +: {color: mod.widgets.COLOR_TEXT_ON_ACCENT}
@@ -215,12 +223,23 @@ impl RoomTabs {
                 size: dvec2(30.0, rect.size.y),
             };
             cx.push_clip_rect(clip);
-            controls.draw_walk_all(cx, scope, Walk::abs_rect(controls_rect));
+            controls.widget.draw_walk_all(cx, scope, Walk::abs_rect(controls_rect));
             cx.pop_clip_rect();
             self.visible_tabs.insert(*tab_id);
         }
     }
 
+}
+
+/// A tab's expand/collapse buttons and the widgets we check on every draw,
+/// all found once so we don't have to look them up again.
+struct TabControls {
+    widget: WidgetRef,
+    expand_button: ButtonRef,
+    collapse_button: ButtonRef,
+    /// The room's action bar, and the uid of the tab body we found it in.
+    action_bar: Option<(WidgetUid, RoomActionBarRef)>,
+    drawn_as: Option<(bool, bool)>,
 }
 
 /// State that allows dock tabs to "own" FingerDown drag hits that start on their buttons,
@@ -252,7 +271,7 @@ impl TabButtonInteraction {
         let hovered = match event {
             Event::MouseMove(_) => buttons.iter().find_map(|(tab_id, b)| {
                 (b.visible() && !b.area().is_empty() && event.pointer_claimed_area() == b.area())
-                    .then(|| dock.widget(cx, &[TabBar::tab_node_name(*tab_id)]))
+                    .then(|| dock.tab_widget(*tab_id))
             }),
             Event::MouseLeave(_) | Event::WindowLostFocus(_) | Event::WindowGeomChange(_)
             | Event::ClearHover => None,
@@ -348,7 +367,7 @@ impl TabButtonInteraction {
                     && event.pointer_claimed_area() == button.area()
             };
             if button.pressed(&actions) || was_middle_clicked() {
-                let tab = dock.widget(cx, &[TabBar::tab_node_name(*tab_id)]);
+                let tab = dock.tab_widget(*tab_id);
                 let original_area = button.area();
                 if cx.switch_finger_capture(original_area, tab.area(), Area::Empty) {
                     if let Some(old) = self.pressed.take() {
@@ -379,7 +398,7 @@ impl TabButtonInteraction {
                 && !original_area.is_empty()
                 && matches!(event.hits(cx, original_area), Hit::FingerDown(_))
             {
-                let tab = dock.widget(cx, &[TabBar::tab_node_name(tab_id)]);
+                let tab = dock.tab_widget(tab_id);
                 if cx.switch_finger_capture(original_area, tab.area(), Area::Empty) {
                     if let Some(old) = self.pressed.take() { old.reset(cx); }
                     self.pressed = Some(PressedTabButton {

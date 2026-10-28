@@ -7,7 +7,7 @@ use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomId, room::{JoinRuleSummary, RoomType}};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult}, home::invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{draw_flat_list_status_row, handle_row_actions}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult}, home::invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -40,7 +40,7 @@ script_mod! {
     }
 
     let SearchClearButton = mod.widgets.ClearTextButton {
-        margin: Inset{top: 0, bottom: 0, left: 0, right: 10}
+        margin: Inset{top: 0, bottom: 0, left: 0, right: 7.5}
     }
 
     let SearchButton = RobrixIconButton {
@@ -51,6 +51,11 @@ script_mod! {
         text: "Go"
     }
 
+    let SectionHeader = SubsectionLabel {
+        margin: Inset{top: 12, bottom: 4}
+        draw_text +: { text_style: theme.font_bold { font_size: 11.5 } }
+    }
+
     // Search results in sections, each with an optional header, its rows, and a "Load more" button.
     let SearchResultsList = View {
         width: Fill, height: Fit
@@ -59,10 +64,9 @@ script_mod! {
             margin: Inset{left: 5, right: 5, bottom: 5}
             scroll_bars: ScrollBars { show_scroll_x: false, show_scroll_y: false }
 
-            section_header := SubsectionLabel {
-                margin: Inset{top: 12, bottom: 4}
-                draw_text +: { text_style: theme.font_bold { font_size: 11.5 } }
-            }
+            section_header := SectionHeader {}
+            // The first section's header sits right below its search box, so it needs less space above it.
+            first_section_header := SectionHeader { margin: Inset{top: 6, bottom: 4} }
             result_row := mod.widgets.AvatarListRow {}
             // The rows below are left-aligned with the results' avatars.
             loading_row := mod.widgets.ListLoadingRow {
@@ -359,7 +363,7 @@ script_mod! {
         result_row_color_hover: (COLOR_LIST_ITEM_BG_HOVER)
         result_row_color_focus: (COLOR_LIST_ITEM_BG_FOCUS)
         search_input_padding: Inset{left: 12, right: 12, top: 0, bottom: 0}
-        clear_button_gutter: 45
+        clear_button_gutter: 42.5
 
         content := AddRoomScreenContent {}
 
@@ -382,6 +386,8 @@ pub struct AddRoomScreen {
     #[live] clear_button_gutter: f64,
 
     #[rust] state: AddRoomState,
+    /// Held while a room preview is shown, so that going back or pressing Escape cancels it.
+    #[rust] cancel_scope: Option<CancelScope>,
     /// The function to perform when the user clicks the `join_room_button`.
     #[rust(JoinButtonFunction::None)] join_function: JoinButtonFunction,
     #[rust] room_search: Search<RoomResults>,
@@ -393,6 +399,9 @@ pub struct AddRoomScreen {
     #[rust] was_profile_pane_shown: bool,
     /// What our Tab handling just focused, so we can scroll to it instead of to the widget makepad would have focused.
     #[rust] tab_scroll_target: Option<Area>,
+    /// Where the content was as of its last draw, which doesn't change while it scrolls,
+    /// so the result lists can skip drawing the rows that are far from view.
+    #[rust] content_viewport: Rect,
 }
 
 impl ScriptHook for AddRoomScreen {
@@ -498,6 +507,17 @@ impl Widget for AddRoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let profile_pane = self.view.child(id!(user_profile_sliding_pane)).as_user_profile_sliding_pane();
 
+        // Going back (Back, the back mouse button) or pressing Escape cancels a shown room preview, like its Cancel button.
+        // We check ownership first because `back_pressed()` consumes the press, so only the owner may call it.
+        if self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+            && (event.back_pressed()
+                || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape)
+                || matches!(event, Event::MouseUp(e) if e.button.is_back()))
+        {
+            self.cancel_room_preview(cx);
+            return;
+        }
+
         // Handle arrow keys and enter before forwarding this event to the search textinput,
         // because we want those keys to control moving through search results, not the text input.
         if let Event::KeyDown(key_event) = event && !profile_pane.is_currently_shown(cx) {
@@ -567,14 +587,15 @@ impl Widget for AddRoomScreen {
             self.view.handle_event(cx, event, scope);
         }
 
-        // The profile pane doesn't always give key focus back when it closes,
-        // so we manually give key focus back to the people search input.
+        // Closing the profile pane doesn't put the user back in the people search box,
+        // so we stop showing the arrow keys' focus on the person they had opened.
         let is_profile_pane_shown = profile_pane.is_currently_shown(cx);
         if self.was_profile_pane_shown
             && !is_profile_pane_shown
-            && self.result_rows.focused.is_some_and(|(search_box, _)| search_box == SearchBox::People)
+            && !cx.has_key_focus(self.view.text_input(cx, ids!(user_search_input)).area())
+            && self.result_rows.unfocus(SearchBox::People)
         {
-            self.view.text_input(cx, ids!(user_search_input)).set_key_focus(cx);
+            self.redraw(cx);
         }
         self.was_profile_pane_shown = is_profile_pane_shown;
 
@@ -622,7 +643,7 @@ impl Widget for AddRoomScreen {
                 self.pending_submit = None;
                 self.result_rows.focused = None;
                 // The user is looking for something else now, so we stop showing the room preview.
-                self.state = AddRoomState::WaitingOnUserInput;
+                self.set_state(cx, AddRoomState::WaitingOnUserInput);
                 self.redraw(cx);
             }
             if let Some(text) = user_search_input.changed(actions) {
@@ -655,9 +676,7 @@ impl Widget for AddRoomScreen {
 
             // If the cancel button was clicked, hide the room preview and return to default state.
             if cancel_button.clicked(actions) {
-                self.state = AddRoomState::WaitingOnUserInput;
-                room_alias_id_input.set_key_focus(cx);
-                self.redraw(cx);
+                self.cancel_room_preview(cx);
             }
 
             // If the join button was clicked, perform the appropriate action.
@@ -741,7 +760,7 @@ impl Widget for AddRoomScreen {
                                 PopupKind::Error,
                                 None,
                             );
-                            self.state = AddRoomState::FetchError(err_str);
+                            self.set_state(cx, AddRoomState::FetchError(err_str));
                             self.redraw(cx);
                             break;
                         }
@@ -878,7 +897,7 @@ impl Widget for AddRoomScreen {
                     self.user_search = Search::default();
                     self.pending_submit = None;
                     self.result_rows = ResultRows::default();
-                    self.state = AddRoomState::WaitingOnUserInput;
+                    self.set_state(cx, AddRoomState::WaitingOnUserInput);
                     room_alias_id_input.set_text(cx, "");
                     user_search_input.set_text(cx, "");
                     self.update_clear_button(cx, SearchBox::Rooms);
@@ -1134,6 +1153,8 @@ impl Widget for AddRoomScreen {
         let room_results_uid = self.view.child_by_path(ids!(content.room_results.list)).widget_uid();
         let are_room_results_shown = self.are_room_results_shown();
         let (color, color_hover, color_focus) = (self.result_row_color, self.result_row_color_hover, self.result_row_color_focus);
+        let viewport = self.content_viewport;
+        let visible_y = if viewport.size.y > 0.0 { (viewport.pos.y, viewport.pos.y + viewport.size.y) } else { (f64::NEG_INFINITY, f64::INFINITY) };
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
             let is_room_results = step.widget_uid() == room_results_uid;
             let list_ref = step.as_flat_list();
@@ -1143,8 +1164,8 @@ impl Widget for AddRoomScreen {
                 if are_room_results_shown {
                     match &self.room_search.results {
                         Some(results) => {
-                            draw_search_section(cx, scope, &mut list, &results.rooms, &ROOMS_SECTION, rows, color, color_hover, color_focus);
-                            draw_search_section(cx, scope, &mut list, &results.spaces, &SPACES_SECTION, rows, color, color_hover, color_focus);
+                            draw_search_section(cx, scope, &mut list, &results.rooms, &ROOMS_SECTION, rows, visible_y, color, color_hover, color_focus);
+                            draw_search_section(cx, scope, &mut list, &results.spaces, &SPACES_SECTION, rows, visible_y, color, color_hover, color_focus);
                         }
                         None if !self.room_search.query.is_empty() => {
                             draw_flat_list_status_row(cx, scope, &mut list, id!(rooms_hint), false, "To find a person, search for them below.");
@@ -1154,7 +1175,7 @@ impl Widget for AddRoomScreen {
                 }
             } else {
                 match &self.user_search.results {
-                    Some(section) => draw_search_section(cx, scope, &mut list, section, &PEOPLE_SECTION, rows, color, color_hover, color_focus),
+                    Some(section) => draw_search_section(cx, scope, &mut list, section, &PEOPLE_SECTION, rows, visible_y, color, color_hover, color_focus),
                     None if !self.user_search.query.is_empty() => {
                         draw_flat_list_status_row(cx, scope, &mut list, id!(people_hint), false, "To find a room or space, search for it above.");
                     }
@@ -1163,6 +1184,11 @@ impl Widget for AddRoomScreen {
             }
             // Drop the rows that we didn't draw this time.
             list.items.retain_visible();
+        }
+        // If the content moved or resized, rows we skipped could be in view now, so we draw once more.
+        self.content_viewport = self.view.child(id!(content)).area().rect(cx);
+        if self.content_viewport != viewport {
+            cx.redraw_area_in_draw(self.view.area());
         }
         DrawStep::done()
     }
@@ -1183,7 +1209,7 @@ impl AddRoomScreen {
                     PopupKind::Error,
                     None,
                 );
-                self.state = AddRoomState::ParseError(err_str);
+                self.set_state(cx, AddRoomState::ParseError(err_str));
                 self.view.text_input(cx, ids!(room_alias_id_input)).set_key_focus(cx);
             }
         }
@@ -1193,9 +1219,9 @@ impl AddRoomScreen {
     /// Starts fetching a preview of the given room or space, which we show once we get it.
     fn request_room_preview(&mut self, cx: &mut Cx, room_or_alias_id: OwnedRoomOrAliasId, via: Vec<OwnedServerName>) {
         self.pending_submit = None;
-        self.state = AddRoomState::Parsed {
+        self.set_state(cx, AddRoomState::Parsed {
             room_or_alias_id: room_or_alias_id.clone(),
-        };
+        });
         submit_async_request(MatrixRequest::GetRoomPreview {
             room_or_alias_id,
             via,
@@ -1204,9 +1230,36 @@ impl AddRoomScreen {
         self.redraw(cx);
     }
 
+    /// Sets our state, and holds a cancel scope while that state shows a room preview.
+    fn set_state(&mut self, cx: &mut Cx, state: AddRoomState) {
+        self.state = state;
+        let shows_room_preview = matches!(
+            self.state,
+            AddRoomState::FetchedRoomPreview { .. } | AddRoomState::Knocked { .. } | AddRoomState::Joined { .. } | AddRoomState::Loaded { .. }
+        );
+        if !shows_room_preview {
+            self.cancel_scope = None;
+        } else if self.cancel_scope.is_none() {
+            self.cancel_scope = Some(self.begin_cancel_scope(cx));
+        }
+    }
+
+    /// Hides the room preview and goes back to the search results.
+    fn cancel_room_preview(&mut self, cx: &mut Cx) {
+        // Hidden buttons still get key presses, so we take key focus away from the preview's buttons.
+        let buttons_view = self.view.view(cx, ids!(fetched_room_summary.buttons_view));
+        if cx.has_key_focus(buttons_view.button(cx, ids!(join_room_button)).area())
+            || cx.has_key_focus(buttons_view.button(cx, ids!(cancel_button)).area())
+        {
+            cx.set_key_focus(Area::Empty);
+        }
+        self.set_state(cx, AddRoomState::WaitingOnUserInput);
+        self.redraw(cx);
+    }
+
     /// Shows the given preview of a room or space, which we found by `room_or_alias_id`.
     fn show_room_preview(&mut self, cx: &mut Cx, frp: FetchedRoomPreview, room_or_alias_id: OwnedRoomOrAliasId) {
-        self.state = AddRoomState::FetchedRoomPreview { frp, room_or_alias_id };
+        self.set_state(cx, AddRoomState::FetchedRoomPreview { frp, room_or_alias_id });
         // Reset the buttons' hover states when they are first shown.
         self.view.button(cx, ids!(fetched_room_summary.buttons_view.join_room_button)).reset_hover(cx);
         self.view.button(cx, ids!(fetched_room_summary.buttons_view.cancel_button)).reset_hover(cx);
@@ -1681,9 +1734,10 @@ impl ResultRows {
     }
 }
 
-/// The texts and the list keys of one section of the search results.
+/// The texts, the list keys, and the header template of one section of the search results.
 struct SectionInfo {
     header: Option<&'static str>,
+    header_template: LiveId,
     searching_text: &'static str,
     empty_text: &'static str,
     header_key: LiveId,
@@ -1694,6 +1748,7 @@ struct SectionInfo {
 
 const ROOMS_SECTION: SectionInfo = SectionInfo {
     header: Some("Rooms"),
+    header_template: LiveId::from_str("first_section_header"),
     searching_text: "Searching for rooms...",
     empty_text: "No rooms found.",
     header_key: LiveId::from_str("rooms_header"),
@@ -1704,6 +1759,7 @@ const ROOMS_SECTION: SectionInfo = SectionInfo {
 
 const SPACES_SECTION: SectionInfo = SectionInfo {
     header: Some("Spaces"),
+    header_template: LiveId::from_str("section_header"),
     searching_text: "Searching for spaces...",
     empty_text: "No spaces found.",
     header_key: LiveId::from_str("spaces_header"),
@@ -1715,6 +1771,7 @@ const SPACES_SECTION: SectionInfo = SectionInfo {
 // The "Find people" label already says what this one section is.
 const PEOPLE_SECTION: SectionInfo = SectionInfo {
     header: None,
+    header_template: LiveId::from_str("section_header"),
     searching_text: "Searching for people...",
     empty_text: "No people found.",
     header_key: LiveId::from_str("people_header"),
@@ -1792,18 +1849,22 @@ fn draw_search_section<T: SearchResultRow>(
     section: &SectionResults<T>,
     info: &SectionInfo,
     rows: &mut ResultRows,
+    (visible_top, visible_bottom): (f64, f64),
     color: Vec4f,
     color_hover: Vec4f,
     color_focus: Vec4f,
 ) {
     if let Some(header_text) = info.header
-        && let Some(header) = list.item(cx, info.header_key, id!(section_header))
+        && let Some(header) = list.item(cx, info.header_key, info.header_template)
     {
         header.set_text(cx, header_text);
         header.draw_all(cx, scope);
     }
 
-    for result in &section.items {
+    // Drawing hundreds of rows on every frame makes scrolling lag, so rows far from view only take up their space.
+    // We still draw the focused row and each list's first row, since the arrow keys and Tab scroll to them.
+    let row_walk = Walk::new(Size::fill(), Size::Fixed(LIST_ROW_HEIGHT));
+    for (index, result) in section.items.iter().enumerate() {
         let key = result.row_key();
         // The list drops rows that it didn't draw last time,
         // so a row that it creates again starts out empty and unhovered.
@@ -1817,7 +1878,15 @@ fn draw_search_section<T: SearchResultRow>(
         if !rows.populated.contains(&key) && result.populate_row(cx, &row) {
             rows.populated.insert(key);
         }
-        let row_color = if rows.focused.is_some_and(|(_, focused_key)| focused_key == key) {
+        let is_focused = rows.focused.is_some_and(|(_, focused_key)| focused_key == key);
+        let row_rect = cx.peek_walk_turtle(row_walk);
+        let is_near_view = row_rect.pos.y + row_rect.size.y >= visible_top - 2.0 * LIST_ROW_HEIGHT
+            && row_rect.pos.y <= visible_bottom + 2.0 * LIST_ROW_HEIGHT;
+        if !is_near_view && !is_focused && index != 0 {
+            cx.walk_turtle(row_walk);
+            continue;
+        }
+        let row_color = if is_focused {
             color_focus
         } else if rows.hovered_key == Some(key) {
             color_hover

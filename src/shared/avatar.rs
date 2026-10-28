@@ -73,6 +73,8 @@ script_mod! {
 
         img_view := CircleView {
             visible: false,
+            // The image masks itself to a circle, so a transparent bg here would just cost a draw call.
+            show_bg: false,
             align: Align { x: 0.5, y: 0.5 }
             img := Image {
                 fit: ImageFit.CropToFill,
