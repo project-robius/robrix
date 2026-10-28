@@ -5,7 +5,7 @@
 //! moved to the next edge, popped out into its own tab or view, or closed.
 //! A dock's panes belong to its current timeline, and are saved and restored along with it.
 
-use std::sync::Arc;
+use std::{cell::OnceCell, sync::Arc};
 
 use makepad_widgets::{*, makepad_platform::event::DigitId};
 use matrix_sdk::room::RoomMember;
@@ -487,6 +487,8 @@ pub struct RoomPaneDock {
     /// Whether we're in the middle of drawing (across multiple draw steps).
     #[rust] is_drawing: bool,
     #[rust] tooltip: RoomActionTooltip,
+    /// Our four edges, in `ALL_SIDES` order, looked up once since we check them all on every event.
+    #[rust] edges: OnceCell<PaneEdges>,
 }
 
 impl ScriptHook for RoomPaneDock {
@@ -495,6 +497,7 @@ impl ScriptHook for RoomPaneDock {
         if !apply.is_reload() {
             return;
         }
+        self.edges = Default::default();
         // A reload never reaches our panes' frames, since we build them from templates,
         // so we re-apply their templates ourselves and then redo the styling we set on them.
         for index in 0..self.panes.len() {
@@ -675,15 +678,20 @@ enum PaneButton {
 
 const ALL_SIDES: [PaneSide; 4] = [PaneSide::Top, PaneSide::Bottom, PaneSide::Left, PaneSide::Right];
 
+type PaneEdges = [RoomPaneEdgeRef; 4];
+
 impl RoomPaneDock {
     fn edge(&self, cx: &mut Cx, side: PaneSide) -> RoomPaneEdgeRef {
-        let id = match side {
-            PaneSide::Top => ids!(edge_top),
-            PaneSide::Bottom => ids!(edge_bottom),
-            PaneSide::Left => ids!(edge_left),
-            PaneSide::Right => ids!(edge_right),
-        };
-        self.view.room_pane_edge(cx, id)
+        let edges = self.edges.get_or_init(|| ALL_SIDES.map(|side| {
+            let id = match side {
+                PaneSide::Top => ids!(edge_top),
+                PaneSide::Bottom => ids!(edge_bottom),
+                PaneSide::Left => ids!(edge_left),
+                PaneSide::Right => ids!(edge_right),
+            };
+            self.view.room_pane_edge(cx, id)
+        }));
+        edges[ALL_SIDES.iter().position(|s| *s == side).unwrap()].clone()
     }
 
     fn has_pane(&self, kind: &RoomPaneKind) -> bool {

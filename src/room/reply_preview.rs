@@ -403,10 +403,4 @@ impl CollapsiblePreviewRef {
             .map(|inner| inner.collapsible && inner.expandable && !inner.is_expanded)
             .unwrap_or(false)
     }
-
-    /// Area of the inner reply preview content: avatar, username, and body.
-    pub fn content_area(&self, cx: &mut Cx) -> Area {
-        let Some(inner) = self.borrow() else { return Area::Empty };
-        inner.view.widget(cx, ids!(preview_content)).area()
-    }
 }

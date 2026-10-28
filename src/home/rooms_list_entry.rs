@@ -8,7 +8,7 @@ use crate::{
     avatar::AvatarWidgetExt,
         context_menu::ContextMenuClosed,
         hover_highlight::handle_hover_hit,
-        html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
+        html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetExt}, unread_badge::{UnreadBadgeRef, UnreadBadgeWidgetExt as _},
     },
     utils::{self, relative_format}
 };
@@ -291,6 +291,17 @@ pub struct RoomsListEntryContent {
 
     /// The avatar content that was last drawn for this room.
     #[rust] last_avatar: Option<FetchedRoomAvatar>,
+
+    /// The child widgets we set on every draw, looked up once since the whole list redraws while it scrolls.
+    #[rust] child_refs: Option<EntryChildRefs>,
+}
+
+struct EntryChildRefs {
+    room_name: LabelRef,
+    timestamp: LabelRef,
+    latest_message: HtmlOrPlaintextRef,
+    unread_badge: UnreadBadgeRef,
+    tombstone_icon: ViewRef,
 }
 
 impl ScriptHook for RoomsListEntryContent {
@@ -298,6 +309,7 @@ impl ScriptHook for RoomsListEntryContent {
         // A reapply resets the preview colors to their DSL defaults, so we must set them again.
         if apply.is_reload() {
             self.last_selection_drawn = None;
+            self.child_refs = None;
         }
     }
 }
@@ -377,6 +389,16 @@ impl RoomsListEntryContent {
         self.is_invited = is_invited;
     }
 
+    fn child_refs(&mut self, cx: &mut Cx) -> &EntryChildRefs {
+        self.child_refs.get_or_insert_with(|| EntryChildRefs {
+            room_name: self.view.label(cx, ids!(room_name)),
+            timestamp: self.view.label(cx, ids!(timestamp)),
+            latest_message: self.view.html_or_plaintext(cx, ids!(latest_message)),
+            unread_badge: self.view.unread_badge(cx, ids!(unread_badge)),
+            tombstone_icon: self.view.view(cx, ids!(tombstone_icon)),
+        })
+    }
+
     /// Populates this RoomsListEntry with info about a joined room.
     pub fn draw_joined_room(
         &mut self,
@@ -385,25 +407,24 @@ impl RoomsListEntryContent {
     ) {
         // Note: in general, we must always set all fields in case a rooms list entry widget
         // was re-used by the portal list, to avoid showing any old content for a different entry.
-        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.display());
-        let timestamp = self.view.label(cx, ids!(timestamp));
-        let latest_message = self.view.html_or_plaintext(cx, ids!(latest_message));
+        let child_refs = self.child_refs(cx);
+        child_refs.room_name.set_text(cx, &room_info.room_name_id.display());
         if let Some(latest) = room_info.latest.as_ref() {
-            timestamp.set_text(cx, relative_format(latest.timestamp).as_deref().unwrap_or(""));
-            latest_message.show_html(cx, &latest.text);
+            child_refs.timestamp.set_text(cx, relative_format(latest.timestamp).as_deref().unwrap_or(""));
+            child_refs.latest_message.show_html(cx, &latest.text);
         } else {
-            timestamp.set_text(cx, "");
-            latest_message.show_plaintext(cx, "[No recent messages]");
+            child_refs.timestamp.set_text(cx, "");
+            child_refs.latest_message.show_plaintext(cx, "[No recent messages]");
         }
 
-        self.view.unread_badge(cx, ids!(unread_badge)).update_counts(
+        child_refs.unread_badge.update_counts(
             room_info.is_marked_unread,
             room_info.num_unread_mentions,
             room_info.num_unread_messages,
         );
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
-        self.view.view(cx, ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
+        self.child_refs(cx).tombstone_icon.set_visible(cx, room_info.is_tombstoned);
     }
 
     /// Populates this RoomsListEntry with info about an invited room.
@@ -417,20 +438,19 @@ impl RoomsListEntryContent {
             true => Cow::Owned(format!("[Space] {name}")),
             false => name,
         };
-        self.view.label(cx, ids!(room_name)).set_text(cx, &name);
+        let child_refs = self.child_refs(cx);
+        child_refs.room_name.set_text(cx, &name);
         // Hide the timestamp field, and use the latest message field to show the inviter.
-        self.view.label(cx, ids!(timestamp)).set_text(cx, "");
+        child_refs.timestamp.set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
             Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{}</b> ({})", htmlize::escape_text(dn), htmlize::escape_text(user_id.as_str())),
             Some(InviterInfo { user_id, .. }) => format!("Invited by {}", htmlize::escape_text(user_id.as_str())),
             None => String::from("You were invited"),
         };
-        self.view.html_or_plaintext(cx, ids!(latest_message)).show_html(cx, &inviter_string);
+        child_refs.latest_message.show_html(cx, &inviter_string);
         // an invite cannot ever be tombstoned
-        self.view.view(cx, ids!(tombstone_icon)).set_visible(cx, false);
-        self.view
-            .unread_badge(cx, ids!(unread_badge))
-            .update_counts(false, 1, 0);
+        child_refs.tombstone_icon.set_visible(cx, false);
+        child_refs.unread_badge.update_counts(false, 1, 0);
 
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }
@@ -470,13 +490,8 @@ impl RoomsListEntryContent {
         // * If selected, set link color to None so links inherit the font_color (white)
         //   for better contrast against the selected background（blue).
         // * If not selected, restore the default blue link color.
-        self.view.html_or_plaintext(cx, ids!(latest_message)).set_link_color(
-            cx,
-            if is_selected {
-                None
-            } else {
-                Some(self.preview_link_color)
-            });
+        let link_color = if is_selected { None } else { Some(self.preview_link_color) };
+        self.child_refs(cx).latest_message.set_link_color(cx, link_color);
 
         // Skip redrawing if nothing changed.
         if self.last_selection_drawn == Some(is_selected) {
@@ -505,8 +520,9 @@ impl RoomsListEntryContent {
         self.animator_toggle(cx, is_selected, Animate::No, ids!(selected.on), ids!(selected.off));
 
         // Update the text colors for the room name and timestamp.
-        self.view.label(cx, ids!(room_name)).set_text_color(cx, room_name_color);
-        self.view.label(cx, ids!(timestamp)).set_text_color(cx, timestamp_color);
+        let child_refs = self.child_refs(cx);
+        child_refs.room_name.set_text_color(cx, room_name_color);
+        child_refs.timestamp.set_text_color(cx, timestamp_color);
 
         // Update text colors for the latest message preview (both HTML and plaintext variants).
         if let Some(mut html) = self.view.html(cx, ids!(latest_message.html_view.html)).borrow_mut() {
