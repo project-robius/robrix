@@ -7,7 +7,7 @@ use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomId, room::{JoinRuleSummary, RoomType}};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult}, home::invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{draw_flat_list_status_row, handle_row_actions}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult}, home::invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -399,6 +399,9 @@ pub struct AddRoomScreen {
     #[rust] was_profile_pane_shown: bool,
     /// What our Tab handling just focused, so we can scroll to it instead of to the widget makepad would have focused.
     #[rust] tab_scroll_target: Option<Area>,
+    /// Where the content was as of its last draw, which doesn't change while it scrolls,
+    /// so the result lists can skip drawing the rows that are far from view.
+    #[rust] content_viewport: Rect,
 }
 
 impl ScriptHook for AddRoomScreen {
@@ -1150,6 +1153,8 @@ impl Widget for AddRoomScreen {
         let room_results_uid = self.view.child_by_path(ids!(content.room_results.list)).widget_uid();
         let are_room_results_shown = self.are_room_results_shown();
         let (color, color_hover, color_focus) = (self.result_row_color, self.result_row_color_hover, self.result_row_color_focus);
+        let viewport = self.content_viewport;
+        let visible_y = if viewport.size.y > 0.0 { (viewport.pos.y, viewport.pos.y + viewport.size.y) } else { (f64::NEG_INFINITY, f64::INFINITY) };
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
             let is_room_results = step.widget_uid() == room_results_uid;
             let list_ref = step.as_flat_list();
@@ -1159,8 +1164,8 @@ impl Widget for AddRoomScreen {
                 if are_room_results_shown {
                     match &self.room_search.results {
                         Some(results) => {
-                            draw_search_section(cx, scope, &mut list, &results.rooms, &ROOMS_SECTION, rows, color, color_hover, color_focus);
-                            draw_search_section(cx, scope, &mut list, &results.spaces, &SPACES_SECTION, rows, color, color_hover, color_focus);
+                            draw_search_section(cx, scope, &mut list, &results.rooms, &ROOMS_SECTION, rows, visible_y, color, color_hover, color_focus);
+                            draw_search_section(cx, scope, &mut list, &results.spaces, &SPACES_SECTION, rows, visible_y, color, color_hover, color_focus);
                         }
                         None if !self.room_search.query.is_empty() => {
                             draw_flat_list_status_row(cx, scope, &mut list, id!(rooms_hint), false, "To find a person, search for them below.");
@@ -1170,7 +1175,7 @@ impl Widget for AddRoomScreen {
                 }
             } else {
                 match &self.user_search.results {
-                    Some(section) => draw_search_section(cx, scope, &mut list, section, &PEOPLE_SECTION, rows, color, color_hover, color_focus),
+                    Some(section) => draw_search_section(cx, scope, &mut list, section, &PEOPLE_SECTION, rows, visible_y, color, color_hover, color_focus),
                     None if !self.user_search.query.is_empty() => {
                         draw_flat_list_status_row(cx, scope, &mut list, id!(people_hint), false, "To find a room or space, search for it above.");
                     }
@@ -1179,6 +1184,11 @@ impl Widget for AddRoomScreen {
             }
             // Drop the rows that we didn't draw this time.
             list.items.retain_visible();
+        }
+        // If the content moved or resized, rows we skipped could be in view now, so we draw once more.
+        self.content_viewport = self.view.child(id!(content)).area().rect(cx);
+        if self.content_viewport != viewport {
+            cx.redraw_area_in_draw(self.view.area());
         }
         DrawStep::done()
     }
@@ -1839,6 +1849,7 @@ fn draw_search_section<T: SearchResultRow>(
     section: &SectionResults<T>,
     info: &SectionInfo,
     rows: &mut ResultRows,
+    (visible_top, visible_bottom): (f64, f64),
     color: Vec4f,
     color_hover: Vec4f,
     color_focus: Vec4f,
@@ -1850,7 +1861,10 @@ fn draw_search_section<T: SearchResultRow>(
         header.draw_all(cx, scope);
     }
 
-    for result in &section.items {
+    // Drawing hundreds of rows on every frame makes scrolling lag, so rows far from view only take up their space.
+    // We still draw the focused row and each list's first row, since the arrow keys and Tab scroll to them.
+    let row_walk = Walk::new(Size::fill(), Size::Fixed(LIST_ROW_HEIGHT));
+    for (index, result) in section.items.iter().enumerate() {
         let key = result.row_key();
         // The list drops rows that it didn't draw last time,
         // so a row that it creates again starts out empty and unhovered.
@@ -1864,7 +1878,15 @@ fn draw_search_section<T: SearchResultRow>(
         if !rows.populated.contains(&key) && result.populate_row(cx, &row) {
             rows.populated.insert(key);
         }
-        let row_color = if rows.focused.is_some_and(|(_, focused_key)| focused_key == key) {
+        let is_focused = rows.focused.is_some_and(|(_, focused_key)| focused_key == key);
+        let row_rect = cx.peek_walk_turtle(row_walk);
+        let is_near_view = row_rect.pos.y + row_rect.size.y >= visible_top - 2.0 * LIST_ROW_HEIGHT
+            && row_rect.pos.y <= visible_bottom + 2.0 * LIST_ROW_HEIGHT;
+        if !is_near_view && !is_focused && index != 0 {
+            cx.walk_turtle(row_walk);
+            continue;
+        }
+        let row_color = if is_focused {
             color_focus
         } else if rows.hovered_key == Some(key) {
             color_hover
