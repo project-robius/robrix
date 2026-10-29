@@ -13,8 +13,13 @@ use crate::{
         navigation_tab_bar::SelectedTab,
     },
     room::FetchedRoomAvatar,
-    shared::{avatar::AvatarWidgetRefExt, context_menu::{BUTTON_HEIGHT, ContextMenuClosed, MENU_PADDING, MENU_WIDTH, is_context_menu_cancelled, is_tap_outside, menu_position_margin}},
+    shared::{avatar::AvatarWidgetRefExt, context_menu::{BUTTON_HEIGHT, ContextMenuClosed, MENU_PADDING, is_context_menu_cancelled, is_tap_outside, menu_position_margin}},
+    utils,
 };
+
+const HOME_LABEL: &str = "Home";
+const LABEL_PADDING_LEFT: f64 = 40.0;
+const LABEL_PADDING_RIGHT: f64 = 12.0;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -22,6 +27,7 @@ script_mod! {
 
     mod.widgets.NavHistoryMenu = set_type_default() do #(NavHistoryMenu::register_widget(vm)) {
         ..mod.widgets.ContextMenuBackdrop
+        row_label_measure: mod.widgets.ContextMenuButton.draw_text
 
         main_content := mod.widgets.ContextMenuContent {
             // No right padding here, that's within the portallist itself
@@ -41,7 +47,7 @@ script_mod! {
                     button := mod.widgets.ContextMenuButton {
                         // Only a tap picks a place, not a press (which scrolls the list).
                         enable_long_press: true
-                        padding: Inset{left: 40, right: 12, top: 9, bottom: 9}
+                        padding: Inset{left: #(LABEL_PADDING_LEFT), right: #(LABEL_PADDING_RIGHT), top: 9, bottom: 9}
                         spacing: 0
                         icon_walk: Walk{width: 0, height: 0}
                         label_walk: Walk{width: Fill, height: Fit}
@@ -59,7 +65,7 @@ script_mod! {
                         enable_long_press: true
                         spacing: 12
                         draw_icon +: { svg: (ICON_HOME) }
-                        text: "Home"
+                        text: #(HOME_LABEL)
                     }
                 }
             }
@@ -132,6 +138,8 @@ enum RowState {
 pub struct NavHistoryMenu {
     #[deref] view: View,
     #[source] source: ScriptObjectRef,
+    /// Used to measure each row's label so we know how wide to make this menu.
+    #[live] row_label_measure: DrawText,
     #[rust] direction: NavHistoryDirection,
     /// The place that this menu goes back or forward from.
     #[rust] current: Option<SelectedRoom>,
@@ -298,13 +306,24 @@ impl NavHistoryMenu {
         let anchor = action.anchor;
         // A title bar button is above the container, so the menu can't start any higher than the container.
         let anchor_pos = dvec2(anchor.pos.x, (anchor.pos.y + anchor.size.y).max(container_rect.pos.y));
+        // Like in a web browser, the menu is just wide enough to fit its widest label.
+        let label_width = places.iter()
+            .map(|place| {
+                let label = place.as_ref().map_or_else(|| HOME_LABEL.into(), SelectedRoom::display_name);
+                utils::unwrapped_text_width(cx, &self.row_label_measure, &label)
+            })
+            .fold(0.0, f64::max);
+        let full_width = LABEL_PADDING_LEFT + label_width.ceil() + LABEL_PADDING_RIGHT + 2.0 * MENU_PADDING;
+        // The gap on the menu's right side never gets smaller than the gap on its left side.
+        let width = full_width.min(container_rect.size.x - 2.0 * (anchor_pos.x - container_rect.pos.x));
         let one_row_height = BUTTON_HEIGHT + 2.0 * MENU_PADDING;
         // The list must scroll if it's too long to fit beneath the anchor.
         let full_height = places.len() as f64 * BUTTON_HEIGHT + 2.0 * MENU_PADDING;
         let height = full_height.min((container_rect.pos.y + container_rect.size.y - anchor_pos.y).max(one_row_height));
-        let margin = menu_position_margin(container_rect, anchor_pos, dvec2(MENU_WIDTH, height));
+        let margin = menu_position_margin(container_rect, anchor_pos, dvec2(width, height));
         if let Some(mut main_content) = self.view(cx, ids!(main_content)).borrow_mut() {
             main_content.walk.margin = margin;
+            main_content.walk.width = Size::Fixed(width);
             main_content.walk.height = Size::Fixed(height);
         }
         // If everything fits in the popup menu list, it doesn't need to scroll nor bounce.
