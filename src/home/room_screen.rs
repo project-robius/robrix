@@ -911,6 +911,14 @@ impl Widget for RoomScreen {
             return;
         }
 
+        // If the user presses or types anything before we've focused our input bar, we don't steal their focus.
+        if self.focus_input_bar_on_show
+            && (matches!(event, Event::MouseDown(_) | Event::KeyDown(_) | Event::TextInput(_))
+                || matches!(event, Event::TouchUpdate(e) if e.touches.iter().any(|t| matches!(t.state, TouchState::Start))))
+        {
+            self.focus_input_bar_on_show = false;
+        }
+
         let room_screen_widget_uid = self.widget_uid();
         let RoomScreenWidgetRefs {
             portal_list,
@@ -1143,6 +1151,13 @@ impl Widget for RoomScreen {
                 // Our timeline may show users whose profiles were just fetched, e.g., for an item whose sender wasn't known.
                 if action.downcast_ref::<user_profile_cache::UserProfilesUpdated>().is_some() {
                     self.redraw(cx);
+                    continue;
+                }
+
+                if let Some(input_bar_focus::InputBarFocusRequested { timeline_kind }) = action.downcast_ref()
+                    && self.timeline_kind.as_ref() == Some(timeline_kind)
+                {
+                    self.focus_input_bar_after_draw(cx);
                     continue;
                 }
 
@@ -1668,8 +1683,8 @@ impl Widget for RoomScreen {
         let room_rect = self.view.area().rect(cx);
         self.view.room_action_bar(cx, ids!(room_actions)).draw_shadow(cx, room_rect);
 
-        // If this RoomScreen was just drawn for the first time after being opened for
-        // a "Reply In Thread", then then focus on the text input in the RoomInputBar.
+        // If we were asked to focus the input bar (e.g., for a "Reply In Thread"),
+        // then focus on the text input in the RoomInputBar now that it's been drawn.
         if self.focus_input_bar_on_show {
             self.focus_input_bar_on_show = false;
             self.view.room_input_bar(cx, ids!(room_input_bar)).set_key_focus(cx);
@@ -2645,8 +2660,7 @@ impl RoomScreen {
                     };
                     if self.timeline_kind.as_ref() == Some(&thread_kind) {
                         // We're already viewing this thread, so just focus the input bar.
-                        self.focus_input_bar_on_show = true;
-                        self.redraw(cx);
+                        self.focus_input_bar_after_draw(cx);
                     } else {
                         // Emit an action to open the thread's RoomScreen
                         // and tell it to grab key focus once it's drawn.
@@ -2893,11 +2907,18 @@ impl RoomScreen {
                         loading_pane
                     );
                 }
-                MessageAction::OpenThread(thread_root_event_id) => {
+                MessageAction::OpenThread { thread_root_event_id, is_touch } => {
                     let Some(room_name_id) = self.room_name_id.as_ref().cloned() else {
                         error!("### ERROR: MessageAction::OpenThread: thread_root_event_id: {thread_root_event_id}, but room_name_id was None!");
                         continue
                     };
+                    // Like clicking on a room, clicking (not tapping) on a thread summary focuses the thread's input bar.
+                    if !is_touch {
+                        input_bar_focus::request(cx, TimelineKind::Thread {
+                            room_id: room_name_id.room_id().clone(),
+                            thread_root_event_id: thread_root_event_id.clone(),
+                        });
+                    }
                     cx.widget_action(
                         room_screen_widget_uid, 
                         RoomsListAction::Selected(SelectedRoom::Thread {
@@ -3566,6 +3587,12 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
+    /// Focuses the text input in this RoomScreen's input bar once it has been drawn.
+    fn focus_input_bar_after_draw(&mut self, cx: &mut Cx) {
+        self.focus_input_bar_on_show = true;
+        self.redraw(cx);
+    }
+
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
     pub fn set_displayed_room(
         &mut self,
@@ -3584,13 +3611,9 @@ impl RoomScreen {
             }
         };
 
-        // If we opened this timeline to reply in thread, give the text input key focus.
-        if input_bar_focus::take_if_matches(cx, &timeline_kind) {
-            self.focus_input_bar_on_show = true;
-        }
-
         if self.timeline_kind.as_ref() != Some(&timeline_kind) {
             self.deferred_jump = None;
+            self.focus_input_bar_on_show = false;
         }
 
         // If this timeline is already displayed, we don't need to do anything major,
@@ -3635,10 +3658,15 @@ impl RoomScreen {
         self.loading_pane(cx, ids!(loading_pane)).hide(cx); // also cancels an in-progress search
         self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
         self.room_input_popup_menu(cx, ids!(room_input_popup_menu)).close(cx);
+        // Hiding a view doesn't take away its key focus, so we do that ourselves.
+        if self.view.room_input_bar(cx, ids!(room_input_bar)).key_focus(cx) {
+            cx.set_key_focus(Area::Empty);
+        }
 
         self.room_name_id = None;
         self.timeline_kind = None;
         self.deferred_jump = None;
+        self.focus_input_bar_on_show = false;
         self.pinned_events.clear();
         self.is_loaded = false;
         self.all_rooms_loaded = false;
@@ -3856,6 +3884,18 @@ impl RoomScreenRef {
             return;
         }
         inner.jump_to_event_after_draw(cx, event_id, description);
+    }
+
+    /// Focuses the text input in this RoomScreen's input bar once it has been drawn.
+    pub fn focus_input_bar_when_shown(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.focus_input_bar_after_draw(cx);
+    }
+
+    /// Cancels a request to focus this RoomScreen's input bar that hasn't happened yet.
+    pub fn cancel_pending_input_bar_focus(&self) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.focus_input_bar_on_show = false;
     }
 }
 
@@ -6158,7 +6198,7 @@ pub enum MessageAction {
     /// The user clicked the "Show more" or "Show less" button on a tall reply preview.
     ToggleReplyPreviewExpanded(MessageDetails),
     /// The user clicked the thread summary on a thread-root message.
-    OpenThread(OwnedEventId),
+    OpenThread { thread_root_event_id: OwnedEventId, is_touch: bool },
     /// The user requested to jump to a specific event in this room.
     JumpToEvent(OwnedEventId),
     /// The user clicked the "delete" button on a message.
@@ -6371,7 +6411,10 @@ impl Widget for Message {
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                         cx.widget_action(
                             room_screen_widget_uid,
-                            MessageAction::OpenThread(thread_root_event_id.clone()),
+                            MessageAction::OpenThread {
+                                thread_root_event_id: thread_root_event_id.clone(),
+                                is_touch: fe.is_touch(),
+                            },
                         );
                     }
                 }
@@ -6686,28 +6729,21 @@ fn clear_unread_flag_on_open(cx: &mut Cx, room_id: &OwnedRoomId) {
     }
 }
 
-/// A pending "Reply In Thread" request to focus a thread's input bar once its RoomScreen is
-/// shown, stored as a `Cx` global so whichever screen ends up showing it can pick it up.
-mod input_bar_focus {
+/// A request to focus a timeline's input bar once its RoomScreen is
+/// shown, sent as an action so whichever screen ends up showing it can pick it up.
+pub mod input_bar_focus {
     use super::*;
 
-    /// The timeline whose RoomScreen should focus its input bar when next shown.
-    #[derive(Default)]
-    struct PendingInputBarFocus(Option<TimelineKind>);
-
-    /// Requests that the RoomScreen showing `kind` focus its input bar once it's shown.
-    pub(super) fn request(cx: &mut Cx, kind: TimelineKind) {
-        cx.global::<PendingInputBarFocus>().0 = Some(kind);
+    /// Emitted to make the RoomScreen showing this timeline focus its input bar.
+    ///
+    /// This is NOT a widget action.
+    #[derive(Clone, Debug)]
+    pub(super) struct InputBarFocusRequested {
+        pub(super) timeline_kind: TimelineKind,
     }
 
-    /// If a focus request is pending for `kind`, consumes it and returns `true`.
-    pub(super) fn take_if_matches(cx: &mut Cx, kind: &TimelineKind) -> bool {
-        let pending = cx.global::<PendingInputBarFocus>();
-        if pending.0.as_ref() == Some(kind) {
-            pending.0 = None;
-            true
-        } else {
-            false
-        }
+    /// Requests that the RoomScreen showing `kind` focus its input bar once it's shown.
+    pub fn request(cx: &mut Cx, kind: TimelineKind) {
+        cx.action(InputBarFocusRequested { timeline_kind: kind });
     }
 }

@@ -190,6 +190,7 @@ impl MainDesktopUI {
         if room.as_ref().map_or(id!(home_tab), SelectedRoom::tab_id) != current_tab_id {
             self.previously_selected_tab = Some(current_tab_id);
             cancel_all_dictation();
+            dock.item(current_tab_id).as_room_screen().cancel_pending_input_bar_focus();
         }
         if let Some(room) = room {
             dock.select_tab(cx, room.tab_id());
@@ -756,6 +757,10 @@ impl WidgetMatchEvent for MainDesktopUI {
                     // Lazily initialize this tab's widget if it was deferred during dock restoration.
                     self.init_tab_if_needed(cx, tab_id);
                     should_save_dock_action = true;
+                }
+                // Clicking (not tapping) on a tab focuses its room's input bar.
+                DockAction::TabWasClicked { tab_id, device } if !device.is_touch() => {
+                    self.view.dock(cx, ids!(dock)).item(tab_id).as_room_screen().focus_input_bar_when_shown(cx);
                 }
                 DockAction::TabCloseWasPressed(tab_id) => {
                     let current_screen = self.most_recently_selected_room.clone();

@@ -233,7 +233,7 @@ impl ScriptHook for RoomsListEntry {
 #[derive(Clone, Default, Debug)]
 pub enum RoomsListEntryAction {
     /// This RoomsListEntry was primary-clicked or tapped.
-    PrimaryClicked(OwnedRoomId),
+    PrimaryClicked { room_id: OwnedRoomId, is_touch: bool },
     /// This RoomsListEntry was right-clicked or long-pressed.
     SecondaryClicked(OwnedRoomId, DVec2),
     #[default]
@@ -356,7 +356,10 @@ impl Widget for RoomsListEntryContent {
                     );
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    cx.widget_action(uid, RoomsListEntryAction::PrimaryClicked(room_id));
+                    cx.widget_action(
+                        uid,
+                        RoomsListEntryAction::PrimaryClicked { room_id, is_touch: fe.is_touch() },
+                    );
                 }
                 _ => { }
             }
