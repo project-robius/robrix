@@ -490,8 +490,10 @@ impl SendStatusIndicatorRef {
     }
 }
 
-fn upload_percent(current_bytes: usize, total_bytes: usize) -> u8 {
-    (current_bytes * 100).checked_div(total_bytes).unwrap_or(0).min(100) as u8
+/// Returns how much of an upload is done, from 0 to 100 percent.
+pub fn upload_percent(current_bytes: usize, total_bytes: usize) -> u8 {
+    // Widen first: `current_bytes * 100` overflows a 32-bit `usize` (e.g., armv7) above ~43 MB.
+    (current_bytes as u128 * 100).checked_div(total_bytes as u128).unwrap_or(0).min(100) as u8
 }
 
 /// Stringifies an upload's progress, e.g. "Uploading... 40% (2 MB / 5 MB)".

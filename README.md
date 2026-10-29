@@ -228,7 +228,12 @@ The following table shows which host systems can currently be used to build Robr
    cargo makepad android run -p robrix --release
    ```
     * You'll need to connect a physical Android device with developer options enabled, or start up an emulator using Android Studio.
-        * API version 33 or higher is required, which is Android 13 and up.
+        * Android 8.0 (API version 26) or newer is required.
+    * The above builds for 64-bit ARM (`arm64-v8a`). To build for a device with a 32-bit ARM system (`armeabi-v7a`), pass `--abi=armv7` before the subcommand in both steps 3 and 4:
+      ```sh
+      cargo makepad android --abi=armv7 install-toolchain --full-ndk
+      cargo makepad android --abi=armv7 run -p robrix --release
+      ```
 
 
 ### iOS / iPadOS

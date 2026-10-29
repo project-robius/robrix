@@ -45,7 +45,12 @@ on:
         type: boolean
         default: false
       build_android_aarch64:
-        description: 'Build Android APK (aarch64 only)'
+        description: 'Build Android APK (aarch64 / arm64-v8a)'
+        required: false
+        type: boolean
+        default: false
+      build_android_armv7:
+        description: 'Build Android APK (armv7 / armeabi-v7a, 32-bit ARM)'
         required: false
         type: boolean
         default: false
@@ -119,9 +124,12 @@ jobs:
       linux_matrix: ${{ steps.set.outputs.linux_matrix }}
       macos_matrix: ${{ steps.set.outputs.macos_matrix }}
       windows_matrix: ${{ steps.set.outputs.windows_matrix }}
+      android_matrix: ${{ steps.set.outputs.android_matrix }}
       run_linux: ${{ steps.set.outputs.run_linux }}
       run_macos: ${{ steps.set.outputs.run_macos }}
       run_windows: ${{ steps.set.outputs.run_windows }}
+      run_android: ${{ steps.set.outputs.run_android }}
+      android_version_code: ${{ steps.set.outputs.android_version_code }}
     steps:
       - name: Build matrix from inputs
         id: set
@@ -135,10 +143,14 @@ jobs:
             const linux = [];
             const macos = [];
             const windows = [];
+            const android = [];
 
             const addLinux = (os, arch) => linux.push({ os, arch });
             const addMacos = (os, arch) => macos.push({ os, arch });
             const addWindows = () => windows.push({ os: 'windows-2022', arch: 'x86_64' });
+            // `abi` is what makepad-packaging-action builds (and names the asset after);
+            // `target` is only passed along as the Rust target triple for that ABI.
+            const addAndroid = (abi, target) => android.push({ abi, target });
 
             if (isPush) {
               addLinux('ubuntu-24.04', 'x86_64');
@@ -148,6 +160,8 @@ jobs:
               addMacos('macos-14', 'aarch64');
               addMacos('macos-15-intel', 'x86_64');
               addWindows();
+              addAndroid('aarch64', 'aarch64-linux-android');
+              addAndroid('armv7', 'armv7-linux-androideabi');
             } else {
               if (enabled(inputs.build_ubuntu_24_x86_64)) addLinux('ubuntu-24.04', 'x86_64');
               if (enabled(inputs.build_ubuntu_24_aarch64)) addLinux('ubuntu-24.04-arm', 'aarch64');
@@ -156,14 +170,25 @@ jobs:
               if (enabled(inputs.build_macos_14_aarch64)) addMacos('macos-14', 'aarch64');
               if (enabled(inputs.build_macos_15_x86_64)) addMacos('macos-15-intel', 'x86_64');
               if (enabled(inputs.build_windows_2022_x86_64)) addWindows();
+              if (enabled(inputs.build_android_aarch64)) addAndroid('aarch64', 'aarch64-linux-android');
+              if (enabled(inputs.build_android_armv7)) addAndroid('armv7', 'armv7-linux-androideabi');
             }
 
             core.setOutput('linux_matrix', JSON.stringify({ include: linux }));
             core.setOutput('macos_matrix', JSON.stringify({ include: macos }));
             core.setOutput('windows_matrix', JSON.stringify({ include: windows }));
+            core.setOutput('android_matrix', JSON.stringify({ include: android }));
             core.setOutput('run_linux', linux.length > 0 ? 'true' : 'false');
             core.setOutput('run_macos', macos.length > 0 ? 'true' : 'false');
             core.setOutput('run_windows', windows.length > 0 ? 'true' : 'false');
+            core.setOutput('run_android', android.length > 0 ? 'true' : 'false');
+
+            // One `versionCode` for every Android ABI in this release, in the same YYYYMMDDHH (UTC)
+            // format as cargo-makepad's `version_code = "auto"`, which each job would compute on its own.
+            const now = new Date();
+            const pad2 = (n) => String(n).padStart(2, '0');
+            core.setOutput('android_version_code', `${now.getUTCFullYear()}${pad2(now.getUTCMonth() + 1)}`
+              + `${pad2(now.getUTCDate())}${pad2(now.getUTCHours())}`);
 
   create_release:
     name: Create Release
@@ -177,7 +202,7 @@ jobs:
             needs.determine_matrices.outputs.run_linux == 'true' ||
             needs.determine_matrices.outputs.run_macos == 'true' ||
             needs.determine_matrices.outputs.run_windows == 'true' ||
-            github.event.inputs.build_android_aarch64 == 'true' ||
+            needs.determine_matrices.outputs.run_android == 'true' ||
             github.event.inputs.build_ios == 'true'
           )
         )
@@ -555,19 +580,43 @@ jobs:
           uploadUpdaterJson: false
 
   for_android:
-    name: Release Robrix for Android (aarch64)
-    needs: [check_tag_version, create_release]
-    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_android_aarch64 == 'true')) }}
+    name: Release Robrix for Android (${{ matrix.abi }})
+    needs: [check_tag_version, determine_matrices, create_release]
+    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.determine_matrices.outputs.run_android == 'true')) }}
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.determine_matrices.outputs.android_matrix) }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
+      ## Every ABI's APK in a release must share one versionCode, so a device can switch
+      ## between them. With `auto`, each job would compute its own from the current hour.
+      - name: Pin the Android version code
+        shell: bash
+        env:
+          VERSION_CODE: ${{ needs.determine_matrices.outputs.android_version_code }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION_CODE" =~ ^[0-9]{10}$ ]]; then
+            echo "::error::Expected a YYYYMMDDHH version code, got '${VERSION_CODE}'."
+            exit 1
+          fi
+          sed -i "s/^version_code = \"auto\"$/version_code = ${VERSION_CODE}/" Cargo.toml
+          if ! grep -qx "version_code = ${VERSION_CODE}" Cargo.toml; then
+            echo "::error::Failed to set version_code = ${VERSION_CODE} in Cargo.toml."
+            exit 1
+          fi
+
       - name: Package (android)
         uses: project-robius/makepad-packaging-action@v1.8.0
         env:
+          ## The action builds (and names the asset after) this ABI alone. It ignores
+          ## the `--target` in `args`, so without this an armv7 job would build aarch64.
+          MAKEPAD_ANDROID_ABI: ${{ matrix.abi }}
           AWS_LC_SYS_CMAKE_BUILDER: 1
           MAKEPAD_ANDROID_FULL_NDK: true
           ## Fat LTO takes ~7 MB off the apk and ~35 MB off the installed size.
@@ -582,7 +631,7 @@ jobs:
             --config profile.dev.debug-assertions=false
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
-          args: --target aarch64-linux-android
+          args: --target ${{ matrix.target }}
           app_name: Robrix
           releaseId: ${{ needs.create_release.outputs.release_id }}
           ## Same as the action's default naming, minus the `-release` mode suffix.

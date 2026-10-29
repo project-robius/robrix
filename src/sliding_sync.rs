@@ -37,7 +37,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::stringify_send_error, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::{stringify_send_error, upload_percent}, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -2900,7 +2900,7 @@ async fn matrix_worker_task(
                                 if related_to == txn_id =>
                             {
                                 let percent = (progress.total > 0)
-                                    .then(|| progress.current * 100 / progress.total);
+                                    .then(|| upload_percent(progress.current, progress.total));
                                 if last_percent == percent { continue }
                                 last_percent = percent;
                                 let _ = sender_clone.send(TimelineUpdate::FileUploadProgress {
@@ -6520,9 +6520,7 @@ async fn timeline_subscriber_handler(
                             && new_event.transaction_id() == Some(old_txn_id)
                             && let Some(EventSendState::NotSentYet { progress: Some(p) }) = new_event.send_state()
                         {
-                            let percent = (p.progress.current * 100)
-                                .checked_div(p.progress.total)
-                                .unwrap_or(0);
+                            let percent = upload_percent(p.progress.current, p.progress.total) as usize;
                             latest_progress_updates = Some((index, percent));
                             num_progress_updates += 1;
                         }
