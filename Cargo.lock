@@ -5495,6 +5495,7 @@ dependencies = [
  "clap",
  "crossbeam-channel",
  "crossbeam-queue",
+ "emojis",
  "eyeball",
  "eyeball-im",
  "futures",

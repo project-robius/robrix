@@ -35,6 +35,7 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
+emojis = "0.9.0" # same as matrix-sdk-ui
 eyeball = { version = "0.8.8", features = ["tracing"] } # same as matrix-sdk-ui
 eyeball-im = { version = "0.9.1", features = [ "tracing" ] } # same as matrix-sdk-ui
 futures = "0.3"
