@@ -367,12 +367,11 @@ script_mod! {
         }
 
         user_help_info := MessageHtml {
-            padding: 7
+            padding: Inset{left: 18, right: 7, top: 7, bottom: 7}
             width: Fill, height: Fit
             font_size: 10.
             font_color: (MESSAGE_TEXT_COLOR)
-            body: "<p>Search by name or user ID (<code>@alice:matrix.org</code>).</p>
-            "
+            body: "<p>Search by name or user ID (<code>@alice:matrix.org</code>).</p>"
         }
 
         find_user_view := SearchInputRow {
