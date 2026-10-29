@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 558 | MIT License | `MIT` |
+| 552 | MIT License | `MIT` |
 | 23 | Apache License 2.0 | `Apache-2.0` |
 | 21 | Unicode License v3 | `Unicode-3.0` |
 | 11 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -23,7 +23,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | 1 | Boost Software License 1.0 | `BSL-1.0` |
 | 1 | Creative Commons Zero v1.0 Universal | `CC0-1.0` |
 | 1 | Community Data License Agreement Permissive 2.0 | `CDLA-Permissive-2.0` |
-| 1 | OpenSSL License | `OpenSSL` |
 
 ## All dependencies
 
@@ -67,8 +66,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `async_cell` | 0.2.3 | MIT |
 | `atomic-waker` | 1.1.2 | Apache-2.0 OR MIT |
 | `autocfg` | 1.5.0 | Apache-2.0 OR MIT |
-| `aws-lc-rs` | 1.14.1 | ISC AND (Apache-2.0 OR ISC) |
-| `aws-lc-sys` | 0.32.0 | ISC AND (Apache-2.0 OR ISC) AND OpenSSL |
+| `aws-lc-rs` | 1.18.2 | ISC AND (Apache-2.0 OR ISC) |
+| `aws-lc-sys` | 0.46.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
 | `axum` | 0.8.9 | MIT |
 | `axum-core` | 0.5.6 | MIT |
 | `backon` | 1.6.0 | Apache-2.0 |
@@ -76,7 +75,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `base64` | 0.22.1 | MIT OR Apache-2.0 |
 | `base64` | 0.23.1 | MIT OR Apache-2.0 |
 | `base64ct` | 1.8.3 | Apache-2.0 OR MIT |
-| `bindgen` | 0.72.1 | BSD-3-Clause |
 | `bit-set` | 0.8.0 | Apache-2.0 OR MIT |
 | `bit-vec` | 0.8.0 | Apache-2.0 OR MIT |
 | `bitflags` | 2.10.0 | MIT OR Apache-2.0 |
@@ -97,9 +95,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `bytes` | 1.12.1 | MIT |
 | `bytesize` | 2.7.0 | Apache-2.0 |
 | `cbc` | 0.2.1 | MIT OR Apache-2.0 |
-| `cc` | 1.2.38 | MIT OR Apache-2.0 |
+| `cc` | 1.10.0 | MIT OR Apache-2.0 |
 | `cesu8` | 1.1.0 | Apache-2.0 OR MIT |
-| `cexpr` | 0.6.0 | Apache-2.0 OR MIT |
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 |
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 |
 | `cfg_aliases` | 0.2.1 | MIT |
@@ -107,7 +104,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `chacha20poly1305` | 0.11.0 | Apache-2.0 OR MIT |
 | `chrono` | 0.4.45 | Apache-2.0 OR MIT |
 | `cipher` | 0.5.2 | MIT OR Apache-2.0 |
-| `clang-sys` | 1.8.1 | Apache-2.0 |
 | `clap` | 4.5.48 | MIT OR Apache-2.0 |
 | `clap_builder` | 4.5.48 | MIT OR Apache-2.0 |
 | `clap_derive` | 4.5.47 | MIT OR Apache-2.0 |
@@ -172,7 +168,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `fallible-streaming-iterator` | 0.1.9 | MIT OR Apache-2.0 |
 | `fastrand` | 2.3.0 | Apache-2.0 OR MIT |
 | `fiat-crypto` | 0.3.0 | MIT OR Apache-2.0 OR BSD-1-Clause |
-| `find-msvc-tools` | 0.1.2 | MIT OR Apache-2.0 |
+| `find-msvc-tools` | 0.1.15 | MIT OR Apache-2.0 |
 | `flate2` | 1.1.2 | MIT OR Apache-2.0 |
 | `fnv` | 1.0.7 | Apache-2.0  OR  MIT |
 | `foldhash` | 0.2.0 | Zlib |
@@ -196,7 +192,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `getrandom` | 0.2.16 | MIT OR Apache-2.0 |
 | `getrandom` | 0.3.3 | MIT OR Apache-2.0 |
 | `getrandom` | 0.4.3 | MIT OR Apache-2.0 |
-| `glob` | 0.3.3 | MIT OR Apache-2.0 |
 | `gloo-timers` | 0.3.0 | MIT OR Apache-2.0 |
 | `gloo-timers` | 0.4.0 | MIT OR Apache-2.0 |
 | `growable-bloom-filter` | 2.1.1 | MIT |
@@ -243,7 +238,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `ipnet` | 2.11.0 | MIT OR Apache-2.0 |
 | `iri-string` | 0.7.8 | MIT OR Apache-2.0 |
 | `is_terminal_polyfill` | 1.70.1 | MIT OR Apache-2.0 |
-| `itertools` | 0.13.0 | MIT OR Apache-2.0 |
 | `itertools` | 0.14.0 | MIT OR Apache-2.0 |
 | `itertools` | 0.15.0 | MIT OR Apache-2.0 |
 | `itoa` | 1.0.15 | MIT OR Apache-2.0 |
@@ -334,7 +328,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `mime` | 0.3.17 | MIT OR Apache-2.0 |
 | `mime2ext` | 0.1.54 | MIT |
 | `mime_guess` | 2.0.5 | MIT |
-| `minimal-lexical` | 0.2.1 | MIT OR Apache-2.0 |
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | `mio` | 1.2.3 | MIT |
 | `naga` | 27.0.3 | MIT OR Apache-2.0 |
@@ -344,7 +337,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `napi-sys-ohos` | 0.0.1 | MIT |
 | `ndk-context` | 0.1.1 | MIT OR Apache-2.0 |
 | `new_debug_unreachable` | 1.0.6 | MIT |
-| `nom` | 7.1.3 | MIT |
 | `nu-ansi-term` | 0.50.1 | MIT |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
@@ -392,7 +384,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 |
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 |
 | `precomputed-hash` | 0.1.1 | MIT |
-| `prettyplease` | 0.2.37 | MIT OR Apache-2.0 |
 | `proc-macro-crate` | 3.5.0 | MIT OR Apache-2.0 |
 | `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 |
 | `prost` | 0.14.4 | Apache-2.0 |
@@ -443,7 +434,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `ruma-macros` | 0.20.0 | MIT |
 | `rusqlite` | 0.40.2 | MIT |
 | `rustc-hash` | 1.1.0 | Apache-2.0 OR MIT |
-| `rustc-hash` | 2.1.1 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `rustls` | 0.23.37 | Apache-2.0 OR MIT OR ISC |
@@ -480,7 +470,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `sha2` | 0.10.9 | MIT OR Apache-2.0 |
 | `sha2` | 0.11.0 | MIT OR Apache-2.0 |
 | `sharded-slab` | 0.1.7 | MIT |
-| `shlex` | 1.3.0 | MIT OR Apache-2.0 |
+| `shlex` | 2.0.1 | MIT OR Apache-2.0 |
 | `signal-hook-registry` | 1.4.6 | Apache-2.0 OR MIT |
 | `signature` | 3.0.0 | Apache-2.0 OR MIT |
 | `simd-adler32` | 0.3.9 | MIT |
