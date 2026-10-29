@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, Mil
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::invalidate_entire_room_timeline_states, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesListUpdate, enqueue_spaces_list_update}
+        invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesListUpdate, enqueue_spaces_list_update}
     },
     logout::logout_confirm_modal::LogoutAction,
     room::{
@@ -1688,7 +1688,7 @@ impl Widget for RoomsList {
         );
         for action in rooms_list_actions {
             // Handle a regular room (joined or invited) being clicked.
-            if let RoomsListEntryAction::PrimaryClicked(room_id) = action.as_widget_action().cast() {
+            if let RoomsListEntryAction::PrimaryClicked { room_id, is_touch } = action.as_widget_action().cast() {
                 let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&room_id) {
                     SelectedRoom::JoinedRoom {
                         room_name_id: jr.room_name_id.clone(),
@@ -1703,6 +1703,11 @@ impl Widget for RoomsList {
                 };
 
                 self.set_current_active_room(cx, Some(new_selected_room.clone()));
+                // Clicking on a joined room focuses its input bar so the user can start typing right away,
+                // but tapping on it doesn't, since that would pop up the soft keyboard.
+                if !is_touch && matches!(new_selected_room, SelectedRoom::JoinedRoom { .. }) {
+                    input_bar_focus::request(cx, TimelineKind::MainRoom { room_id });
+                }
                 cx.widget_action(
                     self.widget_uid(), 
                     RoomsListAction::Selected(new_selected_room),

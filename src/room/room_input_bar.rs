@@ -284,9 +284,20 @@ impl Widget for RoomInputBar {
 
     /// Gives key focus to the inner message text input.
     fn set_key_focus(&self, cx: &mut Cx) {
+        // The editing pane slides the input bar out of view without hiding it.
+        if !self.view.view(cx, ids!(input_bar)).visible()
+            || self.editing_pane(cx, ids!(editing_pane)).is_currently_shown(cx)
+        {
+            return;
+        }
         self.child_by_path(ids!(input_bar.mentionable_text_input))
             .as_mentionable_text_input()
             .set_key_focus(cx);
+    }
+
+    /// Returns whether the inner message text input has key focus.
+    fn key_focus(&self, cx: &Cx) -> bool {
+        self.child_by_path(ids!(input_bar.mentionable_text_input.text_input)).key_focus(cx)
     }
 }
 
@@ -771,6 +782,9 @@ impl RoomInputBar {
             self.was_replying_preview_visible = false;
             self.clear_replying_to(cx);
             self.view.location_preview(cx, ids!(location_preview)).clear();
+            if self.key_focus(cx) {
+                cx.set_key_focus(Area::Empty);
+            }
         }
 
         let can_notify = user_power_levels.can_notify_room();
