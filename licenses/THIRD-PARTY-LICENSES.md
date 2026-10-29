@@ -13,7 +13,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | Crates | License | SPDX |
 |-------:|---------|------|
 | 558 | MIT License | `MIT` |
-| 24 | Apache License 2.0 | `Apache-2.0` |
+| 23 | Apache License 2.0 | `Apache-2.0` |
 | 21 | Unicode License v3 | `Unicode-3.0` |
 | 11 | Mozilla Public License 2.0 | `MPL-2.0` |
 | 6 | BSD 3-Clause "New" or "Revised" License | `BSD-3-Clause` |
@@ -545,7 +545,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `unicode-ccc` | 0.3.0 | MIT OR Apache-2.0 |
 | `unicode-ident` | 1.0.19 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `unicode-ident` | 1.0.22 | (MIT OR Apache-2.0) AND Unicode-3.0 |
-| `unicode-linebreak` | 0.1.5 | Apache-2.0 |
 | `unicode-normalization` | 0.1.25 | MIT OR Apache-2.0 |
 | `unicode-properties` | 0.1.4 | MIT OR Apache-2.0 |
 | `unicode-script` | 0.5.8 | MIT OR Apache-2.0 |
