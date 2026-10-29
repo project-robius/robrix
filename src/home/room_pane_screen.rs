@@ -12,6 +12,7 @@ use crate::{
         room_members_list::{RoomMembersChanged, RoomMembersFetchAction, RoomMembersListAction, RoomMembersListWidgetRefExt, show_member_profile},
         pane_dock::{SavedPaneContent, populate_content, restore_content, save_content, set_pane_header},
         pinned_messages_list::PinnedMessagesListWidgetRefExt,
+        room_info::{RoomInfoViewAction, RoomInfoViewWidgetRefExt},
         room_pane::{self, RoomPaneKind},
         threads_list::ThreadsListWidgetRefExt,
     },
@@ -60,6 +61,7 @@ script_mod! {
                 room_members := mod.widgets.RoomMembersList { visible: false }
                 pinned_messages := mod.widgets.PinnedMessagesList { visible: false }
                 threads := mod.widgets.ThreadsList { visible: false }
+                room_info := mod.widgets.RoomInfoView { visible: false }
             }
         }
 
@@ -74,6 +76,11 @@ pub enum RoomPaneScreenAction {
     /// The user asked to dock this pane back into its room.
     /// The popped-out pane's tab or view should be closed, and the room shown.
     ReturnToRoom {
+        room_name_id: RoomNameId,
+        kind: RoomPaneKind,
+    },
+    /// The user asked to show the given kind of pane in place of this pane.
+    ShowPaneInPlace {
         room_name_id: RoomNameId,
         kind: RoomPaneKind,
     },
@@ -161,6 +168,13 @@ impl Widget for RoomPaneScreen {
                 self.redraw(cx);
                 continue;
             }
+            if let RoomInfoViewAction::ShowPane(kind) = action.as_widget_action().cast()
+                && let Some((room_name_id, displayed_kind)) = self.displayed.clone()
+            {
+                room_pane::open_in_place_of(room_name_id.room_id(), kind.clone(), displayed_kind);
+                cx.widget_action(self.widget_uid(), RoomPaneScreenAction::ShowPaneInPlace { room_name_id, kind });
+                continue;
+            }
             unhandled.push(action);
         }
         let return_clicked = self.view.button(cx, ids!(return_button)).clicked(&unhandled);
@@ -186,17 +200,20 @@ impl RoomPaneScreen {
         let members = self.view.child_by_path(ids!(content.room_members)).as_room_members_list();
         let pinned_messages = self.view.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list();
         let threads = self.view.child_by_path(ids!(content.threads)).as_threads_list();
+        let room_info = self.view.child_by_path(ids!(content.room_info)).as_room_info_view();
         if !is_same {
             self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
             members.reset(cx);
             pinned_messages.reset(cx);
             threads.reset(cx);
+            room_info.reset(cx);
         }
         set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), &kind);
         self.view.label(cx, ids!(pane_room)).set_text(cx, &room_name_id.to_string());
         self.view.child_by_path(ids!(content.room_members)).set_visible(cx, kind == RoomPaneKind::Members);
         self.view.child_by_path(ids!(content.pinned_messages)).set_visible(cx, kind == RoomPaneKind::PinnedMessages);
         self.view.child_by_path(ids!(content.threads)).set_visible(cx, kind == RoomPaneKind::Threads);
+        self.view.child_by_path(ids!(content.room_info)).set_visible(cx, kind == RoomPaneKind::RoomInfo);
         self.displayed = Some((room_name_id.clone(), kind.clone()));
         // If we just popped out or hid a room pane, restore its previous state/content.
         let frame = self.view.child_by_path(ids!(pane_screen_content));
@@ -241,6 +258,7 @@ impl RoomPaneScreen {
         self.view.child_by_path(ids!(content.room_members)).as_room_members_list().reset(cx);
         self.view.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().reset(cx);
         self.view.child_by_path(ids!(content.threads)).as_threads_list().reset(cx);
+        self.view.child_by_path(ids!(content.room_info)).as_room_info_view().reset(cx);
         self.displayed = None;
     }
 }

@@ -761,6 +761,11 @@ impl Widget for HomeScreen {
                 {
                     self.return_to_room_from_pane(cx, app_state, room_name_id, kind);
                 }
+                if let RoomPaneScreenAction::ShowPaneInPlace { room_name_id, kind } = action.as_widget_action().cast()
+                    && !effective_is_desktop(cx)
+                {
+                    self.navigate_to_screen(cx, app_state, SelectedRoom::RoomPane { room_name_id, kind });
+                }
 
                 // A pinned message was clicked in a popped-out pane, or in a pane docked in another timeline,
                 // so show the timeline that contains it, and then jump to it there.
@@ -1314,7 +1319,12 @@ impl HomeScreen {
             return true;
         }
         let old_screens = Self::screens_with_resources(app_state);
-        let is_pushed = self.push_selected_screen_view(cx, app_state, screen, Animate::Yes);
+        let animate = if current_screen.as_ref().is_some_and(|current| room_pane::share_spot(current, &screen)) {
+            Animate::No
+        } else {
+            Animate::Yes
+        };
+        let is_pushed = self.push_selected_screen_view(cx, app_state, screen, animate);
         if is_pushed {
             self.tab_to_restore_on_mobile = None;
             // If we just re-showed the current screen (it was hidden behind AddRoom or Settings),

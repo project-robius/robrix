@@ -318,12 +318,28 @@ impl MainDesktopUI {
         new_tab_widget
     }
 
+    /// Like [`Self::focus_or_create_tab()`], but if the given screen and the current screen
+    /// are popped-out panes that share a spot, the given screen's tab takes the current tab's spot.
+    fn focus_or_create_tab_in_place(&mut self, cx: &mut Cx, screen: SelectedRoom) {
+        let Some(current_screen) = self.most_recently_selected_room.clone()
+            .filter(|current_screen| room_pane::share_spot(current_screen, &screen))
+        else {
+            self.focus_or_create_tab(cx, screen);
+            return;
+        };
+        let saved = self.view.dock(cx, ids!(dock)).item(current_screen.tab_id()).as_room_pane_screen().save_state();
+        // A new tab goes right after the current tab, which we then close.
+        self.focus_or_create_tab(cx, screen.clone());
+        self.close_tab(cx, current_screen.tab_id());
+        room_pane::keep_replaced_state(&current_screen, &screen, saved);
+    }
+
     /// Shows the given screen, such that going back from it will return to the current screen.
     fn navigate_to_screen(&mut self, cx: &mut Cx, nav_history: &mut NavHistory, screen: SelectedRoom) {
         if self.most_recently_selected_room.as_ref() != Some(&screen) {
             nav_history.record_navigation_from(self.most_recently_selected_room.clone());
         }
-        self.focus_or_create_tab(cx, screen);
+        self.focus_or_create_tab_in_place(cx, screen);
     }
 
     /// Goes back N `steps` in the nav history from the current screen to its `previous_screen`.
@@ -332,7 +348,7 @@ impl MainDesktopUI {
         nav_history.record_going_back_from(current_screen.clone(), steps, can_show(cx));
         // We show the previous place first so that if its tab was closed,
         // its new tab takes the current tab's spot.
-        self.focus_or_create_tab(cx, previous_screen);
+        self.focus_or_create_tab_in_place(cx, previous_screen);
         // Going back from a thread closes its tab; going forward to it will reopen it again.
         if let Some(thread @ SelectedRoom::Thread { .. }) = current_screen {
             self.close_tab(cx, thread.tab_id());
@@ -742,7 +758,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 let app_state = scope.data.get_mut::<AppState>().unwrap();
                 if let Some(Some(next_screen)) = app_state.nav_history.next_place(self.most_recently_selected_room.as_ref(), *steps, can_show(cx)) {
                     app_state.nav_history.record_going_forward_from(self.most_recently_selected_room.clone(), *steps, can_show(cx));
-                    self.focus_or_create_tab(cx, next_screen);
+                    self.focus_or_create_tab_in_place(cx, next_screen);
                     should_save_dock_action = true;
                 }
                 continue;
@@ -805,6 +821,13 @@ impl WidgetMatchEvent for MainDesktopUI {
                 }
                 DockAction::TabCloseWasPressed(tab_id) => {
                     let current_screen = self.most_recently_selected_room.clone();
+                    // We show the replaced pane first, so its new tab takes the current tab's spot.
+                    if let Some(replaced_pane) = current_screen.as_ref()
+                        .filter(|current_screen| current_screen.tab_id() == tab_id)
+                        .and_then(room_pane::replaced_pane_to_restore)
+                    {
+                        self.focus_or_create_tab(cx, replaced_pane);
+                    }
                     // Closing the current tab C shows another tab A, so going back from tab A should reopen tab C.
                     if self.close_tab(cx, tab_id).is_some_and(|closed_screen| current_screen.as_ref() == Some(&closed_screen)) {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
@@ -938,6 +961,14 @@ impl WidgetMatchEvent for MainDesktopUI {
                     // The pane is back in its room's screen, so going back or forward to the pane goes there instead.
                     app_state.nav_history.replace(&pane, &screen, Some(&screen));
                 }
+                self.redraw(cx);
+                should_save_dock_action = true;
+                continue;
+            }
+
+            if let RoomPaneScreenAction::ShowPaneInPlace { room_name_id, kind } = widget_action.cast() {
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                self.navigate_to_screen(cx, &mut app_state.nav_history, SelectedRoom::RoomPane { room_name_id, kind });
                 self.redraw(cx);
                 should_save_dock_action = true;
                 continue;

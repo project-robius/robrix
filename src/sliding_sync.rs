@@ -16,7 +16,7 @@ use matrix_sdk::{
                 encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, tombstone::RoomTombstoneEventContent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw
-    }, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
+    }, notification_settings::RoomNotificationMode, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk::Error;
 #[cfg(not(target_os = "ios"))]
@@ -41,7 +41,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -678,6 +678,13 @@ pub enum MatrixRequest {
     SetIsLowPriority {
         room_id: OwnedRoomId,
         is_low_priority: bool,
+    },
+    /// Request to set the notification mode of the given room,
+    /// which is then posted to the widgets subscribed to [`RoomDataKind::RoomInfo`].
+    SetRoomNotificationMode {
+        room_id: OwnedRoomId,
+        /// The new mode, or `None` to use the default mode.
+        mode: Option<RoomNotificationMode>,
     },
     /// Request to gather diagnostic info about the given room's sync/cache state.
     GetRoomDiagnostics {
@@ -1836,6 +1843,27 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::SetRoomNotificationMode { room_id, mode } => {
+                // A room info pane's subscriber task changes the mode, as it keeps its notification settings up to date.
+                if let Some(subscriber) = ALL_JOINED_ROOMS.lock().unwrap()
+                    .get(&room_id)
+                    .and_then(|room_info| room_info.room_info_subscriber.as_ref())
+                    && subscriber.requests.send(mode).is_ok()
+                {
+                    continue;
+                }
+                let Some(room) = get_client().and_then(|client| client.get_room(&room_id)) else {
+                    error!("BUG: skipping set notification mode request for unknown room {room_id}");
+                    enqueue_popup_notification(
+                        "Failed to change the room's notifications: Robrix couldn't locate it.",
+                        PopupKind::Error,
+                        None,
+                    );
+                    continue;
+                };
+                Handle::current().spawn(set_room_notification_mode(room, mode));
+            }
+
             MatrixRequest::SetAvatar { avatar_url } => {
                 let Some(client) = get_client() else { continue };
                 let _set_avatar_task = Handle::current().spawn(async move {
@@ -2219,10 +2247,11 @@ async fn matrix_worker_task(
                                     matches!(details.main_timeline.timeline_subscriber, TimelineSubscriber::Running(_)),
                                     details.main_timeline.timeline_singleton_endpoints.is_none(),
                                 );
-                                let _ = writeln!(text, "typing notices subscribed: {}, pinned messages subscribers: {}, threads list subscribers: {}",
+                                let _ = writeln!(text, "typing notices subscribed: {}, pinned messages subscribers: {}, threads list subscribers: {}, room info subscribers: {}",
                                     details.typing_notice_subscriber.is_some(),
                                     details.pinned_messages_subscriber.as_ref().map_or(0, |p| p.subscribers.len()),
                                     details.threads_list_subscriber.as_ref().map_or(0, |t| t.subscribers.len()),
+                                    details.room_info_subscriber.as_ref().map_or(0, |r| r.subscribers.len()),
                                 );
                                 let _ = writeln!(text, "thread timelines: {:?}, pending: {:?}",
                                     details.thread_timelines.keys().collect::<Vec<_>>(),
@@ -2497,6 +2526,20 @@ async fn matrix_worker_task(
                             },
                         );
                     }
+                    RoomDataKind::RoomInfo => {
+                        add_or_remove_room_data_subscriber(
+                            &mut room_info.room_info_subscriber,
+                            subscriber,
+                            subscribe,
+                            |resend_notifier| {
+                                let (new_modes_sender, new_modes) = tokio::sync::mpsc::unbounded_channel();
+                                let task = Handle::current().spawn(
+                                    room_info_subscriber_handler(room, resend_notifier, new_modes)
+                                );
+                                (new_modes_sender, task)
+                            },
+                        );
+                    }
                 }
             }
 
@@ -2505,7 +2548,7 @@ async fn matrix_worker_task(
                     .get(&room_id)
                     .and_then(|room_info| room_info.threads_list_subscriber.as_ref())
                 {
-                    threads.load_more.notify_one();
+                    threads.requests.notify_one();
                 }
             }
 
@@ -3457,6 +3500,8 @@ struct JoinedRoomDetails {
     pinned_messages_subscriber: Option<RoomDataSubscriber>,
     /// The task that watches this room's threads while any list shows them (or saved them).
     threads_list_subscriber: Option<RoomDataSubscriber<Arc<Notify>>>,
+    /// The task that watches this room's info while any room info pane shows it (or saved it).
+    room_info_subscriber: Option<RoomDataSubscriber<UnboundedSender<Option<RoomNotificationMode>>>>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -3466,6 +3511,7 @@ impl Drop for JoinedRoomDetails {
         drop(self.typing_notice_subscriber.take());
         drop(self.pinned_messages_subscriber.take());
         drop(self.threads_list_subscriber.take());
+        drop(self.room_info_subscriber.take());
     }
 }
 impl JoinedRoomDetails {
@@ -4921,6 +4967,7 @@ async fn add_new_room(
             typing_notice_subscriber: None,
             pinned_messages_subscriber: None,
             threads_list_subscriber: None,
+            room_info_subscriber: None,
         },
     );
     // A visible RoomScreen might still have this room's previous channel endpoints,
@@ -5998,16 +6045,19 @@ pub enum RoomDataKind {
     /// Posts a [`ThreadsListAction`](crate::room::threads_list::ThreadsListAction)
     /// once the first page of threads loads, and whenever the threads change.
     Threads,
+    /// Posts a [`RoomInfoAction`](crate::room::room_info::RoomInfoAction) for the room's info
+    /// and another one for its notification modes, right away and whenever either one changes.
+    RoomInfo,
 }
 
-/// A task that watches some of a room's data while any lists show it (or saved it), e.g., its pinned messages.
+/// A task that watches some of a room's data while any widgets show it (or saved it), e.g., its pinned messages.
 struct RoomDataSubscriber<L = ()> {
-    /// The subscriptions to this data, held by the lists showing it or by their saved states.
+    /// The subscriptions to this data, held by the widgets showing it or by their saved states.
     subscribers: HashSet<WidgetUid>,
     /// Asks the task to post its data again, e.g., for a new subscriber.
     resend_notifier: Arc<Notify>,
-    /// Asks the task to load more of its data, if it's paginated.
-    load_more: L,
+    /// Sends the task the requests that only its kind of data has, e.g., to load more threads.
+    requests: L,
     /// The async subscriber task.
     task: JoinHandle<()>,
 }
@@ -6050,8 +6100,8 @@ fn add_or_remove_room_data_subscriber<L>(
                 .unwrap_or_default();
             subscribers.insert(subscriber);
             let resend_notifier = Arc::new(Notify::new());
-            let (load_more, task) = start(resend_notifier.clone());
-            *room_data_subscriber = Some(RoomDataSubscriber { subscribers, resend_notifier, load_more, task });
+            let (requests, task) = start(resend_notifier.clone());
+            *room_data_subscriber = Some(RoomDataSubscriber { subscribers, resend_notifier, requests, task });
         }
     }
 }

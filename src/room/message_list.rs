@@ -250,7 +250,7 @@ pub struct SavedMessageList {
     pub(super) subscription: Option<RoomDataSubscription>,
 }
 
-/// A list's subscription to its room's messages, which auto-unsubscribes when dropped.
+/// A widget's subscription to some of its room's data, which auto-unsubscribes when dropped.
 pub(super) struct RoomDataSubscription {
     room_id: OwnedRoomId,
     kind: RoomDataKind,
@@ -265,9 +265,17 @@ impl RoomDataSubscription {
         subscription
     }
 
-    /// Subscribes to or unsubscribes from the room's messages.
+    /// Subscribes to the given room's data, or asks the worker to post it again if already subscribed.
+    pub(super) fn subscribe(subscription: &mut Option<Self>, room_id: &OwnedRoomId, kind: RoomDataKind) {
+        match subscription {
+            Some(subscription) if subscription.room_id == *room_id => subscription.set_subscribed(true),
+            _ => *subscription = Some(Self::new(room_id.clone(), kind)),
+        }
+    }
+
+    /// Subscribes to or unsubscribes from the room's data.
     ///
-    /// Subscribing again is harmless, and makes the worker post the messages again.
+    /// Subscribing again is harmless, and makes the worker post the data again.
     fn set_subscribed(&self, subscribe: bool) {
         submit_async_request(MatrixRequest::SubscribeToRoomData {
             room_id: self.room_id.clone(),
@@ -338,13 +346,7 @@ impl MessageListState {
     /// Subscribes to our room's messages, or asks the worker to post them again if already subscribed.
     pub fn subscribe(&mut self) {
         let Some(room_name_id) = self.room_name_id.as_ref() else { return };
-        if let Some(subscription) = self.subscription.as_ref()
-            && subscription.room_id == *room_name_id.room_id()
-        {
-            subscription.set_subscribed(true);
-        } else {
-            self.subscription = Some(RoomDataSubscription::new(room_name_id.room_id().clone(), self.kind));
-        }
+        RoomDataSubscription::subscribe(&mut self.subscription, room_name_id.room_id(), self.kind);
     }
 
     /// Shows the messages of the given room, which must be reset first if it's a different room.

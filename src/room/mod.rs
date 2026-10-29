@@ -13,6 +13,7 @@ pub mod pane_dock;
 pub mod pinned_messages_list;
 pub mod reply_preview;
 pub mod room_action_bar;
+pub mod room_info;
 pub mod room_members_list;
 pub mod room_pane;
 pub mod room_tab_hover_card;
@@ -33,6 +34,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     message_list::script_mod(vm);
     pinned_messages_list::script_mod(vm);
     threads_list::script_mod(vm);
+    room_info::script_mod(vm);
     pane_dock::script_mod(vm);
 }
 

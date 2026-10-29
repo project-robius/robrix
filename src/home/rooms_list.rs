@@ -334,6 +334,14 @@ impl ActionDefaultRef for RoomsListAction {
     }
 }
 
+/// Posted when the rooms list has a new avatar for the given joined room.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub struct RoomAvatarUpdated {
+    pub room_id: OwnedRoomId,
+}
+
 
 /// A preview of a room's latest event, as shown in its entry in the rooms list.
 #[derive(Debug)]
@@ -875,6 +883,7 @@ impl RoomsList {
                 RoomsListUpdate::UpdateRoomAvatar { room_id, room_avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.room_avatar = room_avatar;
+                        cx.action(RoomAvatarUpdated { room_id });
                     } else if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
                         room.room_avatar = room_avatar;
                         did_invited_rooms_change = true;

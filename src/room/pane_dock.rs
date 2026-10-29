@@ -3,6 +3,7 @@
 //! Each pane is docked to one of the four edges around the timeline,
 //! can be resized via the grab handles on its inner border and between it and its edge's other panes,
 //! moved to the next edge, popped out into its own tab or view, or closed.
+//! A pane opened from the room info pane takes that pane's spot, and closing it or going back shows the room info pane again.
 //! A dock's panes belong to its current timeline, and are saved and restored along with it.
 
 use std::{cell::OnceCell, sync::Arc};
@@ -11,7 +12,7 @@ use makepad_widgets::{*, makepad_platform::event::DigitId};
 use matrix_sdk::room::RoomMember;
 
 use crate::{
-    app::AppStateAction,
+    app::{AppStateAction, SelectedRoom},
     sliding_sync::{MatrixRequest, TimelineKind, submit_async_request},
     utils::{self, RoomNameId},
     LivePtr, widget_ref_from_live_ptr,
@@ -20,6 +21,7 @@ use super::{
     room_action_bar::RoomActionTooltip,
     pinned_messages_list::{PinnedMessagesListWidgetRefExt, SavedPinnedMessagesList},
     room_members_list::{RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList},
+    room_info::{RoomInfoViewAction, RoomInfoViewWidgetRefExt, SavedRoomInfoView},
     room_pane::{self, PaneLayout, PaneSide, RoomPaneKind, RoomPanesPending},
     threads_list::{SavedThreadsList, ThreadsListWidgetRefExt},
 };
@@ -186,6 +188,7 @@ script_mod! {
 
         // Panes slide in and out from this edge's side of the dock.
         slide: 1.0
+        swap_fraction: 1.0
         // Like a dock splitter, the dividers and grab handles turn purple when hovered or dragged.
         color_divider: (COLOR_PANE_DIVIDER)
         color_divider_hover: (COLOR_ROBRIX_PURPLE)
@@ -233,6 +236,20 @@ script_mod! {
                     apply: { slide: 1.0 }
                 }
             }
+            swap: {
+                default: @on
+                off: AnimatorState{
+                    redraw: true
+                    from: {all: Snap}
+                    apply: { swap_fraction: 0.0 }
+                }
+                on: AnimatorState{
+                    redraw: true
+                    from: {all: Forward {duration: 0.35}}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: { swap_fraction: 1.0 }
+                }
+            }
         }
     }
 
@@ -265,6 +282,9 @@ script_mod! {
         }
         threads_pane: mod.widgets.RoomPaneFrame {
             content +: { threads := mod.widgets.ThreadsList {} }
+        }
+        room_info_pane: mod.widgets.RoomPaneFrame {
+            content +: { room_info := mod.widgets.RoomInfoView {} }
         }
 
         // The edge button's icon for each side that it can move its pane to.
@@ -324,6 +344,9 @@ pub fn populate_content(
         RoomPaneKind::Threads => {
             frame.child_by_path(ids!(content.threads)).as_threads_list().set_room(cx, room_name_id);
         }
+        RoomPaneKind::RoomInfo => {
+            frame.child_by_path(ids!(content.room_info)).as_room_info_view().set_room(cx, room_name_id);
+        }
     }
 }
 
@@ -346,6 +369,36 @@ pub enum SavedPaneContent {
     Members(SavedRoomMembersList),
     PinnedMessages(SavedPinnedMessagesList),
     Threads(SavedThreadsList),
+    RoomInfo(SavedRoomInfoView),
+}
+
+impl SavedPaneContent {
+    pub fn kind(&self) -> RoomPaneKind {
+        match self {
+            SavedPaneContent::Members(_) => RoomPaneKind::Members,
+            SavedPaneContent::PinnedMessages(_) => RoomPaneKind::PinnedMessages,
+            SavedPaneContent::Threads(_) => RoomPaneKind::Threads,
+            SavedPaneContent::RoomInfo(_) => RoomPaneKind::RoomInfo,
+        }
+    }
+
+    fn drop_data(&mut self) {
+        match self {
+            SavedPaneContent::Members(saved) => saved.members = None,
+            SavedPaneContent::PinnedMessages(saved) => {
+                saved.messages = None;
+                saved.list.subscription = None;
+            }
+            SavedPaneContent::Threads(saved) => {
+                saved.threads = None;
+                saved.list.subscription = None;
+            }
+            SavedPaneContent::RoomInfo(saved) => {
+                saved.details = None;
+                saved.subscription = None;
+            }
+        }
+    }
 }
 
 /// Returns the state of the content in the given pane (or popped-out pane screen).
@@ -359,6 +412,9 @@ pub fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent 
         ),
         RoomPaneKind::Threads => SavedPaneContent::Threads(
             frame.child_by_path(ids!(content.threads)).as_threads_list().save_state()
+        ),
+        RoomPaneKind::RoomInfo => SavedPaneContent::RoomInfo(
+            frame.child_by_path(ids!(content.room_info)).as_room_info_view().save_state()
         ),
     }
 }
@@ -387,6 +443,10 @@ pub fn restore_content(
             frame.child_by_path(ids!(content.threads)).as_threads_list()
                 .restore_state(cx, room_name_id, saved);
         }
+        SavedPaneContent::RoomInfo(saved) => {
+            frame.child_by_path(ids!(content.room_info)).as_room_info_view()
+                .restore_state(cx, room_name_id, saved);
+        }
     }
 }
 
@@ -396,21 +456,15 @@ pub struct SavedRoomPane {
     layout: PaneLayout,
     weight: Option<f64>,
     content: SavedPaneContent,
+    opened_from: Option<SavedPaneContent>,
 }
 
 impl SavedRoomPane {
     /// Drops this pane's loaded data and stops its data subscription.
     pub fn drop_data(&mut self) {
-        match &mut self.content {
-            SavedPaneContent::Members(saved) => saved.members = None,
-            SavedPaneContent::PinnedMessages(saved) => {
-                saved.messages = None;
-                saved.list.subscription = None;
-            }
-            SavedPaneContent::Threads(saved) => {
-                saved.threads = None;
-                saved.list.subscription = None;
-            }
+        self.content.drop_data();
+        if let Some(opened_from) = self.opened_from.as_mut() {
+            opened_from.drop_data();
         }
     }
 }
@@ -424,6 +478,7 @@ pub fn set_pane_header(cx: &mut Cx, pane: &WidgetRef, kind: &RoomPaneKind) {
         RoomPaneKind::Members => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_MEMBERS) } }),
         RoomPaneKind::PinnedMessages => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_PIN) } }),
         RoomPaneKind::Threads => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_REPLY_IN_THREAD) } }),
+        RoomPaneKind::RoomInfo => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_INFO) } }),
     }
     let label = pane.label(cx, ids!(pane_title));
     label.set_text(cx, &kind.title());
@@ -465,6 +520,8 @@ struct DockedPane {
     title_width: f64,
     /// Likewise when the title wraps onto two lines, which it can beside two or more rows of buttons.
     title_two_line_width: f64,
+    /// The saved state of the pane that this one replaced, which closing this pane goes back to.
+    opened_from: Option<SavedPaneContent>,
 }
 
 #[derive(Script, Widget)]
@@ -473,6 +530,7 @@ pub struct RoomPaneDock {
     #[live] members_pane: Option<LivePtr>,
     #[live] pinned_messages_pane: Option<LivePtr>,
     #[live] threads_pane: Option<LivePtr>,
+    #[live] room_info_pane: Option<LivePtr>,
     #[live] edge_icon_top: Option<ScriptHandleRef>,
     #[live] edge_icon_bottom: Option<ScriptHandleRef>,
     #[live] edge_icon_left: Option<ScriptHandleRef>,
@@ -483,6 +541,10 @@ pub struct RoomPaneDock {
     /// Our timeline's room members, shared with its RoomScreen and given to any members pane.
     #[rust] room_members: TimelineMembers,
     #[rust] panes: Vec<DockedPane>,
+    /// Held while a pane that was opened from another pane is shown, so going back shows that pane again.
+    #[rust] cancel_scope: Option<CancelScope>,
+    /// Whether our timeline is the focused one, since desktop can show several side by side.
+    #[rust(true)] is_timeline_focused: bool,
     #[rust] sides_assigned: bool,
     /// Whether we're in the middle of drawing (across multiple draw steps).
     #[rust] is_drawing: bool,
@@ -525,6 +587,14 @@ impl Widget for RoomPaneDock {
             for side in ALL_SIDES {
                 self.edge(cx, side).set_side(side);
             }
+        }
+        // We check ownership first because `back_pressed()` consumes the press, so only the owner may call it.
+        if self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+            && (event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back()))
+            && let Some(kind) = self.panes.iter().find(|pane| pane.opened_from.is_some()).map(|pane| pane.kind.clone())
+        {
+            self.close_pane(cx, &kind);
+            return;
         }
         // This is lazy, as the tooltip only looks at the buttons for the few events that can show it.
         let buttons = self.panes.iter().flat_map(|pane| {
@@ -573,6 +643,17 @@ impl Widget for RoomPaneDock {
                 self.set_room_name(cx, new_name);
                 continue;
             }
+            if let Some(AppStateAction::RoomFocused(selected_room)) = action.downcast_ref() {
+                self.is_timeline_focused = self.timeline_kind.as_ref().is_some_and(|timeline_kind|
+                    selected_room.room_id() == timeline_kind.room_id() && match selected_room {
+                        SelectedRoom::JoinedRoom { .. } => timeline_kind.thread_root_event_id().is_none(),
+                        SelectedRoom::Thread { thread_root_event_id, .. } => timeline_kind.thread_root_event_id() == Some(thread_root_event_id),
+                        _ => false,
+                    }
+                );
+                self.update_cancel_scope(cx);
+                continue;
+            }
             if let Some(widget_action) = action.as_widget_action() {
                 match widget_action.cast() {
                     // The user let go of the grab handle on an edge's border, so all panes on that edge keep the new size.
@@ -600,6 +681,24 @@ impl Widget for RoomPaneDock {
             }
         }
 
+        if let Some(room_info) = self.panes.iter().find(|pane| pane.kind == RoomPaneKind::RoomInfo)
+            && let RoomInfoViewAction::ShowPane(kind) = actions
+                .find_widget_action(room_info.frame.child(id!(content)).child(id!(room_info)).widget_uid())
+                .cast()
+        {
+            let content = self.panes.iter().position(|pane| pane.kind == kind).map(|index| {
+                let pane = self.panes.remove(index);
+                if let Some(side) = pane.placed {
+                    self.edge(cx, side).remove_pane(cx, &kind, false);
+                }
+                save_content(&kind, &pane.frame)
+            });
+            if let Some(index) = self.panes.iter().position(|pane| pane.kind == RoomPaneKind::RoomInfo) {
+                let room_info = save_content(&RoomPaneKind::RoomInfo, &self.panes[index].frame);
+                self.replace_pane(cx, index, kind, content, Some(room_info), false);
+            }
+        }
+
         // Press-based: a manual redraw between down and up can lose the finger capture,
         // so these manually-drawn frames never reliably see a click. A press always arrives.
         // A button's tooltip may emit an action before its press, so check all of its actions.
@@ -621,7 +720,7 @@ impl Widget for RoomPaneDock {
         for (kind, button) in pressed {
             self.tooltip.hide(cx);
             match button {
-                PaneButton::Close => self.remove_pane(cx, &kind, true),
+                PaneButton::Close => self.close_pane(cx, &kind),
                 PaneButton::MoveToNextEdge => {
                     // The pane goes last on its new edge with the average weight there, and last in our list too,
                     // so that restoring our panes keeps each edge's order.
@@ -638,7 +737,7 @@ impl Widget for RoomPaneDock {
                     let saved = self.panes.iter()
                         .find(|pane| pane.kind == kind)
                         .map(|pane| save_content(&kind, &pane.frame));
-                    self.remove_pane(cx, &kind, true);
+                    self.close_pane(cx, &kind);
                     if let Some(timeline_kind) = self.timeline_kind.clone()
                         && let Some(saved) = saved
                     {
@@ -747,7 +846,7 @@ impl RoomPaneDock {
         self.timeline_kind = Some(timeline_kind);
         self.room_members = room_members.map(Ok);
         for saved in saved_panes {
-            self.create_pane(cx, saved.kind, saved.layout, saved.weight, Some(saved.content));
+            self.create_pane(cx, saved.kind, saved.layout, saved.weight, Some(saved.content), saved.opened_from);
         }
         self.place_panes(cx, false);
         self.dock_pending(cx);
@@ -758,31 +857,79 @@ impl RoomPaneDock {
         let Some(timeline_kind) = self.timeline_kind.as_ref() else { return };
         for (kind, saved) in room_pane::take_pending(timeline_kind) {
             if !self.has_pane(&kind) {
-                self.create_pane(cx, kind, room_pane::last_layout(), None, saved);
+                self.create_pane(cx, kind, room_pane::last_layout(), None, saved, None);
             }
         }
         self.place_panes(cx, true);
     }
 
     /// Opens the given kind of pane at the last-chosen layout, or closes it if it's open.
+    ///
+    /// If that kind of pane is hidden behind a pane that was opened from it, we go back to it instead.
     fn toggle(&mut self, cx: &mut Cx, kind: RoomPaneKind) {
         if self.has_pane(&kind) {
-            self.remove_pane(cx, &kind, true);
+            self.close_pane(cx, &kind);
+        } else if let Some(pane) = self.panes.iter()
+            .find(|pane| pane.opened_from.as_ref().is_some_and(|opened_from| opened_from.kind() == kind))
+        {
+            let opened_kind = pane.kind.clone();
+            self.close_pane(cx, &opened_kind);
         } else if self.room_name_id.is_some() {
-            self.create_pane(cx, kind, room_pane::last_layout(), None, None);
+            self.create_pane(cx, kind, room_pane::last_layout(), None, None, None);
             self.place_panes(cx, true);
         }
     }
 
+    /// Closes the given pane, going back to the pane it was opened from (if any) in the same spot.
+    fn close_pane(&mut self, cx: &mut Cx, kind: &RoomPaneKind) {
+        let Some(index) = self.panes.iter().position(|pane| &pane.kind == kind) else { return };
+        // The pane it was opened from may have been opened again elsewhere since then.
+        let opened_from = self.panes[index].opened_from.take()
+            .filter(|opened_from| !self.has_pane(&opened_from.kind()));
+        match opened_from {
+            Some(opened_from) => self.replace_pane(cx, index, opened_from.kind(), Some(opened_from), None, true),
+            None => self.remove_pane(cx, kind, true),
+        }
+    }
+
+    fn replace_pane(
+        &mut self,
+        cx: &mut Cx,
+        index: usize,
+        kind: RoomPaneKind,
+        content: Option<SavedPaneContent>,
+        opened_from: Option<SavedPaneContent>,
+        is_going_back: bool,
+    ) {
+        let Some(frame) = self.create_frame(cx, &kind, content) else { return };
+        if let Some(side) = self.panes[index].placed {
+            self.edge(cx, side).replace_pane(cx, &self.panes[index].kind, kind.clone(), frame.clone(), is_going_back);
+        }
+        let (title_width, title_two_line_width) = measure_title_widths(cx, &frame);
+        let pane = &mut self.panes[index];
+        pane.kind = kind;
+        pane.frame = frame;
+        pane.button_cols = 0;
+        pane.title_width = title_width;
+        pane.title_two_line_width = title_two_line_width;
+        pane.opened_from = opened_from;
+        self.apply_side(cx, index);
+        self.update_cancel_scope(cx);
+        self.notify_shown_panes(cx);
+        self.view.redraw(cx);
+    }
+
     /// Returns the state of our panes, to be restored when our timeline is shown again.
     /// This takes their data subscriptions, so only call this right before clearing our panes.
-    fn save_state(&self) -> Vec<SavedRoomPane> {
-        self.panes.iter()
+    fn save_state(&mut self) -> Vec<SavedRoomPane> {
+        self.cancel_scope = None;
+        self.panes.iter_mut()
             .map(|pane| SavedRoomPane {
                 kind: pane.kind.clone(),
                 layout: pane.layout,
                 weight: pane.weight,
                 content: save_content(&pane.kind, &pane.frame),
+                opened_from: pane.opened_from.take(),
             })
             .collect()
     }
@@ -830,7 +977,40 @@ impl RoomPaneDock {
             RoomPaneKind::Members => self.members_pane,
             RoomPaneKind::PinnedMessages => self.pinned_messages_pane,
             RoomPaneKind::Threads => self.threads_pane,
+            RoomPaneKind::RoomInfo => self.room_info_pane,
         }
+    }
+
+    fn create_frame(&self, cx: &mut Cx, kind: &RoomPaneKind, content: Option<SavedPaneContent>) -> Option<WidgetRef> {
+        let room_name_id = self.room_name_id.as_ref()?;
+        let frame = widget_ref_from_live_ptr(cx, self.frame_template(kind));
+        if frame.is_empty() {
+            error!("BUG: missing the room pane template for {kind:?}");
+            return None;
+        }
+        // Link the manually-drawn frame into the widget tree so its children can be found.
+        cx.widget_tree_insert_child_deep(
+            self.widget_uid(),
+            LiveId::from_str(&format!("room_pane_{}", kind.as_str())),
+            frame.clone(),
+        );
+        set_pane_header(cx, &frame, kind);
+        match content {
+            Some(content) => restore_content(cx, &frame, room_name_id, content, &self.room_members),
+            None => populate_content(cx, kind, &frame, room_name_id, &self.room_members),
+        }
+        // Our timeline only keeps its members up to date while a members pane is open,
+        // so refresh them when one is opened (and fetch any that are missing).
+        if *kind == RoomPaneKind::Members
+            && let Some(timeline_kind) = self.timeline_kind.clone()
+        {
+            submit_async_request(MatrixRequest::GetRoomMembers {
+                timeline_kind,
+                memberships: matrix_sdk::RoomMemberships::ACTIVE,
+                local_only: false,
+            });
+        }
+        Some(frame)
     }
 
     /// Creates a new pane, which is placed on an edge by `place_panes()`.
@@ -841,35 +1021,9 @@ impl RoomPaneDock {
         layout: PaneLayout,
         weight: Option<f64>,
         content: Option<SavedPaneContent>,
+        opened_from: Option<SavedPaneContent>,
     ) {
-        let Some(room_name_id) = self.room_name_id.clone() else { return };
-        let frame = widget_ref_from_live_ptr(cx, self.frame_template(&kind));
-        if frame.is_empty() {
-            error!("BUG: missing the room pane template for {kind:?}");
-            return;
-        }
-        // Link the manually-drawn frame into the widget tree so its children can be found.
-        cx.widget_tree_insert_child_deep(
-            self.widget_uid(),
-            LiveId::from_str(&format!("room_pane_{}", kind.as_str())),
-            frame.clone(),
-        );
-        set_pane_header(cx, &frame, &kind);
-        match content {
-            Some(content) => restore_content(cx, &frame, &room_name_id, content, &self.room_members),
-            None => populate_content(cx, &kind, &frame, &room_name_id, &self.room_members),
-        }
-        // Our timeline only keeps its members up to date while a members pane is open,
-        // so refresh them when one is opened (and fetch any that are missing).
-        if kind == RoomPaneKind::Members
-            && let Some(timeline_kind) = self.timeline_kind.clone()
-        {
-            submit_async_request(MatrixRequest::GetRoomMembers {
-                timeline_kind,
-                memberships: matrix_sdk::RoomMemberships::ACTIVE,
-                local_only: false,
-            });
-        }
+        let Some(frame) = self.create_frame(cx, &kind, content) else { return };
         let (title_width, title_two_line_width) = measure_title_widths(cx, &frame);
         self.panes.push(DockedPane {
             kind,
@@ -880,7 +1034,9 @@ impl RoomPaneDock {
             button_cols: 0,
             title_width,
             title_two_line_width,
+            opened_from,
         });
+        self.update_cancel_scope(cx);
         self.notify_shown_panes(cx);
     }
 
@@ -891,9 +1047,18 @@ impl RoomPaneDock {
         );
     }
 
+    fn update_cancel_scope(&mut self, cx: &mut Cx) {
+        if !self.is_timeline_focused || !self.panes.iter().any(|pane| pane.opened_from.is_some()) {
+            self.cancel_scope = None;
+        } else if self.cancel_scope.is_none() {
+            self.cancel_scope = Some(self.begin_cancel_scope_for(cx, CancelScopeKind::Back));
+        }
+    }
+
     fn remove_pane(&mut self, cx: &mut Cx, kind: &RoomPaneKind, animate: bool) {
         let Some(index) = self.panes.iter().position(|pane| &pane.kind == kind) else { return };
         let pane = self.panes.remove(index);
+        self.update_cancel_scope(cx);
         self.notify_shown_panes(cx);
         if let Some(side) = pane.placed {
             // The edge keeps drawing the pane until it has slid out.
@@ -1035,7 +1200,7 @@ impl RoomPaneDockRef {
 
     /// See [`RoomPaneDock::save_state()`].
     pub fn save_state(&self) -> Vec<SavedRoomPane> {
-        self.borrow().map(|inner| inner.save_state()).unwrap_or_default()
+        self.borrow_mut().map(|mut inner| inner.save_state()).unwrap_or_default()
     }
 
     /// See [`RoomPaneDock::clear()`].
@@ -1114,6 +1279,13 @@ struct EdgePane {
     min_length: f64,
 }
 
+/// A pane that took another pane's spot on a [`RoomPaneEdge`], and pushes that pane out of view as it slides in.
+struct PaneSwap {
+    new_kind: RoomPaneKind,
+    old_frame: WidgetRef,
+    is_going_back: bool,
+}
+
 /// Returns the length of each of the given panes along their edge's given length, divided up by their weights,
 /// except that a pane whose weight would make it shorter than its minimum length gets that minimum instead.
 fn pane_lengths(panes: &[EdgePane], length: f64) -> impl Iterator<Item = f64> + '_ {
@@ -1187,6 +1359,8 @@ pub struct RoomPaneEdge {
     #[apply_default] animator: Animator,
     /// How far this edge's panes have slid out of view: 0 when fully shown, 1 when hidden.
     #[live] slide: f32,
+    /// How far the animation of `pane_swap` has run: 0 when it starts, 1 when it's done.
+    #[live] swap_fraction: f32,
     /// How hovered (or dragged) the divider on our inner border is, from 0 to 1.
     #[live] hover: f32,
     /// Likewise for the split after the pane at `hovered_split`.
@@ -1215,6 +1389,10 @@ pub struct RoomPaneEdge {
     #[rust] has_panes_drawn: bool,
     /// Whether this edge's last pane is sliding out, after which it's removed.
     #[rust] is_sliding_out: bool,
+    #[rust] pane_swap: Option<PaneSwap>,
+    /// How far the new pane in `pane_swap` had already slid in when its animation started,
+    /// which is more than 0 when it reverses a swap that was still running.
+    #[rust] initial_swap_progress: f64,
     /// Whether our size changed such that our dock must redraw.
     #[rust] needs_dock_redraw: bool,
     /// Whether the animator must be cut to our current state, e.g., after a reapply.
@@ -1510,6 +1688,12 @@ impl RoomPaneEdge {
         self.max_extent.map_or(self.size, |max| self.size.min(max.max(EDGE_MIN_SIZE)))
     }
 
+    /// How far the new pane in `pane_swap` has slid into view, from 0 to 1.
+    fn get_swap_progress(&self) -> f64 {
+        let fraction = (self.swap_fraction as f64).clamp(0.0, 1.0);
+        self.initial_swap_progress + (1.0 - self.initial_swap_progress) * fraction
+    }
+
     /// Writes this edge's size into its own walk, which the parent's flow reads upon its next layout.
     fn apply_walk(&mut self) {
         let shown = 1.0 - (self.slide as f64).clamp(0.0, 1.0);
@@ -1534,6 +1718,7 @@ impl Widget for RoomPaneEdge {
             } else {
                 self.animator_cut(cx, ids!(panel.hide));
             }
+            self.animator_cut(cx, ids!(swap.on));
         }
         // Our dock redraws itself while we're animating.
         if self.animator_handle_event(cx, event).must_redraw() {
@@ -1543,9 +1728,13 @@ impl Widget for RoomPaneEdge {
         if self.is_sliding_out && !self.animator.is_track_animating(id!(panel)) {
             self.is_sliding_out = false;
             self.panes.clear();
+            self.pane_swap = None;
             // Keep the animator's state in sync, e.g., if a rebake cut the slide short.
             self.animator_cut(cx, ids!(panel.hide));
             self.apply_walk();
+        }
+        if self.pane_swap.is_some() && !self.animator.is_track_animating(id!(swap)) {
+            self.pane_swap = None;
         }
     }
 
@@ -1579,13 +1768,30 @@ impl Widget for RoomPaneEdge {
                 Rect { pos: dvec2(pane_rect.pos.x + start, pane_rect.pos.y), size: dvec2(len, pane_rect.size.y) }
             };
             start += len;
-            let pane_walk = Walk {
-                abs_pos: Some(sub.pos),
+            let draw_frame = |cx: &mut Cx2d, frame: &WidgetRef, pos: Vec2d| frame.draw_walk_all(cx, &mut Scope::empty(), Walk {
+                abs_pos: Some(pos),
                 width: Size::Fixed(sub.size.x),
                 height: Size::Fixed(sub.size.y),
                 ..Walk::default()
+            });
+            let Some(swap) = self.pane_swap.as_ref().filter(|swap| swap.new_kind == pane.kind) else {
+                draw_frame(cx, &pane.frame, sub.pos);
+                continue;
             };
-            pane.frame.draw_walk_all(cx, &mut Scope::empty(), pane_walk);
+            // The new pane slides in from the dock's edge, pushing the old pane towards the timeline,
+            // or the other way around when going back.
+            let outward = match self.side {
+                PaneSide::Left => dvec2(-1.0, 0.0),
+                PaneSide::Right => dvec2(1.0, 0.0),
+                PaneSide::Top => dvec2(0.0, -1.0),
+                PaneSide::Bottom => dvec2(0.0, 1.0),
+            };
+            let push = outward * if swap.is_going_back { -size } else { size };
+            let progress = self.get_swap_progress();
+            cx.push_clip_rect(sub);
+            draw_frame(cx, &swap.old_frame, sub.pos - push * progress);
+            draw_frame(cx, &pane.frame, sub.pos + push * (1.0 - progress));
+            cx.pop_clip_rect();
         }
 
         cx.pop_clip_rect();
@@ -1649,6 +1855,7 @@ impl RoomPaneEdgeRef {
         let was_sliding_out = std::mem::take(&mut inner.is_sliding_out);
         if was_sliding_out {
             inner.panes.clear();
+            inner.pane_swap = None;
         }
         inner.panes.retain(|pane| pane.kind != kind);
         let weight = weight.unwrap_or_else(|| match inner.panes.len() {
@@ -1669,13 +1876,30 @@ impl RoomPaneEdgeRef {
         inner.apply_walk();
     }
 
+    /// Replaces the given old pane with the given new pane in its spot, see [`PaneSwap`].
+    fn replace_pane(&self, cx: &mut Cx, old_kind: &RoomPaneKind, kind: RoomPaneKind, frame: WidgetRef, is_going_back: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.initial_swap_progress = match inner.pane_swap.as_ref() {
+            Some(swap) if &swap.new_kind == old_kind => 1.0 - inner.get_swap_progress(),
+            _ => 0.0,
+        };
+        let Some(pane) = inner.panes.iter_mut().find(|pane| &pane.kind == old_kind) else { return };
+        pane.kind = kind.clone();
+        let old_frame = std::mem::replace(&mut pane.frame, frame);
+        inner.pane_swap = Some(PaneSwap { new_kind: kind, old_frame, is_going_back });
+        inner.animator_cut(cx, ids!(swap.off));
+        inner.animator_play(cx, ids!(swap.on));
+    }
+
     /// Removes all panes right away, including one that's sliding out.
     fn clear(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.panes.clear();
         inner.is_sliding_out = false;
+        inner.pane_swap = None;
         inner.drag = None;
         inner.animator_cut(cx, ids!(panel.hide));
+        inner.animator_cut(cx, ids!(swap.on));
         inner.apply_walk();
     }
 
@@ -1693,6 +1917,7 @@ impl RoomPaneEdgeRef {
             }
         } else {
             inner.panes.retain(|pane| &pane.kind != kind);
+            inner.pane_swap.take_if(|swap| &swap.new_kind == kind);
             if inner.panes.is_empty() {
                 inner.is_sliding_out = false;
                 inner.animator_cut(cx, ids!(panel.hide));
