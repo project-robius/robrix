@@ -5,7 +5,6 @@
 
 > [!TIP]
 > ▶️  [Click here to download & install Robrix](https://github.com/project-robius/robrix/releases/latest) on macOS, iOS, Android, Linux, and Windows.
-> On Android, most devices need the `android-aarch64` APK. Devices with a 32-bit ARM system (`armeabi-v7a`, e.g., those reporting `armv7l` or `armv8l`), which can't install that one, need the `android-armv7` APK.
 
 Robrix is a fast, powerful Matrix chat client written from scratch in Rust.
 
@@ -213,11 +212,10 @@ The following table shows which host systems can currently be used to build Robr
 
 1. Follow all steps in the previous section about desktop builds.
 
-2. Install the `cargo-makepad` build tool, from the same Makepad repository and branch that Robrix depends on (the `makepad-widgets` entry in `Cargo.toml`):
+2. Install the `cargo-makepad` build tool:
    ```sh
-   cargo install --force --git https://github.com/kevinaboos/makepad.git --branch android_armv7_robrix cargo-makepad
+   cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
    ```
-   * Robrix's Android app uses a class that this cargo-makepad builds into the APK. An APK built with a cargo-makepad that doesn't have it, such as one from upstream Makepad's `dev` branch, crashes at launch.
 
 ### Android
 3. Use `cargo-makepad` to install the Android toolchain with the full NDK included:
