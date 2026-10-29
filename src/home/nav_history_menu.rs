@@ -90,7 +90,7 @@ impl NavHistoryDirection {
         self,
         app_state: &'a AppState,
         current: Option<&'a SelectedRoom>,
-        can_show: impl Fn(&SelectedRoom) -> bool + 'a,
+        can_show: impl Fn(Option<&SelectedRoom>) -> bool + 'a,
     ) -> Box<dyn Iterator<Item = Option<SelectedRoom>> + 'a> {
         let nav_history = &app_state.nav_history;
         let is_add_room_shown = matches!(app_state.selected_tab, SelectedTab::AddRoom);

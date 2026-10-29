@@ -44,9 +44,11 @@ script_mod! {
                 hide_tab_bar: true
             }
 
+            // When the Home tab is the only tab, it's shown without a tab bar as the dock's empty state.
             main_tabs := DockTabs{
                 tabs: [@home_tab]
                 selected: 0
+                hide_tab_bar: true
             }
 
             rooms_sidebar_tab := DockTab {
@@ -57,7 +59,7 @@ script_mod! {
             home_tab := DockTab{
                 name: "Home"
                 kind: @welcome_screen
-                template: @PermanentTab
+                template: @CloseableTab
             }
 
             // Below are the templates of widgets that can be created within dock tabs.
@@ -150,10 +152,10 @@ impl Widget for MainDesktopUI {
             && (matches!(event, Event::BackPressed { .. }) || matches!(event, Event::MouseUp(e) if e.button.is_back()))
         {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
-            if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), 1, can_show(cx))
+            if let Some(Some(previous_screen)) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), 1, can_show(cx))
                 && (event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back()))
             {
-                self.go_back_to(cx, &mut app_state.nav_history, 1, previous_place);
+                self.go_back_to(cx, &mut app_state.nav_history, 1, previous_screen);
             }
         }
     }
@@ -182,6 +184,7 @@ impl MainDesktopUI {
 
     /// Selects the tab for the given `room`, or the home tab if `None`.
     ///
+    /// If the home tab isn't open, this opens it right after the current tab.
     /// Updates the room order, current selection, and app state.
     fn select_room(&mut self, cx: &mut Cx, room: Option<SelectedRoom>) {
         let dock = self.view.dock(cx, ids!(dock));
@@ -198,7 +201,16 @@ impl MainDesktopUI {
             cx.action(AppStateAction::RoomFocused(room.clone()));
             self.most_recently_selected_room = Some(room);
         } else {
+            if dock.find_tab_bar_of_tab(id!(home_tab)).is_none()
+                && self.create_tab_after_current_tab(cx, &dock, id!(home_tab), id!(welcome_screen), "Home".to_string(), id!(CloseableTab)).is_none()
+            {
+                error!("BUG: failed to create the Home tab");
+            }
             dock.select_tab(cx, id!(home_tab));
+            // While the Home tab is the only tab, we hide its tab bar to show it as the dock's empty state.
+            if let Some((tab_bar, _)) = dock.find_tab_bar_of_tab(id!(home_tab)) {
+                dock.set_tab_bar_hidden(cx, tab_bar, self.open_rooms.is_empty());
+            }
             cx.action(AppStateAction::FocusNone);
             self.most_recently_selected_room = None;
         }
@@ -228,22 +240,13 @@ impl MainDesktopUI {
         }
 
         // Create a new tab for the room
-        let kind = room.dock_kind();
-
-        // Insert the tab after the currently-selected room's tab, if possible.
-        // Otherwise, insert it after the home tab, which should always exist.
-        let (tab_bar, insert_after) = self.most_recently_selected_room.as_ref()
-            .and_then(|curr_room| dock.find_tab_bar_of_tab(curr_room.tab_id()))
-            .unwrap_or_else(|| dock.find_tab_bar_of_tab(id!(home_tab)).unwrap());
-
-        let new_tab_widget = dock.create_and_select_tab(
+        let new_tab_widget = self.create_tab_after_current_tab(
             cx,
-            tab_bar,
+            &dock,
             room_tab_id,
-            kind,
+            room.dock_kind(),
             room.display_name(),
             RoomTabs::tab_template(&room),
-            Some(insert_after),
         );
 
         // if the tab was created, set the room screen
@@ -280,11 +283,39 @@ impl MainDesktopUI {
                 }
             }
             cx.action(MainDesktopUiAction::SaveDockIntoAppState);
+            let is_first_room = self.open_rooms.is_empty();
             self.open_rooms.insert(room_tab_id, room.clone());
             self.select_room(cx, Some(room));
+            // The first room's tab replaces the Home tab, which was just the dock's empty state.
+            if is_first_room {
+                dock.close_tab_preserving_item(cx, id!(home_tab));
+            }
         } else {
             error!("BUG: failed to create tab for {room:?}");
         }
+    }
+
+    /// Creates and selects a new tab right after the current tab,
+    /// or at the end of the main tab bar if the current tab isn't in the dock.
+    fn create_tab_after_current_tab(
+        &self,
+        cx: &mut Cx,
+        dock: &DockRef,
+        tab_id: LiveId,
+        kind: LiveId,
+        name: String,
+        template: LiveId,
+    ) -> Option<WidgetRef> {
+        let current_tab_id = self.most_recently_selected_room.as_ref()
+            .map_or(id!(home_tab), SelectedRoom::tab_id);
+        let (tab_bar, insert_after) = dock.find_tab_bar_of_tab(current_tab_id)
+            .map_or((id!(main_tabs), None), |(tab_bar, index)| (tab_bar, Some(index)));
+        // A lone Home tab has no tab bar, but the new tab needs one.
+        dock.set_tab_bar_hidden(cx, tab_bar, false);
+        // This reuses the Home tab's body that we kept when we last closed it.
+        let new_tab_widget = dock.create_tab(cx, tab_bar, tab_id, kind, name, template, insert_after);
+        dock.select_tab(cx, tab_id);
+        new_tab_widget
     }
 
     /// Shows the given screen, such that going back from it will return to the current screen.
@@ -295,28 +326,19 @@ impl MainDesktopUI {
         self.focus_or_create_tab(cx, screen);
     }
 
-    /// Goes back N `steps` in the nav history from the current screen
-    /// to its `previous_place` (or the home tab if `previous_place` is `None`).
-    fn go_back_to(&mut self, cx: &mut Cx, nav_history: &mut NavHistory, steps: usize, previous_place: Option<SelectedRoom>) {
+    /// Goes back N `steps` in the nav history from the current screen to its `previous_screen`.
+    fn go_back_to(&mut self, cx: &mut Cx, nav_history: &mut NavHistory, steps: usize, previous_screen: SelectedRoom) {
         let current_screen = self.most_recently_selected_room.clone();
         nav_history.record_going_back_from(current_screen.clone(), steps, can_show(cx));
         // We show the previous place first so that if its tab was closed,
         // its new tab takes the current tab's spot.
-        self.show_place(cx, previous_place);
+        self.focus_or_create_tab(cx, previous_screen);
         // Going back from a thread closes its tab; going forward to it will reopen it again.
         if let Some(thread @ SelectedRoom::Thread { .. }) = current_screen {
             self.close_tab(cx, thread.tab_id());
         }
         self.redraw(cx);
         cx.action(MainDesktopUiAction::SaveDockIntoAppState);
-    }
-
-    /// Shows the given place from the nav history, or the home tab if `None`.
-    fn show_place(&mut self, cx: &mut Cx, place: Option<SelectedRoom>) {
-        match place {
-            Some(screen) => self.focus_or_create_tab(cx, screen),
-            None => self.select_room(cx, None),
-        }
     }
 
     /// Focuses or creates the tab for the given timeline, and then jumps to the given event in it.
@@ -342,8 +364,19 @@ impl MainDesktopUI {
     /// Returns the screen that the closed tab was showing.
     fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) -> Option<SelectedRoom> {
         let dock = self.view.dock(cx, ids!(dock));
+        // Closing the current Home tab selects the most recent room like any other tab,
+        // but the Home tab can't be closed while it's the only tab, since then it's the dock's empty state.
+        if tab_id == id!(home_tab) {
+            let recent_room = self.room_order.last().cloned()?;
+            if self.most_recently_selected_room.is_none() {
+                self.select_room(cx, Some(recent_room));
+            }
+            dock.close_tab_preserving_item(cx, tab_id);
+            self.init_all_visible_tabs(cx);
+            return None;
+        }
 
-        let Some(room_being_closed) = self.open_rooms.get(&tab_id).cloned() else {
+        let Some(room_being_closed) = self.open_rooms.remove(&tab_id) else {
             // This shouldn't happen (the tab should always be in the set of open rooms),
             // but we still need to handle it gracefully.
             dock.close_tab(cx, tab_id);
@@ -361,11 +394,10 @@ impl MainDesktopUI {
             self.most_recently_selected_room.clone()
         };
 
-        dock.close_tab(cx, tab_id);
-        self.open_rooms.remove(&tab_id);
-
         // Makepad's dock chooses an adjacent tab by itself, so we have to override that.
+        // We do so before closing this tab, so if it's the last one, the Home tab takes its spot.
         self.select_room(cx, room_to_select);
+        dock.close_tab(cx, tab_id);
 
         self.init_all_visible_tabs(cx);
         Some(room_being_closed)
@@ -374,15 +406,15 @@ impl MainDesktopUI {
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(cx, ids!(dock));
-        for (tab_id, room) in self.open_rooms.iter() {
-            room.drop_resources(cx);
-            dock.close_tab(cx, *tab_id);
-        }
-
         // Clear tab-related dock UI state.
-        self.open_rooms.clear();
+        let open_rooms = std::mem::take(&mut self.open_rooms);
         self.room_order.clear();
+        // Selecting Home before closing the other tabs lets its tab take their place.
         self.select_room(cx, None);
+        for (tab_id, room) in open_rooms {
+            room.drop_resources(cx);
+            dock.close_tab(cx, tab_id);
+        }
         cx.action(MainDesktopUiAction::SaveDockIntoAppState);
     }
 
@@ -547,11 +579,23 @@ impl MainDesktopUI {
             };
 
         let SavedDockState { dock_items, open_rooms, room_order, selected_room } = to_restore;
+        let has_permanent_home_tab = matches!(
+            dock_items.get(&id!(home_tab)),
+            Some(DockItem::Tab { template, .. }) if *template == id!(PermanentTab)
+        );
 
         self.room_order = room_order;
         self.open_rooms = open_rooms;
 
         dock.load_state(cx, dock_items);
+        // Loading the dock clears its focused tab, so we clear the previous dock's selection too,
+        // since re-adding or re-selecting a room that was also selected there would do nothing below.
+        self.most_recently_selected_room = None;
+        // Older saved docks always have a permanent Home tab, so we close it if there are other tabs.
+        // If it was selected, it's reopened below as a regular tab.
+        if has_permanent_home_tab && !self.open_rooms.is_empty() {
+            dock.close_tab_preserving_item(cx, id!(home_tab));
+        }
         // Lazily populate the dock content to avoid initializing tabs that aren't visible.
         self.init_all_visible_tabs(cx);
 
@@ -562,16 +606,13 @@ impl MainDesktopUI {
             }
         }
 
-        // Now that we've loaded the dock content, we can re-select the selected room.
-        // If this dock has no selection, clear the previous dock's selection so that,
-        // for ex, it doesn't mistakenly save a now-closed invite screen as the selected room.
+        // Now that we've loaded the dock content, we can re-select the selected room,
+        // or the Home tab if this dock has no selection.
         let selected_room = selected_room.clone();
         match selected_room.clone() {
             Some(selected_room) => self.focus_or_create_tab(cx, selected_room),
-            None => self.most_recently_selected_room = None,
+            None => self.select_room(cx, None),
         }
-        // Loading the dock clears its focused tab, so we focus it again.
-        dock.select_tab(cx, self.most_recently_selected_room.as_ref().map_or(id!(home_tab), SelectedRoom::tab_id));
         // The previous dock's selection isn't in this dock.
         self.previously_selected_tab = None;
         app_state.selected_room = selected_room;
@@ -691,17 +732,17 @@ impl WidgetMatchEvent for MainDesktopUI {
                     cx.action(NavigationBarAction::CloseAddRoom);
                     steps -= 1;
                 }
-                if let Some(previous_place) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), steps, can_show(cx)) {
-                    self.go_back_to(cx, &mut app_state.nav_history, steps, previous_place);
+                if let Some(Some(previous_screen)) = app_state.nav_history.previous_place(self.most_recently_selected_room.as_ref(), steps, can_show(cx)) {
+                    self.go_back_to(cx, &mut app_state.nav_history, steps, previous_screen);
                 }
                 continue;
             }
 
             if let Some(GoForwardAction { steps }) = action.downcast_ref() {
                 let app_state = scope.data.get_mut::<AppState>().unwrap();
-                if let Some(next_place) = app_state.nav_history.next_place(self.most_recently_selected_room.as_ref(), *steps, can_show(cx)) {
+                if let Some(Some(next_screen)) = app_state.nav_history.next_place(self.most_recently_selected_room.as_ref(), *steps, can_show(cx)) {
                     app_state.nav_history.record_going_forward_from(self.most_recently_selected_room.clone(), *steps, can_show(cx));
-                    self.show_place(cx, next_place);
+                    self.focus_or_create_tab(cx, next_screen);
                     should_save_dock_action = true;
                 }
                 continue;
@@ -993,35 +1034,39 @@ mod dock_state_repair {
     /// * Returns `Err` is the state is unrepairable, meaning we should fall back to the default.
     pub(super) fn validate_and_repair_dock_state(saved: &mut SavedDockState) -> Result<bool, &'static str> {
         let root = id!(root);
-        let home_tab = id!(home_tab);
         let main_tabs_dsl = id!(main_tabs);
         let rooms_sidebar_tab = id!(rooms_sidebar_tab);
         let rooms_sidebar_tabs = id!(rooms_sidebar_tabs);
 
         let mut repaired = false;
 
-        repaired |= ensure_fixed_tab_item(
-            saved,
-            home_tab,
-            DockItem::Tab {
-                name: "Home".to_string(),
-                template: id!(PermanentTab),
-                kind: id!(welcome_screen),
-            },
-        )?;
-        repaired |= ensure_fixed_tab_item(
-            saved,
-            rooms_sidebar_tab,
-            DockItem::Tab {
-                name: "Rooms".to_string(),
-                template: id!(PermanentTab),
-                kind: id!(rooms_sidebar),
-            },
-        )?;
-        if !any_tabs_contains(&saved.dock_items, home_tab) {
-            repaired |= ensure_tab_ref_in_tabs_container(saved, main_tabs_dsl, home_tab)?;
+        match saved.dock_items.get(&rooms_sidebar_tab) {
+            Some(DockItem::Tab { .. }) => {}
+            None => {
+                saved.dock_items.insert(rooms_sidebar_tab, DockItem::Tab {
+                    name: "Rooms".to_string(),
+                    template: id!(PermanentTab),
+                    kind: id!(rooms_sidebar),
+                });
+                repaired = true;
+            }
+            Some(_) => return Err("fixed tab id collides with a dock container"),
         }
-        repaired |= ensure_tab_ref_in_tabs_container(saved, rooms_sidebar_tabs, rooms_sidebar_tab)?;
+        match saved.dock_items.get_mut(&rooms_sidebar_tabs) {
+            Some(DockItem::Tabs { tabs, selected, .. }) => {
+                if !tabs.contains(&rooms_sidebar_tab) {
+                    if !tabs.is_empty() {
+                        *selected = selected.saturating_add(1);
+                    }
+                    tabs.insert(0, rooms_sidebar_tab);
+                    repaired = true;
+                }
+            }
+            Some(DockItem::Tab { .. }) | Some(DockItem::Splitter { .. }) => {
+                return Err("fixed tabs container id collides with another dock item");
+            }
+            None => {}
+        }
 
         // Rebuild missing bookkeeping from the more redundant fields. Older corrupt
         // snapshots often have a valid room_order but an incomplete open_rooms map.
@@ -1064,10 +1109,24 @@ mod dock_state_repair {
 
         let (mut tree_order, mut reachable) = walk_dock_tree(&saved.dock_items)?;
 
-        // The main-tabs container is the first reachable `Tabs` (in DFS order) that
-        // holds `home_tab`.
-        let Some(main_tabs_id) = find_tabs_containing(&saved.dock_items, &tree_order, home_tab) else {
-            return Err("no reachable main-tabs container (holding home_tab) was found");
+        // The main-tabs container is id!(main_tabs) if it holds a tab. Otherwise, it's the first reachable `Tabs`
+        // (in DFS order) besides the rooms sidebar's, preferring one that holds a tab so we don't keep an empty pane.
+        let main_tabs_candidates: Vec<(LiveId, bool)> = tree_order.iter()
+            .filter_map(|id| match saved.dock_items.get(id) {
+                Some(DockItem::Tabs { tabs, .. }) if !tabs.contains(&rooms_sidebar_tab) => Some((
+                    *id,
+                    tabs.iter().any(|tab_id| matches!(saved.dock_items.get(tab_id), Some(DockItem::Tab { .. }))),
+                )),
+                _ => None,
+            })
+            .collect();
+        let Some(main_tabs_id) = main_tabs_candidates.iter()
+            .find(|(id, holds_a_tab)| *id == main_tabs_dsl && *holds_a_tab)
+            .or_else(|| main_tabs_candidates.iter().find(|(_, holds_a_tab)| *holds_a_tab))
+            .or(main_tabs_candidates.first())
+            .map(|(id, _)| *id)
+        else {
+            return Err("no reachable main-tabs container was found");
         };
         if main_tabs_id == root {
             promote_root_tabs_to_default_split(
@@ -1079,11 +1138,12 @@ mod dock_state_repair {
             repaired = true;
             (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
         } else if main_tabs_id != main_tabs_dsl {
-            // Normalize the home-holding tab container to id!(main_tabs). If id!(main_tabs)
+            // Makepad removes id!(main_tabs) when its last tab is closed, so just renaming another pane isn't a repair.
+            repaired |= saved.dock_items.contains_key(&main_tabs_dsl);
+            // Normalize the main tab container to id!(main_tabs). If id!(main_tabs)
             // is already a reachable different container, swap the two IDs instead of
             // deleting the reachable container's content.
             normalize_main_tabs_id(saved, main_tabs_id, main_tabs_dsl, &reachable)?;
-            repaired = true;
             (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
         }
 
@@ -1126,11 +1186,22 @@ mod dock_state_repair {
             (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
         }
 
-        if find_tabs_containing(&saved.dock_items, &tree_order, home_tab) != Some(main_tabs_dsl) {
-            return Err("home_tab is not in the reachable main-tabs container");
+        if !tree_order.contains(&main_tabs_dsl) {
+            return Err("the main-tabs container is not reachable");
         }
-        if find_tabs_containing(&saved.dock_items, &tree_order, rooms_sidebar_tab).is_none() {
+        if !tree_order.contains(&rooms_sidebar_tab) {
             return Err("rooms sidebar tab is not reachable");
+        }
+
+        // Room tabs need their tab bar, since only a lone Home tab is shown without one.
+        for &id in &tree_order {
+            if let Some(DockItem::Tabs { tabs, hide_tab_bar, .. }) = saved.dock_items.get_mut(&id)
+                && *hide_tab_bar
+                && tabs.iter().any(|tab_id| saved.open_rooms.contains_key(tab_id))
+            {
+                *hide_tab_bar = false;
+                repaired = true;
+            }
         }
 
         // Collect the post-cleanup set of tab IDs reachable from the tree, used to
@@ -1185,50 +1256,6 @@ mod dock_state_repair {
             name: room.display_name(),
             template: RoomTabs::tab_template(room),
             kind: room.dock_kind(),
-        }
-    }
-
-    fn ensure_fixed_tab_item(
-        saved: &mut SavedDockState,
-        tab_id: LiveId,
-        tab_item: DockItem,
-    ) -> Result<bool, &'static str> {
-        match saved.dock_items.get(&tab_id) {
-            Some(DockItem::Tab { .. }) => Ok(false),
-            None => {
-                saved.dock_items.insert(tab_id, tab_item);
-                Ok(true)
-            }
-            Some(_) => Err("fixed tab id collides with a dock container"),
-        }
-    }
-
-    fn any_tabs_contains(dock_items: &HashMap<LiveId, DockItem>, tab_id: LiveId) -> bool {
-        dock_items.values().any(|item| {
-            matches!(item, DockItem::Tabs { tabs, .. } if tabs.contains(&tab_id))
-        })
-    }
-
-    fn ensure_tab_ref_in_tabs_container(
-        saved: &mut SavedDockState,
-        tabs_id: LiveId,
-        tab_id: LiveId,
-    ) -> Result<bool, &'static str> {
-        match saved.dock_items.get_mut(&tabs_id) {
-            Some(DockItem::Tabs { tabs, selected, .. }) => {
-                if tabs.contains(&tab_id) {
-                    return Ok(false);
-                }
-                if !tabs.is_empty() {
-                    *selected = selected.saturating_add(1);
-                }
-                tabs.insert(0, tab_id);
-                Ok(true)
-            }
-            Some(DockItem::Tab { .. }) | Some(DockItem::Splitter { .. }) => {
-                Err("fixed tabs container id collides with another dock item")
-            }
-            None => Ok(false),
         }
     }
 
@@ -1326,21 +1353,6 @@ mod dock_state_repair {
         let mut visiting = HashSet::with_capacity(dock_items.len());
         visit(id!(root), dock_items, &mut order, &mut reachable, &mut visiting)?;
         Ok((order, reachable))
-    }
-
-    fn find_tabs_containing(
-        dock_items: &HashMap<LiveId, DockItem>,
-        tree_order: &[LiveId],
-        tab_id: LiveId,
-    ) -> Option<LiveId> {
-        tree_order.iter().find_map(|id| {
-            if let Some(DockItem::Tabs { tabs, .. }) = dock_items.get(id) {
-                if tabs.contains(&tab_id) {
-                    return Some(*id);
-                }
-            }
-            None
-        })
     }
 
     fn normalize_main_tabs_id(

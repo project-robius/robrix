@@ -1039,7 +1039,7 @@ impl HomeScreen {
         }
         // Skip any screens for rooms that the user has left.
         let can_show = can_show(cx);
-        app_state.selected_room.take_if(|screen| !can_show(screen));
+        app_state.selected_room.take_if(|screen| !can_show(Some(screen)));
         if let Some(screen) = app_state.selected_room.clone() {
             self.push_selected_screen_view(cx, app_state, screen, Animate::No);
         }
