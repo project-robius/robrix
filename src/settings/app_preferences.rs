@@ -6,6 +6,8 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use serde::{Deserialize, Serialize};
 
+use crate::directory_search::RoomDirectories;
+
 /// App-wide user preferences controlled by the App Settings UI.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AppPreferences {
@@ -40,6 +42,9 @@ pub struct AppPreferences {
     /// Whether to let other users see when we're typing a message.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub send_typing_notices: bool,
+    /// The other room directories that we can search for rooms and spaces, besides our homeserver's.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub room_directories: RoomDirectories,
 
     // Note: if you add a new preference here, be sure to add a new
     // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
@@ -57,6 +62,7 @@ impl Default for AppPreferences {
             show_read_receipts: true,
             show_typing_notices: true,
             send_typing_notices: true,
+            room_directories: RoomDirectories::default(),
         }
     }
 }
@@ -173,6 +179,12 @@ impl AppPreferences {
         cx.action(AppPreferencesAction::SendTypingNoticesChanged(self.send_typing_notices));
     }
 
+    /// Applies the current `room_directories` value.
+    pub fn on_room_directories_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.room_directories = self.room_directories.clone();
+        cx.action(AppPreferencesAction::RoomDirectoriesChanged);
+    }
+
     /// Broadcasts every preference to listening widgets.
     ///
     /// Used upon app-state restore so every listener picks up the loaded
@@ -189,6 +201,7 @@ impl AppPreferences {
         self.on_show_read_receipts_changed(cx);
         self.on_show_typing_notices_changed(cx);
         self.on_send_typing_notices_changed(cx);
+        self.on_room_directories_changed(cx);
     }
 }
 
@@ -426,6 +439,8 @@ pub enum AppPreferencesAction {
     UiZoomChanged(UiZoom),
     ShowTypingNoticesChanged(bool),
     SendTypingNoticesChanged(bool),
+    /// See [`AppPreferencesGlobal`] for the new room directories.
+    RoomDirectoriesChanged,
 }
 
 /// A `Cx` global mirror of the current [`AppPreferences`].

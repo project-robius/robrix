@@ -7,6 +7,7 @@ pub mod account_settings;
 pub mod encryption_settings;
 pub mod app_settings;
 pub mod privacy_settings;
+pub mod room_directory_settings;
 pub mod about_settings;
 pub mod app_preferences;
 
@@ -15,6 +16,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     encryption_settings::script_mod(vm);
     app_settings::script_mod(vm);
     privacy_settings::script_mod(vm);
+    room_directory_settings::script_mod(vm);
     about_settings::script_mod(vm);
     settings_screen::script_mod(vm);
 }

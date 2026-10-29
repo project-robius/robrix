@@ -1,7 +1,10 @@
 //! Searching for rooms, spaces, and users by name, alias, ID, or Matrix link.
 //!
 //! A [`SearchQuery`] is parsed leniently, so a partial ID like `#robrix` or `alice` is completed with
-//! our own homeserver's name, and we also search our homeserver's room and user directories for it.
+//! our own homeserver's name, and we also search our homeserver's room and user directories for it,
+//! plus each other room directory that the user has turned on in the settings.
+
+use std::ops::{Deref, DerefMut};
 
 use futures_util::future::join_all;
 use makepad_widgets::Cx;
@@ -9,13 +12,67 @@ use matrix_sdk::{Client, Room, RoomDisplayName, RoomState, room_preview::RoomPre
 use ruma::{
     OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, OwnedUserId, RoomAliasId, RoomId, ServerName, UInt, UserId,
     api::{client::{alias::get_alias, directory::get_public_rooms_filtered, profile::{AvatarUrl, DisplayName}, user_directory}, error::ErrorKind},
-    directory::{PublicRoomsChunk, RoomTypeFilter}, matrix_uri::MatrixId, room::RoomType,
+    directory::{PublicRoomsChunk, RoomTypeFilter}, matrix_uri::MatrixId, owned_server_name, room::RoomType,
 };
+use serde::{Deserialize, Serialize};
 
-use crate::{profile::user_profile::UserProfile, room::FetchedRoomPreview, shared::avatar::AvatarState, utils::{self, RoomNameId}};
+use crate::{profile::user_profile::UserProfile, room::FetchedRoomPreview, settings::app_preferences::AppPreferencesGlobal, shared::avatar::AvatarState, sliding_sync::current_user_id, utils::{self, MatchQuality, RoomNameId}};
 
 /// How many results we ask for at a time.
 pub const SEARCH_PAGE_SIZE: u32 = 20;
+
+/// Another server's room directory that we can search along with our own homeserver's.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoomDirectory {
+    pub server: OwnedServerName,
+    /// Whether the user wants us to search this room directory.
+    pub is_enabled: bool,
+}
+
+/// The other room directories that we can search, in the order that the settings list them.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RoomDirectories(Vec<RoomDirectory>);
+
+impl Default for RoomDirectories {
+    fn default() -> Self {
+        Self(
+            [owned_server_name!("matrix.org"), owned_server_name!("activematrixrooms.com"), owned_server_name!("matrixrooms.info")]
+                .into_iter()
+                .map(|server| RoomDirectory { server, is_enabled: true })
+                .collect()
+        )
+    }
+}
+
+impl Deref for RoomDirectories {
+    type Target = Vec<RoomDirectory>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for RoomDirectories {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl RoomDirectories {
+    /// Returns the room directories other than our own homeserver's, which we always search anyway.
+    pub fn iter_except(&self, own_server: Option<&ServerName>) -> impl Iterator<Item = &RoomDirectory> {
+        self.0.iter().filter(move |directory| Some(&*directory.server) != own_server)
+    }
+}
+
+/// Returns the servers whose room directories we search: `None` for our own homeserver, then each other enabled one.
+pub fn get_room_directory_servers(cx: &mut Cx) -> Vec<Option<OwnedServerName>> {
+    let own_server = current_user_id().map(|user_id| user_id.server_name().to_owned());
+    let other_servers = cx.global::<AppPreferencesGlobal>().0.room_directories
+        .iter_except(own_server.as_deref())
+        .filter(|directory| directory.is_enabled)
+        .map(|directory| Some(directory.server.clone()));
+    std::iter::once(None).chain(other_servers).collect()
+}
 
 /// Whether a room directory search is for rooms or for spaces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,6 +242,10 @@ pub struct RoomSearchResult {
     pub preview: FetchedRoomPreview,
     /// Whether this room is exactly what was entered, rather than a room directory match.
     pub is_exact_match: bool,
+    /// How well this room's name matches what was entered.
+    pub name_match: MatchQuality,
+    /// Whether this room's alias is exactly what was entered.
+    pub is_alias_match: bool,
 }
 
 impl RoomSearchResult {
@@ -201,20 +262,33 @@ impl RoomSearchResult {
         self.preview.canonical_alias.as_ref().or(self.preview.alias.as_ref()).map(|alias| alias.as_str())
     }
 
-    /// Converts the preview of a room that we looked up by the given alias or ID.
-    fn from_preview(client: &Client, preview: RoomPreview, address: OwnedRoomOrAliasId, via: Vec<OwnedServerName>) -> Self {
+    /// Converts the preview of a room that we looked up by the given alias or ID,
+    /// ranking it by how well it matches the given lowercase search term.
+    fn from_preview(client: &Client, preview: RoomPreview, address: OwnedRoomOrAliasId, via: Vec<OwnedServerName>, term: Option<&str>) -> Self {
         let room_avatar = utils::avatar_from_room_name(preview.name.as_deref());
         let alias = <&RoomId>::try_from(&*address).err().map(ToOwned::to_owned);
-        Self {
-            preview: FetchedRoomPreview::from(client, preview, room_avatar, via, alias),
-            is_exact_match: true,
-        }
+        let preview = FetchedRoomPreview::from(client, preview, room_avatar, via, alias);
+        let (name_match, is_alias_match) = get_name_and_alias_match(&preview, term);
+        Self { preview, is_exact_match: true, name_match, is_alias_match }
     }
 
-    /// Converts a room listed in our homeserver's room directory, which we can thus join via our homeserver.
+    /// Converts a room listed in the given server's room directory,
+    /// ranking it by how well it matches the given lowercase search term.
     ///
     /// If we already know this room, e.g., because we've joined it, its preview says so, like a fetched one does.
-    async fn from_directory(public_room: PublicRoomsChunk, own_server: Option<OwnedServerName>, known_room: Option<Room>) -> Self {
+    async fn from_directory(public_room: PublicRoomsChunk, directory_server: Option<&ServerName>, known_room: Option<Room>, term: Option<&str>) -> Self {
+        // A directory like activematrixrooms.com isn't in the rooms it lists, so it can't help us join them.
+        // Thus, we first try the servers of the room's alias and ID.
+        let mut via: Vec<OwnedServerName> = Vec::new();
+        let via_candidates = public_room.canonical_alias.as_deref().map(RoomAliasId::server_name)
+            .into_iter()
+            .chain(public_room.room_id.server_name())
+            .chain(directory_server);
+        for server in via_candidates {
+            if !via.iter().any(|s| s == server) {
+                via.push(server.to_owned());
+            }
+        }
         let (state, is_direct, local_name) = match &known_room {
             Some(room) => {
                 let state = room.state();
@@ -231,28 +305,27 @@ impl RoomSearchResult {
             .or_else(|| public_room.name.clone().map(RoomDisplayName::Named))
             .unwrap_or(RoomDisplayName::Empty);
         let room_name_id = RoomNameId::new(display_name, public_room.room_id);
-        Self {
-            preview: FetchedRoomPreview {
-                room_avatar: utils::avatar_from_room_name(room_name_id.name_for_avatar()),
-                room_name_id,
-                via: own_server.into_iter().collect(),
-                alias: None,
-                // The room directory doesn't say which rooms a restricted join rule allows.
-                is_in_allowed_room: false,
-                canonical_alias: public_room.canonical_alias,
-                topic: public_room.topic,
-                avatar_url: public_room.avatar_url.filter(|url| url.is_valid()),
-                num_joined_members: public_room.num_joined_members.into(),
-                num_active_members: None,
-                room_type: public_room.room_type,
-                join_rule: Some(public_room.join_rule.into()),
-                is_world_readable: Some(public_room.world_readable),
-                state,
-                is_direct,
-                heroes: None,
-            },
-            is_exact_match: false,
-        }
+        let preview = FetchedRoomPreview {
+            room_avatar: utils::avatar_from_room_name(room_name_id.name_for_avatar()),
+            room_name_id,
+            via,
+            alias: None,
+            // The room directory doesn't say which rooms a restricted join rule allows.
+            is_in_allowed_room: false,
+            canonical_alias: public_room.canonical_alias,
+            topic: public_room.topic,
+            avatar_url: public_room.avatar_url.filter(|url| url.is_valid()),
+            num_joined_members: public_room.num_joined_members.into(),
+            num_active_members: None,
+            room_type: public_room.room_type,
+            join_rule: Some(public_room.join_rule.into()),
+            is_world_readable: Some(public_room.world_readable),
+            state,
+            is_direct,
+            heroes: None,
+        };
+        let (name_match, is_alias_match) = get_name_and_alias_match(&preview, term);
+        Self { preview, is_exact_match: false, name_match, is_alias_match }
     }
 }
 
@@ -284,10 +357,12 @@ pub enum DirectorySearchAction {
         query: String,
         users: Vec<UserSearchResult>,
     },
-    /// The room directory's matches for the given `query`, either rooms or spaces.
+    /// One room directory's matches for the given `query`, either rooms or spaces.
     DirectoryRooms {
         query: String,
         kind: RoomKind,
+        /// The server whose room directory this is, or `None` for our own homeserver's.
+        server: Option<OwnedServerName>,
         rooms: Vec<RoomSearchResult>,
         /// The token for getting the next page of matches, if there are more.
         next_batch: Option<String>,
@@ -311,13 +386,15 @@ pub enum DirectorySearchAction {
 /// posting them as a [`DirectorySearchAction::JoinedRooms`] and then a [`DirectorySearchAction::ExactRooms`].
 pub async fn resolve_room_search_query(client: Client, query: String) {
     let Some(search_query) = SearchQuery::parse(&query) else { return };
+    let lowercase_term = search_query.room_search_term().map(str::to_lowercase);
+    let term = lowercase_term.as_deref();
     let mut joined_rooms = Vec::new();
-    if let Some(term) = search_query.room_search_term().map(str::to_lowercase) {
+    if let Some(term) = term {
         for room in client.joined_rooms() {
             // An alias's server name would match every room on that server, so we only match its localpart.
-            let is_match = room.name().is_some_and(|name| name.to_lowercase().contains(&term))
+            let is_match = room.name().is_some_and(|name| name.to_lowercase().contains(term))
                 || room.canonical_alias().into_iter().chain(room.alt_aliases())
-                    .any(|alias| alias.alias().to_lowercase().contains(&term));
+                    .any(|alias| alias.alias().to_lowercase().contains(term));
             // The other search box finds people.
             if !is_match || room.is_direct().await.unwrap_or(false) {
                 continue;
@@ -325,7 +402,7 @@ pub async fn resolve_room_search_query(client: Client, query: String) {
             // We're in this room, so its preview comes from our own copy of it.
             let address = OwnedRoomOrAliasId::from(room.room_id().to_owned());
             if let Ok(preview) = client.get_room_preview(&address, Vec::new()).await {
-                joined_rooms.push(RoomSearchResult { is_exact_match: false, ..RoomSearchResult::from_preview(&client, preview, address, Vec::new()) });
+                joined_rooms.push(RoomSearchResult { is_exact_match: false, ..RoomSearchResult::from_preview(&client, preview, address, Vec::new(), Some(term)) });
             }
         }
     }
@@ -346,7 +423,7 @@ pub async fn resolve_room_search_query(client: Client, query: String) {
                     .ok()?;
             }
             let preview = client.get_room_preview(&address, via.clone()).await.ok()?;
-            Some(RoomSearchResult::from_preview(client, preview, address, via))
+            Some(RoomSearchResult::from_preview(client, preview, address, via, term))
         }
     })).await;
 
@@ -399,16 +476,19 @@ pub async fn resolve_user_search_query(client: Client, query: String) {
     Cx::post_action(DirectorySearchAction::ExactUsers { query, users });
 }
 
-/// Searches our homeserver's room directory for rooms or spaces matching the query, posting a [`DirectorySearchAction::DirectoryRooms`].
+/// Searches the given server's room directory (or our own homeserver's if `None`) for rooms or spaces
+/// matching the query, posting a [`DirectorySearchAction::DirectoryRooms`].
 ///
 /// If `next_batch` is given, this gets that next page of matches.
-pub async fn search_room_directory(client: Client, query: String, kind: RoomKind, next_batch: Option<String>) {
+pub async fn search_room_directory(client: Client, query: String, kind: RoomKind, server: Option<OwnedServerName>, next_batch: Option<String>) {
     let Some(search_query) = SearchQuery::parse(&query) else { return };
-    let own_server = client.user_id().map(|user_id| user_id.server_name().to_owned());
+    let directory_server = server.clone().or_else(|| client.user_id().map(|user_id| user_id.server_name().to_owned()));
+    let lowercase_term = search_query.room_search_term().map(str::to_lowercase);
     let is_next_page = next_batch.is_some();
     let result = match search_query.room_search_term() {
         Some(term) => {
             let mut request = get_public_rooms_filtered::v3::Request::new();
+            request.server = server.clone();
             request.filter.generic_search_term = Some(term.to_owned());
             request.filter.room_types = vec![match kind {
                 RoomKind::Room => RoomTypeFilter::Default,
@@ -426,18 +506,22 @@ pub async fn search_room_directory(client: Client, query: String, kind: RoomKind
     let (rooms, next_batch, error) = match result {
         Ok((public_rooms, next_batch)) => {
             let mut rooms = Vec::with_capacity(public_rooms.len());
+            // Not every room directory filters by room type, so we make sure.
+            let public_rooms = public_rooms.into_iter()
+                .filter(|public_room| (public_room.room_type == Some(RoomType::Space)) == (kind == RoomKind::Space));
             for public_room in public_rooms {
                 let known_room = client.get_room(&public_room.room_id);
-                rooms.push(RoomSearchResult::from_directory(public_room, own_server.clone(), known_room).await);
+                rooms.push(RoomSearchResult::from_directory(public_room, directory_server.as_deref(), known_room, lowercase_term.as_deref()).await);
             }
             (rooms, next_batch, None)
         }
         Err(e) => (Vec::new(), None, Some(format!(
-            "Couldn't search the room directory: {}",
+            "Couldn't search the room directory of {}: {}",
+            directory_server.as_ref().map_or("your homeserver", |server| server.as_str()),
             utils::stringify_matrix_error(&e.into()),
         ))),
     };
-    Cx::post_action(DirectorySearchAction::DirectoryRooms { query, kind, rooms, next_batch, is_next_page, error });
+    Cx::post_action(DirectorySearchAction::DirectoryRooms { query, kind, server, rooms, next_batch, is_next_page, error });
 }
 
 /// Searches our homeserver's user directory for the given query text, getting up to `limit` users,
@@ -482,6 +566,17 @@ pub async fn search_user_directory(client: Client, query: String, limit: u32) {
         ))),
     };
     Cx::post_action(DirectorySearchAction::DirectoryUsers { query, users, limit, is_limited, error });
+}
+
+/// Returns how well the given room's name matches the given lowercase search term,
+/// and whether its alias is exactly that term.
+fn get_name_and_alias_match(preview: &FetchedRoomPreview, term: Option<&str>) -> (MatchQuality, bool) {
+    let Some(term) = term else { return (MatchQuality::None, false) };
+    let name_match = preview.room_name_id.name_for_avatar()
+        .map_or(MatchQuality::None, |name| MatchQuality::of(&name.to_lowercase(), term));
+    let is_alias_match = preview.canonical_alias.iter().chain(&preview.alias)
+        .any(|alias| alias.alias().to_lowercase() == term);
+    (name_match, is_alias_match)
 }
 
 /// Returns the full IDs that `localpart_and_server` could be with the given `sigil`, using `own_server` if needed.

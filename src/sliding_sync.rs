@@ -963,13 +963,15 @@ pub enum MatrixRequest {
     ResolveUserSearchQuery {
         query: String,
     },
-    /// Request to search our homeserver's room directory for rooms or spaces matching the `query` text.
+    /// Request to search the room directory of the given `server` (or our own homeserver's if `None`)
+    /// for rooms or spaces matching the `query` text.
     ///
     /// If `next_batch` is `Some`, this gets that next page of matches.
     /// The results are posted as a [`DirectorySearchAction::DirectoryRooms`](crate::directory_search::DirectorySearchAction::DirectoryRooms).
     SearchRoomDirectory {
         query: String,
         kind: crate::directory_search::RoomKind,
+        server: Option<OwnedServerName>,
         next_batch: Option<String>,
     },
     /// Request to search our homeserver's user directory for the `query` text, getting up to `limit` users.
@@ -1717,9 +1719,9 @@ async fn matrix_worker_task(
                 let _resolve_task = Handle::current().spawn(crate::directory_search::resolve_user_search_query(client, query));
             }
 
-            MatrixRequest::SearchRoomDirectory { query, kind, next_batch } => {
+            MatrixRequest::SearchRoomDirectory { query, kind, server, next_batch } => {
                 let Some(client) = get_client() else { continue };
-                let _search_task = Handle::current().spawn(crate::directory_search::search_room_directory(client, query, kind, next_batch));
+                let _search_task = Handle::current().spawn(crate::directory_search::search_room_directory(client, query, kind, server, next_batch));
             }
 
             MatrixRequest::SearchUserDirectory { query, limit } => {

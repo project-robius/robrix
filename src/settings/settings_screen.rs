@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, is_settings_screen_shown, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, encryption_settings::EncryptionSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}, utils};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, is_settings_screen_shown, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, encryption_settings::EncryptionSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt, room_directory_settings::RoomDirectorySettingsWidgetExt}, utils};
 
 /// The space between the settings content and the screen's left and right edges.
 const SIDE_PADDING: f64 = 15.0;
@@ -65,6 +65,9 @@ script_mod! {
 
                 // The privacy settings section.
                 privacy_settings := PrivacySettings {}
+
+                // The section listing the other room directories that we search.
+                room_directory_settings := RoomDirectorySettings {}
 
                 LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
@@ -245,6 +248,7 @@ impl SettingsScreen {
                 self.view.encryption_settings(cx, ids!(encryption_settings)).populate(cx, app_state.recovery_state);
                 self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
                 self.view.privacy_settings(cx, ids!(privacy_settings)).populate(cx);
+                self.view.room_directory_settings(cx, ids!(room_directory_settings)).populate(cx);
             }
             PopulateMode::AfterReapply => {
                 self.view.account_settings(cx, ids!(account_settings)).restore_after_reapply(cx);
