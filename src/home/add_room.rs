@@ -1,13 +1,16 @@
 //! A top-level view for adding (joining) or exploring new rooms and spaces, and for finding users.
 
 
-use std::collections::HashSet;
+use std::{cmp::Reverse, collections::HashSet};
 
 use makepad_widgets::*;
 use matrix_sdk::RoomState;
-use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomId, room::{JoinRuleSummary, RoomType}};
+use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomId, ServerName, room::{JoinRuleSummary, RoomType}};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult}, home::invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult, get_room_directory_servers}, home::{invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::NavigationBarAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, settings::app_preferences::AppPreferencesAction, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils::{self, MatchQuality}};
+
+/// The width of the Go buttons and the Edit button below the room search box, so they line up.
+const SEARCH_BUTTON_WIDTH: f64 = 72.0;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -45,7 +48,8 @@ script_mod! {
 
     let SearchButton = RobrixIconButton {
         padding: Inset{top: 10, bottom: 10, left: 12, right: 14}
-        height: 40
+        width: #(SEARCH_BUTTON_WIDTH), height: 40
+        align: Align{x: 0.5, y: 0.5}
         draw_icon.svg: (ICON_SEARCH)
         icon_walk: Walk{width: 16, height: 16}
         text: "Go"
@@ -148,6 +152,40 @@ script_mod! {
                 clear_room_search_button := SearchClearButton {}
             }
             search_for_room_button := SearchButton {}
+        }
+
+        // The other room directories that we search, laid out like the search box and Go button above,
+        // with a button to change them in the settings.
+        room_directories_view := SearchInputRow {
+            margin: Inset{bottom: 4}
+            align: Align{y: 0.0}
+
+            View {
+                width: Fill { max: 400 }, height: Fit
+                margin: Inset{left: 5, right: 5}
+                // The margins line up this label's text with the search box's text and the Edit button's text.
+                room_directories_label := Label {
+                    width: Fill, height: Fit
+                    padding: 0
+                    margin: Inset{left: 12, top: 9}
+                    flow: Flow.Right{wrap: true},
+                    max_lines: 3,
+                    text_overflow: Ellipsis,
+                    draw_text +: {
+                        color: (COLOR_TEXT_MUTED),
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 10 },
+                    }
+                }
+            }
+
+            edit_room_directories_button := RobrixNeutralIconButton {
+                width: #(SEARCH_BUTTON_WIDTH)
+                align: Align{x: 0.5, y: 0.5}
+                padding: Inset{top: 6, bottom: 6, left: 10, right: 12}
+                draw_icon.svg: (ICON_SETTINGS)
+                icon_walk: Walk{width: 14, height: 14}
+                text: "Edit"
+            }
         }
 
         loading_room_view := View {
@@ -402,6 +440,9 @@ pub struct AddRoomScreen {
     /// Where the content was as of its last draw, which doesn't change while it scrolls,
     /// so the result lists can skip drawing the rows that are far from view.
     #[rust] content_viewport: Rect,
+    /// Whether the label of which room directories we search is out of date. We update it upon our next draw,
+    /// since we're only drawn while logged in, which is when we know our own homeserver.
+    #[rust(true)] is_room_directories_label_stale: bool,
 }
 
 impl ScriptHook for AddRoomScreen {
@@ -412,6 +453,7 @@ impl ScriptHook for AddRoomScreen {
             self.update_clear_button(cx, SearchBox::Rooms);
             self.update_clear_button(cx, SearchBox::People);
         });
+        self.is_room_directories_label_stale = true;
     }
 
     fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
@@ -631,6 +673,13 @@ impl Widget for AddRoomScreen {
                 self.redraw(cx);
             }
 
+            let edit_room_directories_button = self.view.button(cx, ids!(edit_room_directories_button));
+            if edit_room_directories_button.clicked(actions) {
+                // The settings screen covers this button, so it never gets the hover-out event.
+                edit_room_directories_button.reset_hover(cx);
+                cx.action(NavigationBarAction::OpenSettings);
+            }
+
             // Enable or disable the button based on if the text input is empty.
             if let Some(text) = room_alias_id_input.changed(actions) {
                 let has_text = !text.trim().is_empty();
@@ -828,6 +877,16 @@ impl Widget for AddRoomScreen {
                     self.record_room_state(cx, room_id, RoomState::Left);
                 }
 
+                if let Some(AppPreferencesAction::RoomDirectoriesChanged) = action.downcast_ref() {
+                    self.is_room_directories_label_stale = true;
+                    // Forgetting the query makes us search the new set of room directories for it again.
+                    let query = std::mem::take(&mut self.room_search.query);
+                    if !query.is_empty() {
+                        self.search_rooms(cx, &query);
+                    }
+                    self.redraw(cx);
+                }
+
                 match action.downcast_ref() {
                     Some(DirectorySearchAction::JoinedRooms { query, rooms }) if *query == self.room_search.query => {
                         if let Some(results) = self.room_search.results.as_mut() {
@@ -852,21 +911,23 @@ impl Widget for AddRoomScreen {
                         self.open_only_match(cx);
                         self.redraw(cx);
                     }
-                    Some(DirectorySearchAction::DirectoryRooms { query, kind, rooms, next_batch, is_next_page, error })
+                    Some(DirectorySearchAction::DirectoryRooms { query, kind, server, rooms, next_batch, is_next_page, error })
                         if *query == self.room_search.query =>
                     {
                         let Some(results) = self.room_search.results.as_mut() else { continue };
                         let section = results.section_mut(*kind);
+                        // We've since stopped searching this room directory.
+                        let Some(directory) = section.get_directory_mut(server.as_deref()) else { continue };
                         // We've started a new search since asking for this next page.
-                        if *is_next_page && !section.has_directory_matches { continue }
-                        section.add_results(rooms, &mut self.result_rows);
-                        section.has_directory_matches = true;
+                        if *is_next_page && !directory.has_matches { continue }
+                        directory.has_matches = true;
                         // Upon an error, we keep the old token so the user can try again.
                         if error.is_none() {
-                            section.more = next_batch.clone().map(MoreResults::NextBatch);
+                            directory.more = next_batch.clone().map(MoreResults::NextBatch);
                         }
-                        section.error = error.clone();
-                        section.is_loading_more = false;
+                        directory.error = error.clone();
+                        directory.is_loading_more = false;
+                        section.add_results(rooms, &mut self.result_rows);
                         self.open_only_match(cx);
                         self.redraw(cx);
                     }
@@ -874,15 +935,16 @@ impl Widget for AddRoomScreen {
                         if *query == self.user_search.query =>
                     {
                         let Some(section) = self.user_search.results.as_mut() else { continue };
-                        // A bigger search gives us the users we already have plus some more.
-                        section.add_results(users, &mut self.result_rows);
-                        section.has_directory_matches = true;
+                        let Some(directory) = section.get_directory_mut(None) else { continue };
+                        directory.has_matches = true;
                         // Upon an error, we keep the old limit so the user can try again.
                         if error.is_none() {
-                            section.more = is_limited.then(|| MoreResults::Limit(limit + SEARCH_PAGE_SIZE));
+                            directory.more = is_limited.then(|| MoreResults::Limit(limit + SEARCH_PAGE_SIZE));
                         }
-                        section.error = error.clone();
-                        section.is_loading_more = false;
+                        directory.error = error.clone();
+                        directory.is_loading_more = false;
+                        // A bigger search gives us the users we already have plus some more.
+                        section.add_results(users, &mut self.result_rows);
                         self.open_only_match(cx);
                         self.redraw(cx);
                     }
@@ -942,6 +1004,18 @@ impl Widget for AddRoomScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.is_room_directories_label_stale {
+            self.is_room_directories_label_stale = false;
+            let servers = get_room_directory_servers(cx);
+            let other_servers: Vec<&str> = servers.iter().flatten().map(|server| server.as_str()).collect();
+            let text = if other_servers.is_empty() {
+                String::from("Only searching your homeserver's room directory.")
+            } else {
+                format!("Also searching: {}", other_servers.join(", "))
+            };
+            self.view.label(cx, ids!(room_directories_label)).set_text(cx, &text);
+        }
+
         let loading_room_view = self.view.view(cx, ids!(loading_room_view));
         let fetched_room_summary = self.view.view(cx, ids!(fetched_room_summary));
         let error_view = self.view.view(cx, ids!(error_view));
@@ -1298,12 +1372,12 @@ impl AddRoomScreen {
         let lists: Vec<(ResultSection, Vec<LiveId>, bool)> = match search_box {
             SearchBox::Rooms => self.room_search.results.iter()
                 .flat_map(|results| [
-                    (ResultSection::Rooms, results.rooms.row_keys().collect(), results.rooms.more.is_some()),
-                    (ResultSection::Spaces, results.spaces.row_keys().collect(), results.spaces.more.is_some()),
+                    (ResultSection::Rooms, results.rooms.row_keys().collect(), results.rooms.has_more()),
+                    (ResultSection::Spaces, results.spaces.row_keys().collect(), results.spaces.has_more()),
                 ])
                 .collect(),
             SearchBox::People => self.user_search.results.iter()
-                .map(|section| (ResultSection::People, section.row_keys().collect(), section.more.is_some()))
+                .map(|section| (ResultSection::People, section.row_keys().collect(), section.has_more()))
                 .collect(),
         };
         let heading_path = match search_box {
@@ -1403,7 +1477,8 @@ impl AddRoomScreen {
         cx.send_trigger(self.view.child(id!(content)).area(), Trigger { id: live_id!(scroll_focus_nav), from: area });
     }
 
-    /// Starts getting more results for the given list, unless it has no more or we're already getting them.
+    /// Starts getting more results for the given list from each directory that has more,
+    /// unless we're already getting them.
     fn load_more_results(&mut self, cx: &mut Cx, section: ResultSection) {
         self.pending_submit = None;
         match section {
@@ -1411,48 +1486,81 @@ impl AddRoomScreen {
                 let kind = if section == ResultSection::Rooms { RoomKind::Room } else { RoomKind::Space };
                 let Some(results) = self.room_search.results.as_mut() else { return };
                 let section_results = results.section_mut(kind);
-                if let Some(MoreResults::NextBatch(next_batch)) = &section_results.more
-                    && !section_results.is_loading_more
-                {
-                    submit_async_request(MatrixRequest::SearchRoomDirectory {
-                        query: self.room_search.query.clone(),
-                        kind,
-                        next_batch: Some(next_batch.clone()),
-                    });
-                    section_results.is_loading_more = true;
+                for directory in &mut section_results.directories {
+                    if let Some(MoreResults::NextBatch(next_batch)) = &directory.more
+                        && !directory.is_loading_more
+                    {
+                        submit_async_request(MatrixRequest::SearchRoomDirectory {
+                            query: self.room_search.query.clone(),
+                            kind,
+                            server: directory.server.clone(),
+                            next_batch: Some(next_batch.clone()),
+                        });
+                        directory.is_loading_more = true;
+                        section_results.load_more_start_index = section_results.joined_start_index;
+                    }
                 }
             }
             ResultSection::People => {
                 let Some(section_results) = self.user_search.results.as_mut() else { return };
-                if let Some(MoreResults::Limit(limit)) = section_results.more
-                    && !section_results.is_loading_more
-                {
-                    submit_async_request(MatrixRequest::SearchUserDirectory { query: self.user_search.query.clone(), limit });
-                    section_results.is_loading_more = true;
+                for directory in &mut section_results.directories {
+                    if let Some(MoreResults::Limit(limit)) = directory.more
+                        && !directory.is_loading_more
+                    {
+                        submit_async_request(MatrixRequest::SearchUserDirectory { query: self.user_search.query.clone(), limit });
+                        directory.is_loading_more = true;
+                    }
                 }
             }
         }
         self.redraw(cx);
     }
 
-    /// Starts searching for rooms and spaces that match the given query, unless we already have its results.
+    /// Starts searching for rooms and spaces that match the given query.
+    ///
+    /// If we already have this query's results, we just search again each room directory that failed.
     fn search_rooms(&mut self, cx: &mut Cx, query: &str) {
         cx.stop_timer(self.room_search.timer);
-        let has_error = self.room_search.results.as_ref()
-            .is_some_and(|results| results.rooms.error.is_some() || results.spaces.error.is_some());
-        if query == self.room_search.query && !has_error {
+        if query == self.room_search.query {
+            let Some(results) = self.room_search.results.as_mut() else { return };
+            for (kind, section) in [(RoomKind::Room, &mut results.rooms), (RoomKind::Space, &mut results.spaces)] {
+                // A directory that failed to get its next page still has a "Load more" button to try again.
+                for directory in section.directories.iter_mut().filter(|d| d.error.is_some() && d.more.is_none()) {
+                    submit_async_request(MatrixRequest::SearchRoomDirectory {
+                        query: query.to_owned(),
+                        kind,
+                        server: directory.server.clone(),
+                        next_batch: None,
+                    });
+                    directory.has_matches = false;
+                    directory.error = None;
+                }
+            }
+            self.redraw(cx);
             return;
         }
-        let can_match_rooms = SearchQuery::parse(query).is_some_and(|search_query| search_query.can_match_rooms());
-        if can_match_rooms {
+        let mut results = None;
+        if SearchQuery::parse(query).is_some_and(|search_query| search_query.can_match_rooms()) {
+            let servers = get_room_directory_servers(cx);
             submit_async_request(MatrixRequest::ResolveRoomSearchQuery { query: query.to_owned() });
-            for kind in [RoomKind::Room, RoomKind::Space] {
-                submit_async_request(MatrixRequest::SearchRoomDirectory { query: query.to_owned(), kind, next_batch: None });
+            for server in &servers {
+                for kind in [RoomKind::Room, RoomKind::Space] {
+                    submit_async_request(MatrixRequest::SearchRoomDirectory {
+                        query: query.to_owned(),
+                        kind,
+                        server: server.clone(),
+                        next_batch: None,
+                    });
+                }
             }
+            results = Some(RoomResults {
+                rooms: SectionResults::new(&servers),
+                spaces: SectionResults::new(&servers),
+            });
         }
         self.room_search = Search {
             query: query.to_owned(),
-            results: can_match_rooms.then(RoomResults::default),
+            results,
             ..Default::default()
         };
         self.result_rows.unfocus(SearchBox::Rooms);
@@ -1462,7 +1570,7 @@ impl AddRoomScreen {
     /// Starts searching for people that match the given query, unless we already have its results.
     fn search_users(&mut self, cx: &mut Cx, query: &str) {
         cx.stop_timer(self.user_search.timer);
-        let has_error = self.user_search.results.as_ref().is_some_and(|section| section.error.is_some());
+        let has_error = self.user_search.results.as_ref().is_some_and(SectionResults::has_error);
         if query == self.user_search.query && !has_error {
             return;
         }
@@ -1653,32 +1761,59 @@ impl RoomResults {
 
 /// The results shown in one section of the search results, i.e., rooms, spaces, or people.
 struct SectionResults<T> {
-    /// The results in the order that we got them, so that a row never moves once it's shown.
+    /// The results ranked by how well they match, except that the rooms we'd already joined go last.
     items: Vec<T>,
+    /// Where the rooms that we'd already joined when we got them start in `items`.
+    joined_start_index: usize,
+    /// Where the results that we got since the user last asked for more start in `items`, which is 0 before then.
+    /// We rank these again as more of them arrive, but the results before them never move.
+    load_more_start_index: usize,
     /// Whether we've looked up the results that the query could exactly be.
     has_exact_matches: bool,
-    /// Whether we've searched our homeserver's directory for the query.
-    has_directory_matches: bool,
-    error: Option<String>,
-    /// How to get more matches from the directory, if it has more.
-    more: Option<MoreResults>,
-    is_loading_more: bool,
+    /// Our search of each directory for the query, which all add to `items`.
+    directories: Vec<DirectorySearch>,
 }
 impl<T> Default for SectionResults<T> {
     fn default() -> Self {
+        Self::new(&[None])
+    }
+}
+impl<T> SectionResults<T> {
+    /// Creates empty results that we'll get by searching the directories of the given servers,
+    /// in which `None` is our own homeserver.
+    fn new(servers: &[Option<OwnedServerName>]) -> Self {
         Self {
             items: Vec::new(),
+            joined_start_index: 0,
+            load_more_start_index: 0,
             has_exact_matches: false,
-            has_directory_matches: false,
-            error: None,
-            more: None,
-            is_loading_more: false,
+            directories: servers.iter()
+                .map(|server| DirectorySearch { server: server.clone(), ..Default::default() })
+                .collect(),
         }
+    }
+
+    fn get_directory_mut(&mut self, server: Option<&ServerName>) -> Option<&mut DirectorySearch> {
+        self.directories.iter_mut().find(|directory| directory.server.as_deref() == server)
+    }
+
+    fn has_error(&self) -> bool {
+        self.directories.iter().any(|directory| directory.error.is_some())
+    }
+
+    fn has_more(&self) -> bool {
+        self.directories.iter().any(|directory| directory.more.is_some())
+    }
+
+    fn is_searching(&self) -> bool {
+        !self.has_exact_matches || self.directories.iter().any(|directory| !directory.has_matches)
     }
 }
 impl<T: SearchResultRow> SectionResults<T> {
-    /// Appends the given results, except for ones that we already have,
-    /// which an exact match replaces in place.
+    /// Adds the given results, except for ones that we already have, which an exact match replaces in place,
+    /// and ranks them among the other results that we got since the user last asked for more.
+    ///
+    /// The user is most likely looking for new rooms, so the rooms we've already joined stay last.
     fn add_results(&mut self, results: &[T], rows: &mut ResultRows) {
         for result in results {
             let key = result.row_key();
@@ -1688,9 +1823,15 @@ impl<T: SearchResultRow> SectionResults<T> {
                     rows.populated.remove(&key);
                 }
                 Some(_) => {}
-                None => self.items.push(result.clone()),
+                None if result.is_joined() => self.items.push(result.clone()),
+                None => {
+                    self.items.insert(self.joined_start_index, result.clone());
+                    self.joined_start_index += 1;
+                }
             }
         }
+        self.items[self.load_more_start_index .. self.joined_start_index].sort_by_key(T::get_rank);
+        self.items[self.joined_start_index..].sort_by_key(T::get_rank);
     }
 
     fn row_keys(&self) -> impl Iterator<Item = LiveId> {
@@ -1700,10 +1841,19 @@ impl<T: SearchResultRow> SectionResults<T> {
     fn exact_match_keys(&self) -> impl Iterator<Item = LiveId> {
         self.items.iter().filter(|result| result.is_exact_match()).map(SearchResultRow::row_key)
     }
+}
 
-    fn is_searching(&self) -> bool {
-        !self.has_exact_matches || !self.has_directory_matches
-    }
+/// Our search of one server's room or user directory for one section of the search results.
+#[derive(Default)]
+struct DirectorySearch {
+    /// The server whose directory this is, or `None` for our own homeserver's.
+    server: Option<OwnedServerName>,
+    /// Whether we've gotten this directory's first page of matches.
+    has_matches: bool,
+    error: Option<String>,
+    /// How to get more matches from this directory, if it has more.
+    more: Option<MoreResults>,
+    is_loading_more: bool,
 }
 
 /// How to get more matches from a directory for one section of the search results.
@@ -1786,6 +1936,11 @@ trait SearchResultRow: Clone {
 
     fn is_exact_match(&self) -> bool;
 
+    fn is_joined(&self) -> bool;
+
+    /// Returns where this result goes among the others: better matches first, then bigger rooms first.
+    fn get_rank(&self) -> (MatchQuality, MatchQuality, Reverse<u64>);
+
     /// Sets the content of the given row to show this result.
     ///
     /// Returns `false` if its avatar is still being fetched, in which case call this again later.
@@ -1801,6 +1956,16 @@ impl SearchResultRow for RoomSearchResult {
         self.is_exact_match
     }
 
+    fn is_joined(&self) -> bool {
+        self.preview.state == Some(RoomState::Joined)
+    }
+
+    fn get_rank(&self) -> (MatchQuality, MatchQuality, Reverse<u64>) {
+        let alias_match = if self.is_exact_match || self.is_alias_match { MatchQuality::Exact } else { MatchQuality::None };
+        // A room with exactly that name goes before a room with only that alias.
+        (self.name_match.min(alias_match), self.name_match, Reverse(self.preview.num_joined_members))
+    }
+
     fn populate_row(&self, cx: &mut Cx, row: &WidgetRef) -> bool {
         let room_name = self.preview.room_name_id.name_for_avatar();
         let name = room_name.or(self.alias()).unwrap_or(self.room_id().as_str());
@@ -1814,7 +1979,7 @@ impl SearchResultRow for RoomSearchResult {
             _ => members,
         };
         // Like the space lobby, we mark the rooms that we're already in.
-        if self.preview.state == Some(RoomState::Joined) {
+        if self.is_joined() {
             subtitle.insert_str(0, "✅ Joined · ");
         }
         row.label(cx, ids!(info.subtitle)).set_text(cx, &subtitle);
@@ -1829,6 +1994,15 @@ impl SearchResultRow for UserSearchResult {
 
     fn is_exact_match(&self) -> bool {
         self.is_exact_match
+    }
+
+    fn is_joined(&self) -> bool {
+        false
+    }
+
+    // Our homeserver's user directory already ranks the people that it finds.
+    fn get_rank(&self) -> (MatchQuality, MatchQuality, Reverse<u64>) {
+        (MatchQuality::None, MatchQuality::None, Reverse(0))
     }
 
     fn populate_row(&self, cx: &mut Cx, row: &WidgetRef) -> bool {
@@ -1897,14 +2071,18 @@ fn draw_search_section<T: SearchResultRow>(
         row.draw_all(cx, scope);
     }
 
-    if let Some(error) = &section.error {
-        draw_flat_list_status_row(cx, scope, list, info.status_key, false, error);
-    } else if section.items.is_empty() && !section.is_searching() {
+    for directory in &section.directories {
+        if let Some(error) = &directory.error {
+            let key = directory.server.as_ref().map_or(info.status_key, |server| info.status_key.str_append(server.as_str()));
+            draw_flat_list_status_row(cx, scope, list, key, false, error);
+        }
+    }
+    if section.items.is_empty() && !section.is_searching() && !section.has_error() {
         draw_flat_list_status_row(cx, scope, list, info.status_key, false, info.empty_text);
     }
-    if section.is_searching() || section.is_loading_more {
+    if section.is_searching() || section.directories.iter().any(|directory| directory.is_loading_more) {
         draw_flat_list_status_row(cx, scope, list, info.loading_key, true, info.searching_text);
-    } else if section.more.is_some()
+    } else if section.has_more()
         && let Some(load_more_row) = list.item(cx, info.load_more_key, id!(load_more_row))
     {
         load_more_row.draw_all(cx, scope);
@@ -1940,7 +2118,7 @@ fn get_only_match<T: SearchResultRow>(query: &str, sections: &[&SectionResults<T
         return None;
     }
     // A section that failed or that has more pages might have more matches.
-    if sections.iter().any(|section| section.error.is_some() || section.more.is_some()) {
+    if sections.iter().any(|section| section.has_error() || section.has_more()) {
         return Some(None);
     }
     Some(get_only_item(sections.iter().flat_map(|section| section.row_keys())))
