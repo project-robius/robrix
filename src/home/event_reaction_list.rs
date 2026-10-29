@@ -6,35 +6,47 @@ use makepad_widgets::*;
 use crate::{LivePtr, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionInfo, ReactionsByKeyBySender, TimelineEventItemId};
+use unicode_segmentation::UnicodeSegmentation;
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
 
+    let ReactionLabel = Label {
+        padding: 0
+        draw_text +: {
+            text_style: REGULAR_TEXT {font_size: 10},
+            color: (mod.widgets.COLOR_TEXT_BODY)
+        }
+    }
+
     mod.widgets.ReactionList = #(ReactionList::register_widget(vm)) {
         width: Fill,
         height: Fit,
         flow: Flow.Right{wrap: true},
         margin: Inset{top: 5.0}
-        item: Button {
+        item: View {
             width: Fit,
-            height: Fit,
-            padding: 6,
+            // A fixed height, so emoji-only reactions (one point larger) aren't taller than text ones.
+            height: 28,
+            padding: Inset{left: 6, right: 6},
             // Use a zero margin on the left because we want the first reaction
             // to be flush with the left edge of the message text.
             margin: Inset{ top: 3, bottom: 3, left: 0, right: 6 },
+            flow: Right,
+            align: Align{y: 0.5},
+            spacing: 6,
 
+            show_bg: true
             draw_bg +: {
-                // Anything that we apply over must be an `instance`,
-                // and their names must be distinct from the base Button type.
+                // Anything that we apply over must be an `instance`.
                 reaction_bg_color: instance(mod.widgets.COLOR_REACTION_BG)
                 reaction_border_color: instance(mod.widgets.COLOR_REACTION_BORDER)
-                // Override values from the base Button type.
-                color_hover: (mod.widgets.COLOR_REACTION_HOVER_TINT)
-                hover: 0.0
-                border_size: 1.5
-                border_radius: 3.0
+                color_hover: uniform((mod.widgets.COLOR_REACTION_HOVER_TINT))
+                hover: instance(0.0)
+                border_size: uniform(1.5)
+                border_radius: uniform(3.0)
 
                 get_color: fn() -> vec4 {
                     return mix(self.reaction_bg_color, mix(self.reaction_bg_color, self.color_hover, 0.2), self.hover)
@@ -56,13 +68,28 @@ script_mod! {
                     return sdf.result;
                 }
             }
-            draw_text +: {
-                text_style: REGULAR_TEXT {font_size: 10},
-                color: (mod.widgets.COLOR_TEXT_BODY)
-                get_color: fn() -> vec4 {
-                    return self.color;
+
+            animator: Animator{
+                hover: {
+                    default: @off
+                    off: AnimatorState{
+                        from: {all: Snap}
+                        apply: { draw_bg: {hover: 0.0} }
+                    }
+                    on: AnimatorState{
+                        from: {all: Snap}
+                        apply: { draw_bg: {hover: 1.0} }
+                    }
                 }
             }
+
+            reaction := ReactionLabel {
+                flow: Flow.Right { wrap: false },
+                width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
+                max_lines: 1,
+                text_overflow: Ellipsis,
+            }
+            count := ReactionLabel {}
         }
     }
 
@@ -84,7 +111,7 @@ pub struct ReactionList {
     #[uid] uid: WidgetUid,
     #[redraw] #[rust] area: Area,
     #[live] item: Option<LivePtr>,
-    #[rust] children: Vec<(ButtonRef, ReactionData)>,
+    #[rust] children: Vec<(ViewRef, ReactionData)>,
     #[layout] layout: Layout,
     #[walk] walk: Walk,
 
@@ -164,7 +191,7 @@ impl Widget for ReactionList {
                     }
                     // Touch never sends a hover-out, so clear the highlight the long press set.
                     else if fue.has_long_press_occurred {
-                        button_ref.reset_hover(cx);
+                        button_ref.animator_cut(cx, ids!(hover.off));
                     }
                     break;
                 }
@@ -184,7 +211,7 @@ impl ReactionList {
         &self,
         cx: &mut Cx,
         _scope: &mut Scope,
-        button_ref: &ButtonRef,
+        button_ref: &ViewRef,
         reaction_data: ReactionData,
     ) {
         cx.widget_action(
@@ -194,9 +221,7 @@ impl ReactionList {
                 reaction_data,
             },
         );
-        if let Some(mut button) = button_ref.borrow_mut() {
-            button.animator_cut(cx, ids!(hover.on));
-        }
+        button_ref.animator_cut(cx, ids!(hover.on));
         cx.set_cursor(MouseCursor::Hand);
     }
 
@@ -205,10 +230,10 @@ impl ReactionList {
         &self,
         cx: &mut Cx,
         _scope: &mut Scope,
-        button_ref: &ButtonRef,
+        button_ref: &ViewRef,
     ) {
         cx.widget_action(self.widget_uid(),  RoomScreenTooltipActions::HoverOut);
-        button_ref.reset_hover(cx);
+        button_ref.animator_cut(cx, ids!(hover.off));
         cx.set_cursor(MouseCursor::Default);
     }
 }
@@ -284,11 +309,14 @@ impl ReactionListRef {
                 reaction_senders: reaction_senders.clone(),
                 room_id: timeline_kind.room_id().clone(),
             };
-            let mut button = widget_ref_from_live_ptr(cx, inner.item).as_button();
-            button.set_text(cx, &format!("{}  {}",
-                reaction_data.reaction,
-                reaction_senders.len()
-            ));
+            let mut button = widget_ref_from_live_ptr(cx, inner.item).as_view();
+            let reaction_label = button.label(cx, ids!(reaction));
+            reaction_label.set_text(cx, &reaction_data.reaction);
+            let is_emoji_only = reaction_text.graphemes(true).all(|g| emojis::get(g).is_some());
+            if is_emoji_only && let Some(mut label) = reaction_label.borrow_mut() {
+                label.draw_text.text_style.font_size += 1.0;
+            }
+            button.label(cx, ids!(count)).set_text(cx, &reaction_senders.len().to_string());
             apply_reaction_button_colors(cx, &mut button, reaction_data.includes_user);
             inner.children.push((button, reaction_data));
         }
@@ -327,7 +355,7 @@ impl ReactionListRef {
     }
 }
 
-fn apply_reaction_button_colors(cx: &mut Cx, button: &mut ButtonRef, includes_user: bool) {
+fn apply_reaction_button_colors(cx: &mut Cx, button: &mut ViewRef, includes_user: bool) {
     if includes_user {
         script_apply_eval!(cx, button, {
             draw_bg +: {
