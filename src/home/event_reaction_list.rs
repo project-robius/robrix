@@ -106,6 +106,33 @@ pub struct ReactionData {
     pub room_id: OwnedRoomId,
 }
 
+impl ReactionData {
+    /// Returns this reaction with each emoji's shortcode in parentheses after it, e.g., "👍 (+1)".
+    ///
+    /// A run of the same emoji only gets one shortcode, after its last emoji.
+    pub fn format_with_shortcodes(&self) -> String {
+        let mut text = String::new();
+        let mut graphemes = self.reaction.graphemes(true).peekable();
+        while let Some(grapheme) = graphemes.next() {
+            text.push_str(grapheme);
+            let Some(emoji) = emojis::get(grapheme) else { continue };
+            let next_emoji = graphemes.peek().and_then(|next| emojis::get(next));
+            // Skin tone variants don't have their own shortcode, so we use the default one's.
+            let shortcode = emoji.shortcode()
+                .or_else(|| emoji.with_skin_tone(emojis::SkinTone::Default)?.shortcode());
+            if next_emoji != Some(emoji)
+                && let Some(shortcode) = shortcode
+            {
+                text.push_str(&format!(" ({shortcode})"));
+                if next_emoji.is_some() {
+                    text.push(' ');
+                }
+            }
+        }
+        text
+    }
+}
+
 #[derive(Script, Widget)]
 pub struct ReactionList {
     #[uid] uid: WidgetUid,
