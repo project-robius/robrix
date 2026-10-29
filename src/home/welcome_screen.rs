@@ -374,8 +374,12 @@ impl Widget for WelcomeScreen {
             self.set_robrix_room_joined(cx, matches!(room_state, Some(RoomState::Joined)));
         }
         let step = self.view.draw_walk(cx, scope, walk);
-        self.update_tips_layout(cx);
-        self.update_robrix_room_panel_layout(cx);
+        let tips_changed = self.update_tips_layout(cx);
+        let panel_changed = self.update_robrix_room_panel_layout(cx);
+        // Both layouts depend on what we just drew, so if either one changed, we draw again.
+        if tips_changed || panel_changed {
+            cx.redraw_area_in_draw(self.view.area());
+        }
         step
     }
 }
@@ -391,34 +395,44 @@ impl WelcomeScreen {
     /// If the tips fit on one row, pad the shorter ones so that all of their hints
     /// are vertically aligned to start at the same height.
     /// Otherwise, show the dividers between the vertically-stacked tips.
-    fn update_tips_layout(&self, cx: &mut Cx) {
+    ///
+    /// Returns `true` if the layout changed.
+    fn update_tips_layout(&self, cx: &mut Cx) -> bool {
         let grid_width = self.view.view(cx, ids!(tips_grid)).area().rect(cx).size.x;
         let uppers = [id!(workspace_tip), id!(settings_tip), id!(navigation_tip)]
             .map(|tip| self.view.view(cx, &[tip, id!(upper)]));
         let rects = uppers.each_ref().map(|upper| upper.area().rect(cx));
         let is_one_row = rects[0].size.x < grid_width / 2.0;
         let tallest = rects.iter().fold(0.0, |tallest, rect| rect.size.y.max(tallest));
+        let mut changed = false;
         for (upper, rect) in uppers.iter().zip(rects) {
             let bottom_margin = if is_one_row { tallest - rect.size.y } else { 0.0 };
             if let Some(mut upper) = upper.borrow_mut()
                 && upper.walk.margin.bottom != bottom_margin
             {
                 upper.walk.margin.bottom = bottom_margin;
-                upper.redraw(cx);
+                changed = true;
             }
         }
         for divider in [id!(tip_divider_1), id!(tip_divider_2)] {
-            self.view.view(cx, &[divider]).set_visible(cx, !is_one_row);
+            let divider = self.view.view(cx, &[divider]);
+            if divider.visible() == is_one_row {
+                divider.set_visible(cx, !is_one_row);
+                changed = true;
+            }
         }
+        changed
     }
 
     /// Lines up the Robrix room panel's details with its title, or centers them if the panel is too narrow.
-    fn update_robrix_room_panel_layout(&mut self, cx: &mut Cx) {
+    ///
+    /// Returns `true` if the layout changed.
+    fn update_robrix_room_panel_layout(&mut self, cx: &mut Cx) -> bool {
         let header_width = self.view.view(cx, ids!(robrix_room_header)).area().rect(cx).size.x;
         let is_narrow = header_width < ROBRIX_ROOM_PANEL_CENTERING_WIDTH;
         let indent = self.view.view(cx, ids!(robrix_room_details_indent));
         if indent.visible() == !is_narrow {
-            return;
+            return false;
         }
         indent.set_visible(cx, !is_narrow);
         let align_x = if is_narrow { 0.5 } else { 0.0 };
@@ -428,6 +442,6 @@ impl WelcomeScreen {
         if let Some(mut description) = self.view.label(cx, ids!(robrix_room_description)).borrow_mut() {
             description.align.x = align_x;
         }
-        self.view.redraw(cx);
+        true
     }
 }

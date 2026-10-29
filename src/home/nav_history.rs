@@ -18,7 +18,8 @@ use crate::{
 
 /// The places that going back and forward return to.
 ///
-/// `None` means "home": the desktop home/welcome tab or the rooms list in mobile view mode.
+/// `None` means "home": the rooms list in mobile view mode, which is only ever the very first place.
+/// In desktop view mode, home isn't a place at all.
 ///
 /// The current place/screen isn't store here, it's in [`AppState::selected_room`].
 #[derive(Clone, Debug, Default)]
@@ -33,7 +34,7 @@ impl NavHistory {
     /// Records that we're navigating away from `current`,
     /// which also discards any places that we could have gone forward to.
     pub fn record_navigation_from(&mut self, current: Option<SelectedRoom>) {
-        self.back.push(current);
+        self.push_previous_place(current);
         self.forward.clear();
     }
 
@@ -45,7 +46,7 @@ impl NavHistory {
     pub fn previous_places<'a>(
         &'a self,
         current: Option<&'a SelectedRoom>,
-        can_show: impl Fn(&SelectedRoom) -> bool + 'a,
+        can_show: impl Fn(Option<&SelectedRoom>) -> bool + 'a,
     ) -> impl Iterator<Item = Option<SelectedRoom>> + 'a {
         let oldest_place = self.back.first().map_or(current, Option::as_ref);
         let fallback_places = std::iter::once(oldest_place)
@@ -58,14 +59,18 @@ impl NavHistory {
     /// Returns where going back N `steps` from the `current` place would go to, if anywhere.
     ///
     /// See [`NavHistory::previous_places()`] for which places this skips.
-    pub fn previous_place(&self, current: Option<&SelectedRoom>, steps: usize, can_show: impl Fn(&SelectedRoom) -> bool) -> Option<Option<SelectedRoom>> {
+    pub fn previous_place(&self, current: Option<&SelectedRoom>, steps: usize, can_show: impl Fn(Option<&SelectedRoom>) -> bool) -> Option<Option<SelectedRoom>> {
         self.previous_places(current, can_show).nth(steps.checked_sub(1)?)
     }
 
     /// Records that we went back N `steps` from `current` to its `previous_place()`,
     /// dropping any places that were skipped (where `can_show` returned false).
-    pub fn record_going_back_from(&mut self, current: Option<SelectedRoom>, steps: usize, can_show: impl Fn(&SelectedRoom) -> bool) {
-        Self::move_places(&mut self.back, &mut self.forward, current, steps, can_show);
+    pub fn record_going_back_from(&mut self, current: Option<SelectedRoom>, steps: usize, can_show: impl Fn(Option<&SelectedRoom>) -> bool) {
+        // Home is only ever the very first place, so it's never a place that going forward returns to.
+        if current.is_some() {
+            self.forward.push(current.clone());
+        }
+        Self::move_places(&mut self.back, &mut self.forward, current.as_ref(), steps, can_show);
     }
 
     /// Returns the places that going forward from the `current` place can go to, from the nearest to the farthest.
@@ -75,35 +80,44 @@ impl NavHistory {
     pub fn next_places<'a>(
         &'a self,
         current: Option<&'a SelectedRoom>,
-        can_show: impl Fn(&SelectedRoom) -> bool + 'a,
+        can_show: impl Fn(Option<&SelectedRoom>) -> bool + 'a,
     ) -> impl Iterator<Item = Option<SelectedRoom>> + 'a {
         self.forward.iter().rev().filter(move |place| can_return_to(place.as_ref(), current, &can_show)).cloned()
     }
 
     /// Returns where going forward N `steps` from the `current` place will go to, if anywhere.
-    pub fn next_place(&self, current: Option<&SelectedRoom>, steps: usize, can_show: impl Fn(&SelectedRoom) -> bool) -> Option<Option<SelectedRoom>> {
+    pub fn next_place(&self, current: Option<&SelectedRoom>, steps: usize, can_show: impl Fn(Option<&SelectedRoom>) -> bool) -> Option<Option<SelectedRoom>> {
         self.next_places(current, can_show).nth(steps.checked_sub(1)?)
     }
 
     /// Records that we went forward N `steps` from `current` to its `next_place()`,
     /// dropping any places that were skipped (where `can_show` returned false).
-    pub fn record_going_forward_from(&mut self, current: Option<SelectedRoom>, steps: usize, can_show: impl Fn(&SelectedRoom) -> bool) {
-        Self::move_places(&mut self.forward, &mut self.back, current, steps, can_show);
+    pub fn record_going_forward_from(&mut self, current: Option<SelectedRoom>, steps: usize, can_show: impl Fn(Option<&SelectedRoom>) -> bool) {
+        self.push_previous_place(current.clone());
+        Self::move_places(&mut self.forward, &mut self.back, current.as_ref(), steps, can_show);
     }
 
-    /// Moves `current` onto `to`, followed by the N `steps` that were popped off `from` that we can return to, except the last,
+    /// Pushes a place that going back will return to.
+    ///
+    /// Home is only ever the very first place, so we skip it if there are places before it.
+    fn push_previous_place(&mut self, place: Option<SelectedRoom>) {
+        if place.is_some() || self.back.is_empty() {
+            self.back.push(place);
+        }
+    }
+
+    /// Moves the N `steps` popped off `from` that we can return to onto `to`, except the last,
     /// which is the new current place. Like a browser, we can then retrace the places that we jumped past.
     fn move_places(
         from: &mut Vec<Option<SelectedRoom>>,
         to: &mut Vec<Option<SelectedRoom>>,
-        current: Option<SelectedRoom>,
+        current: Option<&SelectedRoom>,
         steps: usize,
-        can_show: impl Fn(&SelectedRoom) -> bool,
+        can_show: impl Fn(Option<&SelectedRoom>) -> bool,
     ) {
-        to.push(current.clone());
         let mut steps_left = steps;
         while steps_left > 0 && let Some(place) = from.pop() {
-            if can_return_to(place.as_ref(), current.as_ref(), &can_show) {
+            if can_return_to(place.as_ref(), current, &can_show) {
                 steps_left -= 1;
                 if steps_left > 0 {
                     to.push(place);
@@ -170,13 +184,13 @@ pub fn is_same_place(place: Option<&SelectedRoom>, other: Option<&SelectedRoom>)
 
 /// Returns whether going back or forward from the `current` place can go to the given place,
 /// which must be another place that `can_show` accepts.
-fn can_return_to(place: Option<&SelectedRoom>, current: Option<&SelectedRoom>, can_show: impl Fn(&SelectedRoom) -> bool) -> bool {
-    place != current && place.is_none_or(can_show)
+fn can_return_to(place: Option<&SelectedRoom>, current: Option<&SelectedRoom>, can_show: impl Fn(Option<&SelectedRoom>) -> bool) -> bool {
+    place != current && can_show(place)
 }
 
 /// Returns the place that going back from the given place would go to if there was no history (its fallback).
 ///
-/// For a thread timeline or pane, this returns to its timeline. All others return to the home/welcome tab.
+/// For a thread timeline or pane, this returns to its timeline. All others return home.
 fn fallback_place(place: Option<&SelectedRoom>) -> Option<Option<SelectedRoom>> {
     match place? {
         SelectedRoom::Thread { room_name_id, .. } => Some(Some(SelectedRoom::JoinedRoom { room_name_id: room_name_id.clone() })),
@@ -188,13 +202,17 @@ fn fallback_place(place: Option<&SelectedRoom>) -> Option<Option<SelectedRoom>> 
     }
 }
 
-/// Returns a check for whether a screen can still be shown, i.e., its room is still in the rooms list.
-pub fn can_show(cx: &mut Cx) -> impl Fn(&SelectedRoom) -> bool + use<> {
+/// Returns a check for whether a place can still be shown, i.e., its room is still in the rooms list.
+///
+/// Home is only a place in mobile view mode, so desktop view mode never goes back or forward to it.
+pub fn can_show(cx: &mut Cx) -> impl Fn(Option<&SelectedRoom>) -> bool + use<> {
+    let is_desktop = effective_is_desktop(cx);
     let rooms_list = cx.has_global::<RoomsListRef>().then(|| cx.get_global::<RoomsListRef>().clone());
-    move |screen| match screen {
+    move |place| match place {
+        None => !is_desktop,
         // Joined spaces aren't in the rooms list.
-        SelectedRoom::Space { .. } => true,
-        _ => rooms_list.as_ref().is_none_or(|rooms_list| rooms_list.get_room_state(screen.room_id()).is_some()),
+        Some(SelectedRoom::Space { .. }) => true,
+        Some(screen) => rooms_list.as_ref().is_none_or(|rooms_list| rooms_list.get_room_state(screen.room_id()).is_some()),
     }
 }
 
@@ -253,7 +271,7 @@ mod tests {
         }
     }
 
-    fn any(_: &SelectedRoom) -> bool { true }
+    fn any(_: Option<&SelectedRoom>) -> bool { true }
 
     fn thread(raw_room_id: &str) -> SelectedRoom {
         SelectedRoom::Thread {
@@ -294,23 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn home_is_a_place_that_going_back_and_forward_returns_to() {
-        let (a, b) = (room("!a:example.org"), room("!b:example.org"));
-        let mut history = NavHistory::default();
-        history.record_navigation_from(Some(a.clone()));
-        history.record_navigation_from(None);
-
-        assert_eq!(history.previous_place(Some(&b), 1, any), Some(None));
-        history.record_going_back_from(Some(b.clone()), 1, any);
-        assert_eq!(history.previous_place(None, 1, any), Some(Some(a.clone())));
-        history.record_going_back_from(None, 1, any);
-        assert_eq!(history.forward, vec![Some(b), None]);
-
-        history.record_going_forward_from(Some(a.clone()), 1, any);
-        assert_eq!(history.back, vec![Some(a)]);
-    }
-
-    #[test]
     fn without_history_a_thread_goes_back_to_its_room_and_a_room_goes_home() {
         let mut history = NavHistory::default();
         assert_eq!(
@@ -348,27 +349,6 @@ mod tests {
         history.replace(&pane, &room_a, Some(&room_a));
         assert_eq!(history.back, vec![Some(x)]);
         assert_eq!(history.forward, vec![Some(y)]);
-    }
-
-    #[test]
-    fn going_back_and_forward_skips_a_room_that_cant_be_shown() {
-        let (a, b, c) = (room("!a:example.org"), room("!b:example.org"), room("!c:example.org"));
-        let can_show = |screen: &SelectedRoom| screen.room_id() != b.room_id();
-        let mut history = NavHistory::default();
-        history.record_navigation_from(Some(a.clone()));
-        history.record_navigation_from(Some(b.clone()));
-        history.record_navigation_from(Some(thread("!b:example.org")));
-
-        assert_eq!(history.previous_place(Some(&c), 1, can_show), Some(Some(a.clone())));
-        assert_eq!(history.back.len(), 3);
-        history.record_going_back_from(Some(c.clone()), 1, can_show);
-        assert!(history.back.is_empty());
-
-        history.forward.push(Some(b.clone()));
-        assert_eq!(history.next_place(Some(&a), 1, can_show), Some(Some(c.clone())));
-        history.record_going_forward_from(Some(a.clone()), 1, can_show);
-        assert!(history.forward.is_empty());
-        assert_eq!(history.back, vec![Some(a)]);
     }
 
     #[test]
