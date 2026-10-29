@@ -1013,7 +1013,7 @@ impl Widget for RoomScreen {
                         reaction_data.reaction_senders.keys(),
                         &reaction_data.room_id,
                     );
-                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
+                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.format_with_shortcodes()));
                     cx.widget_action(
                         room_screen_widget_uid, 
                         TooltipAction::HoverIn {
