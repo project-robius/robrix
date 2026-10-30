@@ -405,10 +405,6 @@ script_mod! {
                 mouse_drag_scrolling_description := mod.widgets.SettingsSectionDescription {
                     body: "" // set dynamically, see `MOUSE_DRAG_SCROLLING_DESC`
                 }
-                mod.widgets.SettingsSectionDescription {
-                    font_color: (COLOR_TEXT_WARNING_NOT_FOUND)
-                    body: "<ul><li>Note: scrolling via touchscreen, trackpad, or mouse wheel always works.</li></ul>"
-                }
             }
         }
 
