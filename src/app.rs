@@ -818,6 +818,10 @@ impl AppStateSaveFingerprint {
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         let appearance = vm.cx_mut().global::<AppearanceGlobal>().0;
+        vm.cx_mut().set_native_appearance(match appearance {
+            Appearance::Light => NativeAppearance::Light,
+            Appearance::Dark => NativeAppearance::Dark,
+        });
         // Order matters: base widgets first, then app widgets, then app UI.
         makepad_widgets::theme_mod(vm);
         match appearance {
