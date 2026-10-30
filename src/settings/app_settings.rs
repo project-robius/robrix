@@ -30,6 +30,10 @@ const READ_RECEIPTS_PRIVACY_DESC_OWN_DEVICES: &str =
     "<ul><li>Currently: only your own devices can see how far you've read.</li></ul>";
 
 // The descriptions beneath each on/off toggle, as `(on, off)` pairs.
+const MOUSE_DRAG_SCROLLING_DESC: (&str, &str) = (
+    "<ul><li>Currently: scroll via mouse wheel, trackpad, or clicking and dragging.</li></ul>",
+    "<ul><li>Currently: scroll via mouse wheel or trackpad swipes.</li></ul>",
+);
 const SHOW_READ_RECEIPTS_DESC: (&str, &str) = (
     "<ul><li>Currently: each message shows the avatars of people who have read it.</li></ul>",
     "<ul><li>Currently: messages don't show who has read them.</li></ul>",
@@ -380,6 +384,30 @@ script_mod! {
             body: "<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>"
         }
 
+        mouse_drag_scrolling_section := View {
+            width: Fill, height: Fit
+            flow: Down,
+
+            SubsectionLabel {
+                margin: Inset{top: 10}
+                text: "Mouse Drag Scrolling"
+            }
+
+            View {
+                width: Fill, height: Fit
+                flow: Down,
+                margin: Inset{left: 6},
+
+                mouse_drag_scrolling_toggle := mod.widgets.RobrixSettingsToggle {
+                    active: true,
+                    text: "Click and drag to scroll"
+                }
+                mouse_drag_scrolling_description := mod.widgets.SettingsSectionDescription {
+                    body: "" // set dynamically, see `MOUSE_DRAG_SCROLLING_DESC`
+                }
+            }
+        }
+
         SubsectionLabel {
             margin: Inset{top: 10}
             text: "Maximum Height of Thumbnails"
@@ -678,6 +706,20 @@ impl AppSettings {
             }
         }
 
+        if is_shown
+            && let Some(enabled) = self.view.check_box(cx, ids!(mouse_drag_scrolling_toggle)).changed(actions)
+            && enabled != app_state.app_prefs.mouse_drag_scrolling
+        {
+            app_state.app_prefs.mouse_drag_scrolling = enabled;
+            Self::update_toggle_description(cx, &self.view, ids!(mouse_drag_scrolling_description), enabled, MOUSE_DRAG_SCROLLING_DESC);
+            app_state.app_prefs.on_mouse_drag_scrolling_changed(cx);
+            enqueue_popup_notification(
+                "Updated mouse drag scrolling.",
+                PopupKind::Success,
+                Some(3.0),
+            );
+        }
+
         let custom_input = self.view.text_input(cx, ids!(thumb_custom_input));
         if is_shown
             && let Some(selected) = self.view.radio_button_set(cx, ids_array!(
@@ -835,6 +877,8 @@ impl AppSettings {
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
         send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
 
+        self.view.check_box(cx, ids!(mouse_drag_scrolling_toggle))
+            .set_active(cx, prefs.mouse_drag_scrolling, Animate::No);
         self.view.check_box(cx, ids!(show_read_receipts_toggle))
             .set_active(cx, prefs.show_read_receipts, Animate::No);
         self.view.check_box(cx, ids!(show_typing_notices_toggle))
@@ -876,6 +920,7 @@ impl AppSettings {
         view.drop_down2(cx, ids!(mark_as_read_dropdown))
             .set_selected_item(cx, prefs.mark_as_read_behavior.to_index());
         Self::update_mark_as_read_description(cx, view, prefs.mark_as_read_behavior);
+        Self::update_toggle_description(cx, view, ids!(mouse_drag_scrolling_description), prefs.mouse_drag_scrolling, MOUSE_DRAG_SCROLLING_DESC);
         Self::update_toggle_description(cx, view, ids!(show_read_receipts_description), prefs.show_read_receipts, SHOW_READ_RECEIPTS_DESC);
         Self::update_toggle_description(cx, view, ids!(show_typing_notices_description), prefs.show_typing_notices, SHOW_TYPING_NOTICES_DESC);
         Self::update_toggle_description(cx, view, ids!(send_typing_notices_description), prefs.send_typing_notices, SEND_TYPING_NOTICES_DESC);
@@ -893,6 +938,9 @@ impl AppSettings {
         // soft-keyboard caveat is only relevant on iOS/Android.
         view.widget(cx, ids!(send_shortcut_soft_keyboard_warning))
             .set_visible(cx, cfg!(any(target_os = "ios", target_os = "android")));
+        // A mouse on iOS/Android acts like a touch, which can always drag to scroll.
+        view.widget(cx, ids!(mouse_drag_scrolling_section))
+            .set_visible(cx, !cfg!(any(target_os = "ios", target_os = "android")));
 
         let custom_active = matches!(prefs.thumbnail_max_height, ThumbnailMaxHeight::Custom(_));
         Self::set_thumb_custom_input_read_only(cx, view, custom_active);

@@ -118,6 +118,8 @@ script_mod! {
         auto_tail: false,
         bounce_at_start: true,
         bounce_at_end: true,
+        // Lets a mouse wheel scroll the list sideways in the Mobile layout, where it's horizontal.
+        use_vertical_finger_scroll: true,
         // Nothing here listens for scroll position changes.
         emit_scroll_actions: false,
         scroll_bar: ScrollBar {  // hide the scroll bar
