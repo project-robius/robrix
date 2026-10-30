@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces Makepad's file of the same name, so the splash screen matches Robrix's background. -->
+<resources>
+    <color name="makepad_launch_background_light">#FFFFFFFF</color>
+    <color name="makepad_launch_background_dark">#FF262626</color>
+</resources>
