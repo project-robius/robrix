@@ -21,6 +21,9 @@ pub struct AppPreferences {
     ///   virtual/soft keyboards always insert a newline upon Enter.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub send_on_enter: bool,
+    /// Whether a mouse or trackpad can scroll views by clicking and dragging them.
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    pub mouse_drag_scrolling: bool,
     /// Max height of image thumbnails in the room timeline.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub thumbnail_max_height: ThumbnailMaxHeight,
@@ -55,6 +58,7 @@ impl Default for AppPreferences {
         Self {
             view_mode: ViewModeOverride::default(),
             send_on_enter: true,
+            mouse_drag_scrolling: true,
             thumbnail_max_height: ThumbnailMaxHeight::default(),
             ui_zoom: UiZoom::default(),
             read_receipts_privacy: ReadReceiptsPrivacy::default(),
@@ -82,6 +86,12 @@ impl AppPreferences {
     pub fn on_send_on_enter_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.send_on_enter = self.send_on_enter;
         cx.action(AppPreferencesAction::SendOnEnterChanged(self.send_on_enter));
+    }
+
+    /// Applies the current `mouse_drag_scrolling` value.
+    pub fn on_mouse_drag_scrolling_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.mouse_drag_scrolling = self.mouse_drag_scrolling;
+        cx.set_mouse_drag_scrolling(self.mouse_drag_scrolling);
     }
 
     /// Broadcasts the current `thumbnail_max_height` to listening widgets.
@@ -194,6 +204,7 @@ impl AppPreferences {
     pub fn broadcast_all(&self, cx: &mut Cx) {
         self.on_view_mode_changed(cx);
         self.on_send_on_enter_changed(cx);
+        self.on_mouse_drag_scrolling_changed(cx);
         self.on_thumbnail_max_height_changed(cx);
         self.on_ui_zoom_changed(cx);
         self.on_read_receipts_privacy_changed(cx);
