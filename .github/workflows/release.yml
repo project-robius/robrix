@@ -29,8 +29,8 @@ on:
         required: false
         type: boolean
         default: false
-      build_macos_14_aarch64:
-        description: 'Build macOS 14 (Apple Silicon)'
+      build_macos_15_aarch64:
+        description: 'Build macOS 15 (Apple Silicon)'
         required: false
         type: boolean
         default: false
@@ -157,7 +157,7 @@ jobs:
               addLinux('ubuntu-24.04-arm', 'aarch64');
               addLinux('ubuntu-22.04', 'x86_64');
               addLinux('ubuntu-22.04-arm', 'aarch64');
-              addMacos('macos-14', 'aarch64');
+              addMacos('macos-15', 'aarch64');
               addMacos('macos-15-intel', 'x86_64');
               addWindows();
               addAndroid('aarch64', 'aarch64-linux-android');
@@ -167,7 +167,7 @@ jobs:
               if (enabled(inputs.build_ubuntu_24_aarch64)) addLinux('ubuntu-24.04-arm', 'aarch64');
               if (enabled(inputs.build_ubuntu_22_x86_64)) addLinux('ubuntu-22.04', 'x86_64');
               if (enabled(inputs.build_ubuntu_22_aarch64)) addLinux('ubuntu-22.04-arm', 'aarch64');
-              if (enabled(inputs.build_macos_14_aarch64)) addMacos('macos-14', 'aarch64');
+              if (enabled(inputs.build_macos_15_aarch64)) addMacos('macos-15', 'aarch64');
               if (enabled(inputs.build_macos_15_x86_64)) addMacos('macos-15-intel', 'x86_64');
               if (enabled(inputs.build_windows_2022_x86_64)) addWindows();
               if (enabled(inputs.build_android_aarch64)) addAndroid('aarch64', 'aarch64-linux-android');
