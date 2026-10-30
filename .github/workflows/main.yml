@@ -51,7 +51,7 @@ jobs:
   clippy:
     if: github.event.pull_request.draft == false
     name: clippy
-    runs-on: macos-14  ## avoids having to install Linux deps
+    runs-on: macos-15  ## avoids having to install Linux deps
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
