@@ -102,14 +102,14 @@ pub fn text_preview_of_timeline_item(
             match &msg_like_content.kind {
                 MsgLikeKind::Message(msg) => text_preview_of_message(msg.msgtype(), sender_username),
                 MsgLikeKind::Sticker(sticker) => TextPreview::from((
-                    format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
+                    format!("[Sticker]: <i>{}</i>", utils::escape_text_and_line_breaks(&sticker.content().body)),
                     BeforeText::UsernameWithColon,
                 )),
                 MsgLikeKind::Poll(poll_state) => TextPreview::from((
                     format!(
                         "[Poll]: {}",
-                        htmlize::escape_text(
-                            poll_state.fallback_text()
+                        utils::escape_text_and_line_breaks(
+                            &poll_state.fallback_text()
                                 .unwrap_or_else(|| poll_state.results().question)
                         ),
                     ),
@@ -233,7 +233,7 @@ fn text_preview_of_message(
             if let Some(formatted_body) = audio.formatted.as_ref() {
                 Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                htmlize::escape_text(audio.body.as_str())
+                utils::escape_text_and_line_breaks(audio.body.as_str())
             }
         ),
         MessageType::Emote(emote) => format!(
@@ -242,7 +242,7 @@ fn text_preview_of_message(
             if let Some(formatted_body) = emote.formatted.as_ref() {
                 Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                htmlize::escape_text(emote.body.as_str())
+                utils::escape_text_and_line_breaks(emote.body.as_str())
             }
         ),
         MessageType::File(file) => format!(
@@ -250,7 +250,7 @@ fn text_preview_of_message(
             if let Some(formatted_body) = file.formatted.as_ref() {
                 Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                htmlize::escape_text(file.body.as_str())
+                utils::escape_text_and_line_breaks(file.body.as_str())
             }
         ),
         MessageType::Image(image) => format!(
@@ -258,24 +258,24 @@ fn text_preview_of_message(
             if let Some(formatted_body) = image.formatted.as_ref() {
                 Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                htmlize::escape_text(image.body.as_str())
+                utils::escape_text_and_line_breaks(image.body.as_str())
             }
         ),
         MessageType::Location(location) => format!(
             "[Location]: <i>{}</i>",
-            htmlize::escape_text(&location.body),
+            utils::escape_text_and_line_breaks(&location.body),
         ),
         MessageType::Notice(notice) => format!("<i>{}</i>",
             if let Some(formatted_body) = notice.formatted.as_ref() {
                 utils::trim_start_html_whitespace(&formatted_body.body).into()
             } else {
-                htmlize::escape_text(notice.body.as_str())
+                utils::escape_text_and_line_breaks(notice.body.as_str())
             }
         ),
         MessageType::ServerNotice(notice) => format!(
             "[Server Notice]: <i>{} -- {}</i>",
             notice.server_notice_type.as_str(),
-            notice.body,
+            utils::escape_text_and_line_breaks(&notice.body),
         ),
         MessageType::Text(text) => {
             text.formatted
@@ -289,8 +289,8 @@ fn text_preview_of_message(
                     })
                 )
                 .unwrap_or_else(|| match utils::linkify(&text.body, false) {
-                    Cow::Borrowed(plaintext) => htmlize::escape_text(plaintext).to_string(),
-                    Cow::Owned(linkified) => linkified,
+                    Cow::Borrowed(plaintext) => utils::escape_text_and_line_breaks(plaintext).into_owned(),
+                    Cow::Owned(linkified) => linkified.replace('\n', "<br>"),
                 })
         }
         MessageType::VerificationRequest(verification) => format!(
@@ -302,7 +302,7 @@ fn text_preview_of_message(
             if let Some(formatted_body) = video.formatted.as_ref() {
                Cow::Borrowed(formatted_body.body.as_str())
             } else {
-                htmlize::escape_text(&video.body)
+                utils::escape_text_and_line_breaks(&video.body)
             }
         ),
         MessageType::_Custom(custom) => format!(
@@ -311,7 +311,7 @@ fn text_preview_of_message(
         ),
         other => format!(
             "[Unknown message type]: {}",
-            htmlize::escape_text(other.body()),
+            utils::escape_text_and_line_breaks(other.body()),
         ),
     };
     TextPreview::from((text, BeforeText::UsernameWithColon))

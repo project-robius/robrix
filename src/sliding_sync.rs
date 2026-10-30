@@ -5761,7 +5761,7 @@ async fn get_latest_event_details(
                 sender,
                 &sender_username,
             ).format_with(&sender_username, true);
-            Some(LatestEventPreview { timestamp: *timestamp, text, sender: Some(sender.clone()) })
+            Some(LatestEventPreview { timestamp: *timestamp, text: utils::collapse_html_line_breaks(text), sender: Some(sender.clone()) })
         }
         LatestEventValue::Local { timestamp, sender, profile, content, state: _ } => {
             // TODO: use the `state` enum to augment the preview text with more details.
@@ -5774,7 +5774,7 @@ async fn get_latest_event_details(
                 sender,
                 &sender_username,
             ).format_with(&sender_username, true);
-            Some(LatestEventPreview { timestamp: *timestamp, text, sender: Some(sender.clone()) })
+            Some(LatestEventPreview { timestamp: *timestamp, text: utils::collapse_html_line_breaks(text), sender: Some(sender.clone()) })
         }
         LatestEventValue::RemoteInvite { timestamp, .. } => {
             Some(LatestEventPreview {
