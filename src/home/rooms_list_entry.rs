@@ -184,6 +184,8 @@ script_mod! {
                     align: Align{ x: 0.0, y: 0.0 }
                     // Don't clip (cut-off) the unread badge's glow
                     clip_x: false, clip_y: false
+                    spacing: 3
+
                     top := View {
                         width: Fill, height: Fit,
                         spacing: 3,
@@ -191,6 +193,7 @@ script_mod! {
                         room_name := mod.widgets.RoomName {}
                         timestamp := mod.widgets.RoomsListEntryTimestamp { }
                     }
+
                     bottom := View {
                         width: Fill, height: Fill,
                         spacing: 2,

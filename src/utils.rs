@@ -408,6 +408,35 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
     Local.timestamp_millis_opt(millis).single()
 }
 
+/// Returns whether the HTML tag with the given name causes a line break, e.g., `<br>`, `<h1>` or `<li>`.
+fn is_html_break_tag(tag_name: &[u8]) -> bool {
+    const BREAK_TAGS: [&[u8]; 20] = [
+        b"br", b"p", b"hr", b"div", b"h1", b"h2", b"h3", b"h4", b"h5", b"h6",
+        b"pre", b"blockquote", b"ul", b"ol", b"li", b"table", b"tr", b"td", b"th", b"details",
+    ];
+    BREAK_TAGS.iter().any(|tag| tag_name.eq_ignore_ascii_case(tag))
+}
+
+/// Returns the name of an HTML tag from its `tag_content` between `<` and `>`, e.g., `p` for `</p>`.
+fn get_html_tag_name(tag_content: &[u8]) -> Option<&[u8]> {
+    let mut i = 0;
+    while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if i < tag_content.len() && tag_content[i] == b'/' {
+        i += 1;
+        while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
+            i += 1;
+        }
+    }
+
+    let name_start = i;
+    while i < tag_content.len() && tag_content[i].is_ascii_alphanumeric() {
+        i += 1;
+    }
+    (name_start < i).then(|| &tag_content[name_start..i])
+}
+
 /// Replaces all line breaks, tabs, paragraphs and other separators with a single space `' '`.
 ///
 /// If `is_html` is true, it also removes line-breaking tags, e.g., `<br>`, and block tags, e.g., `<h1>` or `<li>`.
@@ -415,43 +444,6 @@ pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, s
     #[inline]
     fn is_separator(byte: u8) -> bool {
         matches!(byte, b'\n' | b'\r' | b'\t' | 0x0B | 0x0C)
-    }
-
-    #[inline]
-    fn is_html_break_tag(tag_name: &[u8]) -> bool {
-        const BREAK_TAGS: [&[u8]; 20] = [
-            b"br", b"p", b"hr", b"div", b"h1", b"h2", b"h3", b"h4", b"h5", b"h6",
-            b"pre", b"blockquote", b"ul", b"ol", b"li", b"table", b"tr", b"td", b"th", b"details",
-        ];
-        BREAK_TAGS.iter().any(|tag| tag_name.eq_ignore_ascii_case(tag))
-    }
-
-    #[inline]
-    fn html_tag_causes_break(tag_content: &[u8]) -> bool {
-        let mut i = 0;
-        while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
-            i += 1;
-        }
-        if i >= tag_content.len() {
-            return false;
-        }
-
-        if tag_content[i] == b'/' {
-            i += 1;
-            while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
-                i += 1;
-            }
-        }
-
-        let name_start = i;
-        while i < tag_content.len() && tag_content[i].is_ascii_alphanumeric() {
-            i += 1;
-        }
-        if name_start == i {
-            return false;
-        }
-
-        is_html_break_tag(&tag_content[name_start..i])
     }
 
     let mut has_allocated = false;
@@ -494,7 +486,7 @@ pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, s
                     tag_end += 1;
                 }
 
-                if tag_end < bytes.len() && html_tag_causes_break(&bytes[i + 1..tag_end]) {
+                if tag_end < bytes.len() && get_html_tag_name(&bytes[i + 1..tag_end]).is_some_and(is_html_break_tag) {
                     if !has_allocated {
                         has_allocated = true;
                         out = String::with_capacity(s.len());
@@ -522,6 +514,46 @@ pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, s
 
     out.push_str(&s[segment_start..]);
     Cow::Owned(out)
+}
+
+/// Removes each `<br>` from the given `html` that would leave a blank line,
+/// so that a run of line breaks shows up as just one.
+pub fn collapse_html_line_breaks(html: String) -> String {
+    let bytes = html.as_bytes();
+    let mut collapsed: Option<String> = None;
+    let mut segment_start = 0;
+    let mut is_at_line_start = true;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            is_at_line_start &= bytes[i].is_ascii_whitespace();
+            i += 1;
+            continue;
+        }
+        let Some(tag_end) = bytes[i..].iter().position(|&byte| byte == b'>').map(|len| i + len) else { break };
+        match get_html_tag_name(&bytes[i + 1..tag_end]) {
+            Some(name) if name.eq_ignore_ascii_case(b"br") => {
+                if is_at_line_start {
+                    collapsed.get_or_insert_with(|| String::with_capacity(html.len()))
+                        .push_str(&html[segment_start..i]);
+                    segment_start = tag_end + 1;
+                }
+                is_at_line_start = true;
+            }
+            Some(name) if is_html_break_tag(name) => is_at_line_start = true,
+            // Images like custom emoji show up even without any text.
+            Some(name) if name.eq_ignore_ascii_case(b"img") => is_at_line_start = false,
+            _ => {}
+        }
+        i = tag_end + 1;
+    }
+    match collapsed {
+        Some(mut collapsed) => {
+            collapsed.push_str(&html[segment_start..]);
+            collapsed
+        }
+        None => html,
+    }
 }
 
 /// Looks for and removes the `<mx-reply>` element from the given HTML message body, if it exists.
@@ -866,6 +898,16 @@ pub fn trim_start_html_line_breaks(mut text: &str) -> &str {
         prev_text_len = text.len();
     }
     text
+}
+
+/// Escapes the given plaintext `text` into HTML, turning its line breaks into `<br>` tags.
+pub fn escape_text_and_line_breaks(text: &str) -> Cow<'_, str> {
+    let escaped = htmlize::escape_text(text);
+    if escaped.contains('\n') {
+        Cow::Owned(escaped.replace('\n', "<br>"))
+    } else {
+        escaped
+    }
 }
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.

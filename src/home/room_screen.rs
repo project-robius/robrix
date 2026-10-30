@@ -4770,14 +4770,14 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
                         let formatted = format!(
-                            "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
-                            sn.body,
+                            "<b>Server notice:</b> {}<br><br><i>Notice type:</i>: {}{}{}",
+                            utils::escape_text_and_line_breaks(&sn.body),
                             sn.server_notice_type.as_str(),
                             sn.limit_type.as_ref()
-                                .map(|l| format!("\n<i>Limit type:</i> {}", l.as_str()))
+                                .map(|l| format!("<br><i>Limit type:</i> {}", l.as_str()))
                                 .unwrap_or_default(),
                             sn.admin_contact.as_ref()
-                                .map(|c| format!("\n<i>Admin contact:</i> {}", c))
+                                .map(|c| format!("<br><i>Admin contact:</i> {}", c))
                                 .unwrap_or_default(),
                         );
                         let mut link_preview_ref =
@@ -5348,10 +5348,13 @@ fn populate_text_message_content(
     }
     // The message was non-HTML plaintext.
     else {
-        let linkified_html = utils::linkify_get_urls(body, false, Some(&mut links));
-        let html = apply_room_mention(linkified_html, room_mention_room_id);
-        match html {
-            Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
+        let html = match utils::linkify_get_urls(body, false, Some(&mut links)) {
+            // `apply_room_mention()` may turn this plaintext into HTML, so we escape it first.
+            Cow::Borrowed(plaintext) if room_mention_room_id.is_some() => htmlize::escape_text(plaintext),
+            linkified_html => linkified_html,
+        };
+        match apply_room_mention(html, room_mention_room_id) {
+            Cow::Owned(html) => message_content_widget.show_html(cx, html.replace('\n', "<br>")),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
     };
@@ -5625,7 +5628,7 @@ fn populate_file_message_content(
     let caption = file_content.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("{}<br>", fb.body))
-        .or_else(|| file_content.caption().map(|c| format!("{}<br>", htmlize::escape_text(c))))
+        .or_else(|| file_content.caption().map(|c| format!("{}<br>", utils::escape_text_and_line_breaks(c))))
         .unwrap_or_default();
 
     message_content_widget.show_html(
@@ -5663,7 +5666,7 @@ fn populate_audio_message_content(
     let caption = audio.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("{}<br>", fb.body))
-        .or_else(|| audio.caption().map(|c| format!("{}<br>", htmlize::escape_text(c))))
+        .or_else(|| audio.caption().map(|c| format!("{}<br>", utils::escape_text_and_line_breaks(c))))
         .unwrap_or_default();
 
     // TODO: add an audio to play the audio file
@@ -5707,7 +5710,7 @@ fn populate_video_message_content(
     let caption = video.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("{}<br>", fb.body))
-        .or_else(|| video.caption().map(|c| format!("{}<br>", htmlize::escape_text(c))))
+        .or_else(|| video.caption().map(|c| format!("{}<br>", utils::escape_text_and_line_breaks(c))))
         .unwrap_or_default();
 
     // TODO: populate a video widget here, once makepad supports that
@@ -5750,7 +5753,7 @@ fn populate_location_message_content(
     } else {
         message_content_widget.show_html(
             cx,
-            format!("<i>[Location invalid]</i> {}", htmlize::escape_text(&location.body))
+            format!("<i>[Location invalid]</i> {}", utils::escape_text_and_line_breaks(&location.body))
         );
     }
 
@@ -5795,7 +5798,7 @@ fn populate_redacted_message_content(
         if redactor == event_tl_item.sender() {
             fully_drawn = true;
             match reason {
-                Some(r) => format!("⛔ <i>Deleted their own message. Reason: \"{}\".</i>", htmlize::escape_text(r)),
+                Some(r) => format!("⛔ <i>Deleted their own message. Reason: \"{}\".</i>", utils::escape_text_and_line_breaks(&r)),
                 None => String::from("⛔ <i>Deleted their own message.</i>"),
             }
         } else {
@@ -5811,7 +5814,7 @@ fn populate_redacted_message_content(
             match reason {
                 Some(r) => format!("⛔ <i>{} deleted this message. Reason: \"{}\".</i>",
                     redactor_name_esc,
-                    htmlize::escape_text(r),
+                    utils::escape_text_and_line_breaks(&r),
                 ),
                 None => format!("⛔ <i>{} deleted this message.</i>", redactor_name_esc),
             }
