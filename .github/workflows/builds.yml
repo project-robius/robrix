@@ -8,10 +8,10 @@
 # ├─────────────────┼─────────────────┼─────────────────┤
 # │ Ubuntu Latest   │ Linux x86_64    │ cargo build     │
 # │ macOS 15 Intel  │ macOS x86_64    │ cargo build     │
-# │ macOS 14 ARM64  │ macOS ARM64     │ cargo build     │
+# │ macOS 15 ARM64  │ macOS ARM64     │ cargo build     │
 # │ Windows 2022    │ Windows x86_64  │ cargo build     │
-# │ macOS 14        │ iOS aarch64     │ cargo-makepad   │
-# │ macOS 14        │ Android         │ cargo-makepad   │
+# │ macOS 15        │ iOS aarch64     │ cargo-makepad   │
+# │ macOS 15        │ Android         │ cargo-makepad   │
 # │ Ubuntu Latest   │ Android         │ cargo-makepad   │
 # │ Ubuntu Latest   │ Android armv7   │ cargo-makepad   │
 # │ Windows 2022    │ Android         │ cargo-makepad   │
@@ -110,7 +110,7 @@ jobs:
       matrix:
         include:
           # Apple Silicon Macs (M1/M2/M3/M4 chips)
-          - os: macos-14
+          - os: macos-15
             arch: arm64
           # Intel Macs (x86_64 architecture)
           - os: macos-15-intel
@@ -163,7 +163,7 @@ jobs:
 
   build_ios_on_macos:
     name: Build iOS (macOS Host)
-    runs-on: macos-14
+    runs-on: macos-15
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v5
@@ -214,7 +214,7 @@ jobs:
 
   build_android_on_macos:
     name: Build Android (macOS Host)
-    runs-on: macos-14
+    runs-on: macos-15
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v5
