@@ -2,8 +2,8 @@ use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{error, log, Cx};
-use matrix_sdk_base::crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString};
+use makepad_widgets::{error, log, Cx, SignalToUI};
+use matrix_sdk_base::crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString, IdentityState};
 use matrix_sdk::{
     encryption::{
         identities::UserIdentity, verification::{SasState, SasVerification, Verification, VerificationRequest, VerificationRequestState}, VerificationState}, ruma::{
@@ -12,11 +12,12 @@ use matrix_sdk::{
             room::message::{MessageType, OriginalSyncRoomMessageEvent},
         },
         OwnedUserId, UserId,
-    }, Client
+    }, Client, Room
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 
 use crate::{
+    home::{identity_reset_banner::IdentityReset, room_screen::TimelineUpdate},
     profile::user_verification_cache::{enqueue_user_verification_update, UserVerificationState, UserVerificationUpdate},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
@@ -122,6 +123,47 @@ pub fn handle_user_identities_subscriber(client: Client) -> tokio::task::JoinHan
             }
         }
     })
+}
+
+/// Sends the members of the given room whose identities were reset to that room's timeline,
+/// first right away and then again whenever that list changes.
+pub async fn identity_resets_subscriber_handler(room: Room, sender: crossbeam_channel::Sender<TimelineUpdate>) {
+    // Identity resets only matter in encrypted rooms, and watching for them means loading every member's identity.
+    if !room.latest_encryption_state().await.is_ok_and(|state| state.is_encrypted()) {
+        return;
+    }
+    let changes = match room.subscribe_to_identity_status_changes().await {
+        Ok(changes) => changes,
+        Err(e) => {
+            error!("Failed to subscribe to identity changes in room {}: {e:?}", room.room_id());
+            return;
+        }
+    };
+    let mut changes = std::pin::pin!(changes);
+    // Each member whose identity was reset, and whether we had verified them before that.
+    let mut resets: Vec<(OwnedUserId, bool)> = Vec::new();
+    loop {
+        let mut identity_resets = Vec::with_capacity(resets.len());
+        for (user_id, was_verified) in &resets {
+            let display_name = room.get_member_no_sync(user_id).await.ok().flatten()
+                .and_then(|member| member.display_name().map(ToOwned::to_owned));
+            identity_resets.push(IdentityReset { user_id: user_id.clone(), display_name, was_verified: *was_verified });
+        }
+        if sender.send(TimelineUpdate::IdentityResets(identity_resets)).is_err() {
+            return;
+        }
+        SignalToUI::set_ui_signal();
+
+        let Some(changes) = changes.next().await else { return };
+        for change in changes {
+            resets.retain(|(user_id, _)| *user_id != change.user_id);
+            match change.changed_to {
+                IdentityState::PinViolation => resets.push((change.user_id, false)),
+                IdentityState::VerificationViolation => resets.push((change.user_id, true)),
+                IdentityState::Pinned | IdentityState::Verified => { }
+            }
+        }
+    }
 }
 
 

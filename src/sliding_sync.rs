@@ -754,6 +754,11 @@ pub enum MatrixRequest {
     GetUserVerificationState {
         user_id: OwnedUserId,
     },
+    /// Request to accept that the given user reset their identity, which stops the warnings about it.
+    /// If we had verified them before, this also withdraws that verification.
+    AcknowledgeIdentityReset {
+        user_id: OwnedUserId,
+    },
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -854,6 +859,13 @@ pub enum MatrixRequest {
     ///
     /// This is only valid for the main room timeline, not for thread-focused timelines.
     SubscribeToPinnedEventIds {
+        room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe.
+        subscribe: bool,
+    },
+    /// Subscribe to the identity resets of the given room's members,
+    /// which are sent to the UI via the room's main timeline update sender.
+    SubscribeToIdentityResets {
         room_id: OwnedRoomId,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
@@ -2233,6 +2245,26 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::AcknowledgeIdentityReset { user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _acknowledge_task = Handle::current().spawn(async move {
+                    let result = match client.encryption().get_user_identity(&user_id).await {
+                        Ok(Some(identity)) if identity.has_verification_violation() => identity.withdraw_verification().await,
+                        Ok(Some(identity)) => identity.pin().await,
+                        Ok(None) => return,
+                        Err(e) => Err(e),
+                    };
+                    if let Err(e) = result {
+                        error!("Failed to acknowledge the identity reset of {user_id}: {e:?}");
+                        enqueue_popup_notification(
+                            format!("Couldn't accept {user_id}'s new identity. Error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
+                    }
+                });
+            }
+
             MatrixRequest::GetRoomDiagnostics { room_id } => {
                 let Some(client) = get_client() else { continue };
                 let _diagnostics_task = Handle::current().spawn(async move {
@@ -2540,6 +2572,25 @@ async fn matrix_worker_task(
                 });
                 if let Some(old) = subscribers_pinned_events.insert(room_id, subscribe_pinned_events_task) {
                     old.abort();
+                }
+            }
+
+            MatrixRequest::SubscribeToIdentityResets { room_id, subscribe } => {
+                let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                let Some(jrd) = all_joined_rooms.get_mut(&room_id) else {
+                    log!("BUG: skipping subscribe to identity resets request for unknown room {room_id}");
+                    continue;
+                };
+                if let Some(old) = jrd.identity_resets_subscriber.take() {
+                    old.abort();
+                }
+                if subscribe {
+                    jrd.identity_resets_subscriber = Some(Handle::current().spawn(
+                        crate::verification::identity_resets_subscriber_handler(
+                            jrd.main_timeline.timeline.room().clone(),
+                            jrd.main_timeline.timeline_update_sender.clone(),
+                        )
+                    ));
                 }
             }
 
@@ -3550,6 +3601,8 @@ struct JoinedRoomDetails {
     threads_list_subscriber: Option<RoomDataSubscriber<Arc<Notify>>>,
     /// The task that watches this room's info while any room info pane shows it (or saved it).
     room_info_subscriber: Option<RoomDataSubscriber<UnboundedSender<Option<RoomNotificationMode>>>>,
+    /// The task that watches for this room's members' identity resets while this room is shown.
+    identity_resets_subscriber: Option<JoinHandle<()>>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -3560,6 +3613,9 @@ impl Drop for JoinedRoomDetails {
         drop(self.pinned_messages_subscriber.take());
         drop(self.threads_list_subscriber.take());
         drop(self.room_info_subscriber.take());
+        if let Some(task) = self.identity_resets_subscriber.take() {
+            task.abort();
+        }
     }
 }
 impl JoinedRoomDetails {
@@ -5026,6 +5082,7 @@ async fn add_new_room(
             pinned_messages_subscriber: None,
             threads_list_subscriber: None,
             room_info_subscriber: None,
+            identity_resets_subscriber: None,
         },
     );
     // A visible RoomScreen might still have this room's previous channel endpoints,

@@ -163,6 +163,34 @@ script_mod! {
                     text: "Verified"
                 }
             }
+
+            identity_reset_view := View {
+                visible: false
+                width: Fill, height: Fit
+                margin: Inset{top: 10}
+                flow: Down
+                spacing: 10
+                align: Align{x: 0.5}
+
+                Label {
+                    width: Fill, height: Fit
+                    align: Align{x: 0.5}
+                    flow: Flow.Right{wrap: true}
+                    draw_text +: {
+                        color: (COLOR_FG_DANGER_RED),
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
+                    }
+                    text: "This user's identity was reset, so they're no longer verified."
+                }
+
+                withdraw_verification_button := RobrixNegativeIconButton {
+                    padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                    margin: 0,
+                    draw_icon.svg: (VERIFICATION_NO)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
+                    text: "Withdraw Verification"
+                }
+            }
         }
 
         LineH { padding: 15 }
@@ -590,6 +618,10 @@ impl Widget for UserProfileSlidingPane {
                 submit_async_request(MatrixRequest::RequestUserVerification { user_id: info.user_id.clone() });
             }
 
+            if self.button(cx, ids!(withdraw_verification_button)).clicked(actions) {
+                submit_async_request(MatrixRequest::AcknowledgeIdentityReset { user_id: info.user_id.clone() });
+            }
+
             if self.button(cx, ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
@@ -671,6 +703,10 @@ impl Widget for UserProfileSlidingPane {
         let is_verified = verification_state == Some(UserVerificationState::Verified);
         self.user_verification_badge(cx, ids!(verification_badge)).show_state(cx, verification_state);
         self.view(cx, ids!(verified_label)).set_visible(cx, is_verified);
+        self.view(cx, ids!(identity_reset_view)).set_visible(
+            cx,
+            !self.is_showing_current_account && verification_state == Some(UserVerificationState::VerificationViolation),
+        );
 
         // Set the membership status and role in the room.
         self.view(cx, ids!(membership)).set_visible(cx, info.room.is_some());
@@ -793,6 +829,7 @@ impl UserProfileSlidingPane {
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         self.view.button(cx, ids!(direct_message_button)).reset_hover(cx);
         self.view.button(cx, ids!(verify_this_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(withdraw_verification_button)).reset_hover(cx);
         self.view.button(cx, ids!(copy_link_to_user_button)).reset_hover(cx);
         self.view.button(cx, ids!(jump_to_read_receipt_button)).reset_hover(cx);
         self.view.button(cx, ids!(block_user_button)).reset_hover(cx);

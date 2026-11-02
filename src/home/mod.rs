@@ -8,6 +8,7 @@ pub mod event_source_modal;
 pub mod failed_send_banner;
 pub mod hide_on_scroll;
 pub mod home_screen;
+pub mod identity_reset_banner;
 pub mod invite_modal;
 pub mod invite_screen;
 pub mod light_themed_dock;
@@ -68,6 +69,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     invite_screen::script_mod(vm);
     tombstone_footer::script_mod(vm);
     failed_send_banner::script_mod(vm);
+    identity_reset_banner::script_mod(vm);
     room_pane_screen::script_mod(vm);
     state_event_group::script_mod(vm);
     read_marker::script_mod(vm);
