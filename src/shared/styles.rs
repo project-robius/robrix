@@ -415,6 +415,8 @@ script_mod! {
     // A lighter version of the main Robrix purple color
     mod.widgets.COLOR_LOGIN_BG_TOP = #EEEAFA
     mod.widgets.COLOR_LOGIN_BG_BOTTOM = #FFFFFF
+    // Shows the appearance we'd switch to, so it's a moon here and a sun in the dark theme.
+    mod.widgets.ICON_SWITCH_APPEARANCE = crate_resource("self://resources/icons/moon.svg")
 
     mod.widgets.COLOR_SPACE_LOBBY_NAME_TEXT = #x1A1A1A
     mod.widgets.COLOR_SPACE_LOBBY_TREE_LINES = #x888888

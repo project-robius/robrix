@@ -4,8 +4,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    persistence,
-    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride}},
+    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride, set_appearance}},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -632,11 +631,7 @@ impl AppSettings {
         if is_shown && let Some(index) = self.view.drop_down2(cx, ids!(appearance_dropdown)).changed(actions) {
             let new_appearance = Appearance::from_index(index);
             if new_appearance != cx.global::<AppearanceGlobal>().0 {
-                cx.global::<AppearanceGlobal>().0 = new_appearance;
-                if let Err(e) = persistence::save_appearance(new_appearance) {
-                    error!("Failed to save appearance. Error: {e}");
-                }
-                cx.request_style_reload();
+                set_appearance(cx, new_appearance);
                 enqueue_popup_notification(
                     "Updated appearance setting.",
                     PopupKind::Success,

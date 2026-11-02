@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use serde::{Deserialize, Serialize};
 
-use crate::directory_search::RoomDirectories;
+use crate::{directory_search::RoomDirectories, persistence};
 
 /// App-wide user preferences controlled by the App Settings UI.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -511,3 +511,12 @@ impl Appearance {
 /// A `Cx` global holding the current [`Appearance`].
 #[derive(Clone, Copy, Default, Debug)]
 pub struct AppearanceGlobal(pub Appearance);
+
+/// Switches the whole app to the given appearance and saves it for future launches.
+pub fn set_appearance(cx: &mut Cx, appearance: Appearance) {
+    cx.global::<AppearanceGlobal>().0 = appearance;
+    if let Err(e) = persistence::save_appearance(appearance) {
+        error!("Failed to save appearance. Error: {e}");
+    }
+    cx.request_style_reload();
+}

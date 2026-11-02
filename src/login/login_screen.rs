@@ -6,6 +6,7 @@
 use std::{net::{Ipv4Addr, Ipv6Addr}, ops::Not};
 use makepad_widgets::*;
 use crate::{
+    settings::app_preferences::{Appearance, AppearanceGlobal, set_appearance},
     shared::password_input::PasswordTextInputWidgetExt,
     sliding_sync::{homeserver_of_user_id, submit_async_request, username_to_full_user_id, BrowserLoginKind, LoginByPassword, LoginMethods, LoginRequest, MatrixRequest},
     utils,
@@ -74,6 +75,7 @@ script_mod! {
         ..mod.widgets.RectView
 
         width: Fill, height: Fill,
+        flow: Overlay,
         align: Align{x: 0.5, y: 0.5}
         show_bg: true,
         // we do a neat lil gradient from top (light purple) to bottom (white)
@@ -286,14 +288,36 @@ script_mod! {
                         }
                     }
                 }
+            }
+        }
 
-                // The modal that pops up to display login status messages,
-                // such as when the user is logging in or when there is an error.
-                login_status_modal := Modal {
-                    can_dismiss: false,
-                    content := mod.widgets.LoginStatusModal {}
+        // Switches between the light and dark themes.
+        View {
+            width: Fill, height: Fill
+            align: Align{x: 1.0, y: 0.0}
+            padding: Inset{top: 8, right: (8.0 + mod.widgets.SAFE_INSET_PAD_RIGHT)}
+
+            appearance_button := RobrixIconButton {
+                padding: 12
+                spacing: 0
+                align: Align{x: 0.5, y: 0.5}
+                icon_walk: Walk{width: 20, height: 20, margin: 0}
+                draw_icon.svg: (mod.widgets.ICON_SWITCH_APPEARANCE)
+                draw_icon.color: (COLOR_TEXT_MUTED)
+                draw_bg +: {
+                    border_size: 0
+                    color: (COLOR_TRANSPARENT)
+                    color_hover: (COLOR_FLAT_ICON_BUTTON_BG_HOVER)
+                    color_down: (COLOR_FLAT_ICON_BUTTON_BG_DOWN)
                 }
             }
+        }
+
+        // The modal that pops up to display login status messages,
+        // such as when the user is logging in or when there is an error.
+        login_status_modal := Modal {
+            can_dismiss: false,
+            content := mod.widgets.LoginStatusModal {}
         }
     }
 }
@@ -347,9 +371,11 @@ impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         // A reapply resets the login button to its disabled look, so we restyle it.
+        // It also resets the status label's width.
         if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
             self.is_login_button_enabled = None;
             self.enable_login_button(cx);
+            self.update_status_label_width(cx);
         }
         if self.homeserver_query_timer.is_event(event).is_some() {
             self.homeserver_query_timer = Timer::empty();
@@ -407,6 +433,14 @@ impl MatchEvent for LoginScreen {
 
         if self.view.button(cx, ids!(signup_button)).clicked(actions) {
             utils::open_url(MATRIX_SIGN_UP_URL);
+        }
+
+        if self.view.button(cx, ids!(appearance_button)).clicked(actions) {
+            let new_appearance = match cx.global::<AppearanceGlobal>().0 {
+                Appearance::Light => Appearance::Dark,
+                Appearance::Dark => Appearance::Light,
+            };
+            set_appearance(cx, new_appearance);
         }
 
         let create_account = self.view.button(cx, ids!(create_account_button)).clicked(actions);
@@ -682,11 +716,17 @@ impl LoginScreen {
         let status_label = self.view.label(cx, ids!(query_status_label));
         status_label.set_visible(cx, status.is_some());
         status_label.set_text(cx, status.unwrap_or_default());
+        self.update_status_label_width(cx);
+        self.redraw(cx);
+    }
 
-        if let Some(mut label) = status_label.borrow_mut() {
+    /// Makes the status label fit beside the spinner while querying,
+    /// or fill its row otherwise, so that long messages can wrap.
+    fn update_status_label_width(&self, cx: &mut Cx) {
+        let is_querying = self.view.widget(cx, ids!(query_loading_spinner)).visible();
+        if let Some(mut label) = self.view.label(cx, ids!(query_status_label)).borrow_mut() {
             label.walk.width = if is_querying { Size::fit() } else { Size::fill() };
         }
-        self.redraw(cx);
     }
 }
 

@@ -1,4 +1,4 @@
-//! Dark mode overrides for the colors defined in `styles.rs`.
+//! Dark mode overrides for the colors and icons defined in `styles.rs`.
 
 use makepad_widgets::*;
 
@@ -297,6 +297,7 @@ script_mod! {
     // A darker version of the main Robrix purple color
     mod.widgets.COLOR_LOGIN_BG_TOP = #x292536
     mod.widgets.COLOR_LOGIN_BG_BOTTOM = #x1C1C1C
+    mod.widgets.ICON_SWITCH_APPEARANCE = mod.res.crate_resource("self://resources/icons/sun.svg")
 
     mod.widgets.COLOR_SPACE_LOBBY_NAME_TEXT = #xE6E6E6
     mod.widgets.COLOR_SPACE_LOBBY_TREE_LINES = #x737373
