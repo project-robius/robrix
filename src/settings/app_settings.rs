@@ -246,7 +246,73 @@ script_mod! {
     mod.widgets.RobrixSettingsToggle = ToggleFlat {
         margin: Inset{left: 0.5, top: 15, bottom: 10}
         padding: Inset { left: 15}
-        draw_bg +: { size: 21 }
+        draw_bg +: {
+            size: 21
+            // An enabled toggle is Robrix purple with a white knob.
+            color_active: (COLOR_ROBRIX_PURPLE)
+            border_color_active: (COLOR_ROBRIX_PURPLE)
+            mark_color_active: (COLOR_TEXT_ON_ACCENT)
+            // Hovering a toggle darkens its track, whether it's on or off.
+            color_hover: (COLOR_TOGGLE_BG_HOVER)
+            color_down: (COLOR_TOGGLE_BG_HOVER)
+            color_active_hover: uniform((COLOR_TOGGLE_BG_ACTIVE_HOVER))
+
+            // This is ToggleFlat's shader, except hovering an enabled toggle darkens its purple instead of turning it gray.
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+
+                let sz_px = vec2(self.size * 1.6, self.size)
+                let center_px = vec2(sz_px.x * 0.5, self.rect_size.y * 0.5)
+                let offset_px = vec2(0., center_px.y - sz_px.y * 0.5)
+
+                sdf.box(
+                    offset_px.x + self.border_size
+                    offset_px.y + self.border_size
+                    sz_px.x - self.border_size * 2.
+                    sz_px.y - self.border_size * 2.
+                    self.border_radius * self.size * 0.1
+                )
+
+                let color_fill = self.color
+                    .mix(self.color_focus, self.focus)
+                    .mix(self.color_hover, self.hover)
+                    .mix(self.color_down, self.down)
+                    .mix(self.color_active, self.active)
+                    .mix(self.color_active_hover, self.active * self.hover)
+                    .mix(self.color_disabled, self.disabled)
+
+                let color_stroke = self.border_color
+                    .mix(self.border_color_focus, self.focus)
+                    .mix(self.border_color_hover, self.hover)
+                    .mix(self.border_color_down, self.down)
+                    .mix(self.border_color_active, self.active)
+                    .mix(self.color_active_hover, self.active * self.hover)
+                    .mix(self.border_color_disabled, self.disabled)
+
+                sdf.fill_keep(color_fill)
+                sdf.stroke(color_stroke, self.border_size)
+
+                let mark_padding = 1.5
+                let mark_size = sz_px.y * 0.5 - self.border_size - mark_padding
+                let mark_target_y = sz_px.y - sz_px.x + self.border_size + mark_padding
+                let mark_pos_y = sz_px.y * 0.5 + self.border_size - mark_target_y * self.active
+
+                // The knob is a ring when off and a filled circle when on.
+                sdf.circle(mark_pos_y, center_px.y, mark_size)
+                sdf.circle(mark_pos_y, center_px.y, mark_size * 0.45)
+                sdf.subtract()
+                sdf.circle(mark_pos_y, center_px.y, mark_size)
+                sdf.blend(self.active)
+
+                let mark_color = self.mark_color
+                    .mix(self.mark_color_hover, self.hover)
+                    .mix(self.mark_color_active, self.active)
+                    .mix(self.mark_color_disabled, self.disabled)
+
+                sdf.fill(mark_color)
+                return sdf.result
+            }
+        }
         draw_text +: {
             text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
         }
