@@ -41,9 +41,10 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
+        user_verification_cache::{UserVerificationState, UserVerificationUpdate, enqueue_user_verification_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber, UserVerificationStatesUpdated}
+    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber}
 };
 
 #[derive(Parser, Default)]
@@ -749,8 +750,13 @@ pub enum MatrixRequest {
         user_id: OwnedUserId,
     },
     /// Request to find out whether we've verified the given user.
-    /// The response is delivered via [`UserVerificationStatesUpdated`].
+    /// The response is delivered to the [`crate::profile::user_verification_cache`].
     GetUserVerificationState {
+        user_id: OwnedUserId,
+    },
+    /// Request to accept that the given user reset their identity, which stops the warnings about it.
+    /// If we had verified them before, this also withdraws that verification.
+    AcknowledgeIdentityReset {
         user_id: OwnedUserId,
     },
     /// Request to fetch an Avatar image from the server.
@@ -853,6 +859,13 @@ pub enum MatrixRequest {
     ///
     /// This is only valid for the main room timeline, not for thread-focused timelines.
     SubscribeToPinnedEventIds {
+        room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe.
+        subscribe: bool,
+    },
+    /// Subscribe to the identity resets of the given room's members,
+    /// which are sent to the UI via the room's main timeline update sender.
+    SubscribeToIdentityResets {
         room_id: OwnedRoomId,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
@@ -2221,14 +2234,34 @@ async fn matrix_worker_task(
             MatrixRequest::GetUserVerificationState { user_id } => {
                 let Some(client) = get_client() else { continue };
                 let _get_verification_state_task = Handle::current().spawn(async move {
-                    let is_verified = match client.encryption().get_user_identity(&user_id).await {
-                        Ok(identity) => identity.is_some_and(|identity| identity.is_verified()),
+                    let state = match client.encryption().get_user_identity(&user_id).await {
+                        Ok(identity) => identity.as_ref().map_or(UserVerificationState::Unverified, UserVerificationState::from),
                         Err(e) => {
                             error!("Failed to get the identity of {user_id}: {e:?}");
-                            false
+                            UserVerificationState::Unverified
                         }
                     };
-                    Cx::post_action(UserVerificationStatesUpdated([(user_id, is_verified)].into()));
+                    enqueue_user_verification_update(UserVerificationUpdate::States(vec![(user_id, state)]));
+                });
+            }
+
+            MatrixRequest::AcknowledgeIdentityReset { user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _acknowledge_task = Handle::current().spawn(async move {
+                    let result = match client.encryption().get_user_identity(&user_id).await {
+                        Ok(Some(identity)) if identity.has_verification_violation() => identity.withdraw_verification().await,
+                        Ok(Some(identity)) => identity.pin().await,
+                        Ok(None) => return,
+                        Err(e) => Err(e),
+                    };
+                    if let Err(e) = result {
+                        error!("Failed to acknowledge the identity reset of {user_id}: {e:?}");
+                        enqueue_popup_notification(
+                            format!("Couldn't accept {user_id}'s new identity. Error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        );
+                    }
                 });
             }
 
@@ -2539,6 +2572,25 @@ async fn matrix_worker_task(
                 });
                 if let Some(old) = subscribers_pinned_events.insert(room_id, subscribe_pinned_events_task) {
                     old.abort();
+                }
+            }
+
+            MatrixRequest::SubscribeToIdentityResets { room_id, subscribe } => {
+                let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                let Some(jrd) = all_joined_rooms.get_mut(&room_id) else {
+                    log!("BUG: skipping subscribe to identity resets request for unknown room {room_id}");
+                    continue;
+                };
+                if let Some(old) = jrd.identity_resets_subscriber.take() {
+                    old.abort();
+                }
+                if subscribe {
+                    jrd.identity_resets_subscriber = Some(Handle::current().spawn(
+                        crate::verification::identity_resets_subscriber_handler(
+                            jrd.main_timeline.timeline.room().clone(),
+                            jrd.main_timeline.timeline_update_sender.clone(),
+                        )
+                    ));
                 }
             }
 
@@ -3549,6 +3601,8 @@ struct JoinedRoomDetails {
     threads_list_subscriber: Option<RoomDataSubscriber<Arc<Notify>>>,
     /// The task that watches this room's info while any room info pane shows it (or saved it).
     room_info_subscriber: Option<RoomDataSubscriber<UnboundedSender<Option<RoomNotificationMode>>>>,
+    /// The task that watches for this room's members' identity resets while this room is shown.
+    identity_resets_subscriber: Option<JoinHandle<()>>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -3559,15 +3613,43 @@ impl Drop for JoinedRoomDetails {
         drop(self.pinned_messages_subscriber.take());
         drop(self.threads_list_subscriber.take());
         drop(self.room_info_subscriber.take());
+        if let Some(task) = self.identity_resets_subscriber.take() {
+            task.abort();
+        }
     }
 }
 impl JoinedRoomDetails {
+    /// Returns the details of this room's main timeline and all of its thread timelines.
+    fn all_timelines(&self) -> impl Iterator<Item = &PerTimelineDetails> {
+        std::iter::once(&self.main_timeline).chain(self.thread_timelines.values())
+    }
+
     /// Returns the update senders for this room's main timeline and all of its thread timelines.
     fn all_timeline_update_senders(&self) -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
-        std::iter::once(&self.main_timeline)
-            .chain(self.thread_timelines.values())
+        self.all_timelines()
             .map(|d| d.timeline_update_sender.clone())
             .collect()
+    }
+}
+
+/// Asks every timeline to re-check the encryption info of messages sent by the given users
+/// (or by anyone, if `None`), so that those messages show their senders' current verification state.
+pub async fn refresh_encryption_info_of_messages(senders: Option<&[OwnedUserId]>) {
+    let timelines: Vec<Arc<Timeline>> = ALL_JOINED_ROOMS.lock().unwrap()
+        .values()
+        .flat_map(JoinedRoomDetails::all_timelines)
+        .map(|details| details.timeline.clone())
+        .collect();
+    for timeline in timelines {
+        let session_ids: Vec<String> = timeline.items().await
+            .iter()
+            .filter_map(|item| item.as_event())
+            .filter(|event| senders.is_none_or(|senders| senders.iter().any(|s| s == event.sender())))
+            .filter_map(|event| event.encryption_info()?.session_id().map(ToOwned::to_owned))
+            .collect();
+        if !session_ids.is_empty() {
+            timeline.retry_decryption(session_ids).await;
+        }
     }
 }
 
@@ -3832,6 +3914,8 @@ struct RoomListServiceRoomInfo {
     room_id: OwnedRoomId,
     state: RoomState,
     is_direct: bool,
+    /// The other user in this room, if it's a direct room with just one other user.
+    dm_user_id: Option<OwnedUserId>,
     is_space: bool,
     is_marked_unread: bool,
     is_tombstoned: bool,
@@ -3891,10 +3975,15 @@ impl RoomListServiceRoomInfo {
         );
 
         let is_invited = room.state() == RoomState::Invited;
+        let is_direct = is_direct.unwrap_or(false);
+        let dm_user_id = is_direct.then(|| room.direct_targets())
+            .filter(|targets| targets.len() == 1)
+            .and_then(|targets| targets.into_iter().next()?.into_user_id());
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
-            is_direct: is_direct.unwrap_or(false),
+            is_direct,
+            dm_user_id,
             is_space: room.is_space(),
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
@@ -4806,7 +4895,7 @@ async fn update_room(
                 });
             }
 
-            if old_room.is_direct != new_room.is_direct {
+            if old_room.is_direct != new_room.is_direct || old_room.dm_user_id != new_room.dm_user_id {
                 log!("Updating room {} is_direct from {} to {}",
                     new_room_id,
                     old_room.is_direct,
@@ -4815,6 +4904,7 @@ async fn update_room(
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateIsDirect {
                     room_id: new_room_id.clone(),
                     is_direct: new_room.is_direct,
+                    dm_user_id: new_room.dm_user_id.clone(),
                 });
             }
 
@@ -5017,6 +5107,7 @@ async fn add_new_room(
             pinned_messages_subscriber: None,
             threads_list_subscriber: None,
             room_info_subscriber: None,
+            identity_resets_subscriber: None,
         },
     );
     // A visible RoomScreen might still have this room's previous channel endpoints,
@@ -5043,6 +5134,7 @@ async fn add_new_room(
         has_been_shown: false,
         is_selected: false,
         is_direct: new_room.is_direct,
+        dm_user_id: new_room.dm_user_id.clone(),
         is_tombstoned: new_room.is_tombstoned,
     }));
 

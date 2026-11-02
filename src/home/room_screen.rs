@@ -27,13 +27,14 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, message_shield::MessageShieldWidgetRefExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{RoomMembershipInfo, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
+        user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_user_verification_state},
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -52,6 +53,7 @@ use crate::room::{
     room_pane::{self, RoomPaneKind},
 };
 use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
+use crate::home::identity_reset_banner::{IdentityReset, IdentityResetBannerWidgetExt};
 use crate::home::send_status_indicator::{SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
@@ -346,11 +348,14 @@ script_mod! {
             flow: Right,
             padding: Inset{left: 8, right: 10},
 
-            avatar := Avatar {
-                width: 42,
-                height: 42,
+            avatar_box := View {
+                width: Fit, height: Fit
                 // Centered over the timestamp column below it.
                 margin: Inset{top: 7.5, bottom: 6.1, left: 4, right: 12}
+                flow: Overlay
+                align: Align{x: 1.0, y: 0.0}
+                avatar := Avatar { width: 42, height: 42 }
+                verification_badge := UserVerificationBadge { }
             }
             username := Label {
                 width: Fill,
@@ -382,6 +387,7 @@ script_mod! {
                 flow: Down,
                 timestamp := Timestamp { }
                 edited_indicator := EditedIndicator { }
+                message_shield := MessageShield { }
                 tsp_sign_indicator := TspSignIndicator { }
             }
 
@@ -536,7 +542,7 @@ script_mod! {
     // The view used for a server notice, which always has the same red header.
     mod.widgets.ServerNoticeMessage = mod.widgets.Message {
         header +: {
-            avatar +: { text_view +: { draw_bg.color: (COLOR_BG_DANGER_RED_SOLID), text +: { text: "⚠" } } }
+            avatar_box +: { avatar +: { text_view +: { draw_bg.color: (COLOR_BG_DANGER_RED_SOLID), text +: { text: "⚠" } } } }
             username +: {
                 draw_text +: { color: (COLOR_FG_DANGER_RED) }
                 text: "Server notice"
@@ -688,6 +694,9 @@ script_mod! {
 
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice := TypingNotice { }
+
+                // Below that, warn about any room member whose identity was reset.
+                identity_reset_banner := IdentityResetBanner { }
 
                 // Below that, warn about a failed message that is holding up this room's send queue.
                 failed_send_banner := FailedSendBanner { }
@@ -1151,6 +1160,15 @@ impl Widget for RoomScreen {
                 // Our timeline may show users whose profiles were just fetched, e.g., for an item whose sender wasn't known.
                 if action.downcast_ref::<user_profile_cache::UserProfilesUpdated>().is_some() {
                     self.redraw(cx);
+                    continue;
+                }
+
+                // Message headers in encrypted rooms show their senders' verification states, which may have just changed.
+                if action.downcast_ref::<UserVerificationStatesUpdated>().is_some() {
+                    if let Some(tl) = self.tl_state.as_mut().filter(|tl| tl.is_encrypted) {
+                        tl.profile_drawn_since_last_update.clear();
+                        self.redraw(cx);
+                    }
                     continue;
                 }
 
@@ -1766,6 +1784,7 @@ impl RoomScreen {
         let mut items_changed = false;
         let mut should_continue_backwards_pagination = false;
         let mut typing_users = None;
+        let mut identity_resets = None;
         let mut jump_to_read_receipt = None;
         let mut num_updates = 0;
 
@@ -2146,6 +2165,9 @@ impl RoomScreen {
                     // if the list of typing users gets updated many times in a row.
                     typing_users = Some(users);
                 }
+                TimelineUpdate::IdentityResets(resets) => {
+                    identity_resets = Some(resets);
+                }
                 TimelineUpdate::PinnedEventIds(pinned_events) => {
                     self.pinned_events = pinned_events;
                     // We need to redraw any events that might have been pinned or unpinned
@@ -2325,6 +2347,11 @@ impl RoomScreen {
 
         self.view.failed_send_banner(cx, ids!(failed_send_banner))
             .show_or_hide(cx, blocked_send);
+
+        if let Some(resets) = identity_resets {
+            self.view.identity_reset_banner(cx, ids!(identity_reset_banner))
+                .show_or_hide(cx, resets.into_iter().next());
+        }
 
         // We unsubscribe once typing notices are hidden, but one might've already been in flight.
         if let Some(users) = typing_users
@@ -3632,8 +3659,9 @@ impl RoomScreen {
         // Reset the user profile sliding pane so a previous room's open profile
         // pane doesn't remain shown when this RoomScreen is reused for a new room.
         self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
-        // Hide any typing notice left over from the previous room.
+        // Hide any typing notice or identity reset banner left over from the previous room.
         self.view.typing_notice(cx, ids!(typing_notice)).show_or_hide(cx, &[], Animate::No);
+        self.view.identity_reset_banner(cx, ids!(identity_reset_banner)).show_or_hide(cx, None);
 
         self.room_input_popup_menu(cx, ids!(room_input_popup_menu)).close(cx);
 
@@ -3921,6 +3949,10 @@ fn subscribe_to_room_updates(timeline_kind: &TimelineKind, subscribe: bool, show
         room_id: room_id.clone(),
         subscribe,
     });
+    submit_async_request(MatrixRequest::SubscribeToIdentityResets {
+        room_id: room_id.clone(),
+        subscribe,
+    });
 }
 
 
@@ -4057,6 +4089,8 @@ pub enum TimelineUpdate {
     },
     /// An update containing the set of pinned events in this room.
     PinnedEventIds(Vec<OwnedEventId>),
+    /// The members of this room whose identities were reset, which we haven't acknowledged yet.
+    IdentityResets(Vec<IdentityReset>),
     /// An update containing the currently logged-in user's power levels for this room.
     UserPowerLevels(UserPowerLevels),
     /// A notice that this room has been changed to use encryption.
@@ -5242,6 +5276,11 @@ fn populate_message_view(
             )
         );
         item.label(cx, ids!(header.username)).set_text(cx, &username);
+        // Verification can't vouch for unencrypted messages, and our own avatar doesn't need a badge.
+        let verification_state = (is_room_encrypted && !event_tl_item.is_own())
+            .then(|| get_or_fetch_user_verification_state(cx, event_tl_item.sender()))
+            .flatten();
+        item.user_verification_badge(cx, ids!(header.verification_badge)).show_state(cx, verification_state);
         new_drawn_status.profile_drawn = profile_drawn;
     }
 
@@ -5263,6 +5302,8 @@ fn populate_message_view(
     } else {
         edited_indicator.hide(cx);
     }
+
+    item.message_shield(cx, ids!(profile.message_shield)).show_for_message(cx, event_tl_item);
 
     #[cfg(feature = "tsp")] {
         use matrix_sdk::ruma::serde::Base64;
@@ -6571,6 +6612,7 @@ impl Message {
                 self.view.send_status_indicator(cx, ids!(send_status_indicator)).has_tooltip_at(cx, abs)
                 || self.view.widget(cx, ids!(timestamp)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(edited_indicator)).area().clipped_rect(cx).contains(abs)
+                || self.view.widget(cx, ids!(message_shield)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(tsp_sign_indicator)).area().clipped_rect(cx).contains(abs)
             ))
     }

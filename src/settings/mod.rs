@@ -13,8 +13,8 @@ pub mod app_preferences;
 
 pub fn script_mod(vm: &mut ScriptVm) {
     account_settings::script_mod(vm);
-    encryption_settings::script_mod(vm);
     app_settings::script_mod(vm);
+    encryption_settings::script_mod(vm);
     privacy_settings::script_mod(vm);
     room_directory_settings::script_mod(vm);
     about_settings::script_mod(vm);

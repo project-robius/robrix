@@ -13,9 +13,10 @@ use crate::{
     profile::{
         user_profile::{RoomMembershipInfo, UserProfile, UserProfilePaneInfo, UserProfileSlidingPaneRef, member_display_name, role_name},
         user_profile_cache,
+        user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_user_verification_state},
     },
     room::pane_dock::FRAME_PADDING,
-    shared::{avatar::AvatarWidgetRefExt, list_rows::{handle_row_actions, status_row}, room_filter_input_bar::RoomFilterInputBarWidgetRefExt, styles::set_view_bg_color},
+    shared::{avatar::AvatarWidgetRefExt, list_rows::{handle_row_actions, status_row}, room_filter_input_bar::RoomFilterInputBarWidgetRefExt, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetRefExt},
     utils::RoomNameId,
 };
 
@@ -191,6 +192,11 @@ impl Widget for RoomMembersList {
 
         let Event::Actions(actions) = event else { return };
 
+        if actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some()) {
+            self.populated_rows.clear();
+            self.redraw(cx);
+        }
+
         let filter_bar = self.view.child_by_path(ids!(member_filter_bar)).as_room_filter_input_bar();
         if let Some(keywords) = filter_bar.changed(actions) {
             self.filter = keywords.to_lowercase();
@@ -241,6 +247,8 @@ impl Widget for RoomMembersList {
                     if !self.populated_rows.contains(&index) {
                         row.child_by_path(ids!(info.title)).set_text(cx, &entry.name);
                         row.child_by_path(ids!(info.subtitle)).set_text(cx, &entry.role);
+                        let verification_state = get_or_fetch_user_verification_state(cx, entry.member.user_id());
+                        row.user_verification_badge(cx, ids!(verification_badge)).show_state(cx, verification_state);
                         let avatar_url = entry.member.avatar_url().map(|u| u.to_owned());
                         if row.avatar(cx, ids!(avatar)).show_user(cx, avatar_url.as_ref(), &entry.name) {
                             self.populated_rows.insert(index);

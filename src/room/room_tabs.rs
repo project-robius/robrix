@@ -3,7 +3,12 @@
 use std::collections::{HashMap, HashSet};
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::{ScrollPhase, finger::TAP_COUNT_DISTANCE};
-use crate::{app::SelectedRoom, utils};
+use crate::{
+    app::SelectedRoom,
+    profile::user_verification_cache::{UserVerificationState, UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
+    shared::verification_badge::UserVerificationBadgeWidgetRefExt,
+    utils,
+};
 use super::{room_action_bar::{RoomActionBarRef, RoomActionBarWidgetRefExt}, room_tab_hover_card::RoomTabHoverCardWidgetExt};
 
 script_mod! {
@@ -18,8 +23,13 @@ pub struct RoomTabs {
     #[source] source: ScriptObjectRef,
     /// The template for each room tab's expand/collapse buttons.
     #[live] room_tab_actions: ScriptObjectRef,
+    /// The template for the badge shown after a direct room's name, for its other user's verification state.
+    #[live] dm_verification_badge: ScriptObjectRef,
     /// Used to measure the room name so we know how wide to make its tab.
     #[live] tab_title_measure: DrawText,
+    /// The badge that each tab of a direct room shows after its name.
+    /// The key is a tab's ID, and the value is the verification state of that room's other user.
+    #[rust] dm_badge_states: HashMap<LiveId, UserVerificationState>,
     /// The set of each tab's buttons, so we don't recreate them on every draw,
     /// and whether they were last drawn for an active tab and for the focused tab (`None` if not yet drawn).
     #[rust] controls: HashMap<LiveId, TabControls>,
@@ -63,6 +73,11 @@ impl RoomTabs {
         if self.layout_redraw.is_event(event).is_some() {
             view.redraw(cx);
         }
+        if let Event::Actions(actions) = event
+            && actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some())
+        {
+            view.redraw(cx);
+        }
         let mut tab_buttons = Vec::new();
         for tab_id in &self.visible_tabs {
             if !rooms.contains_key(tab_id) { continue; }
@@ -86,11 +101,20 @@ impl RoomTabs {
 
     /// Draws the dock first and then places the tab buttons over the dock's drawn tabs. 
     pub fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk, view: &mut View, rooms: &HashMap<LiveId, SelectedRoom>) -> DrawStep {
+        self.dm_badge_states.clear();
+        for (tab_id, room) in rooms {
+            if matches!(room, SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. })
+                && let Some(state) = get_or_fetch_dm_user_verification_state(cx, room.room_id())
+                && state != UserVerificationState::Unverified
+            {
+                self.dm_badge_states.insert(*tab_id, state);
+            }
+        }
         let dock = view.dock(cx, ids!(dock));
         let tab_sizes_changed = self.update_room_tab_sizes(cx, &dock, rooms);
         let step = view.draw_walk(cx, scope, walk);
         if step.is_done() {
-            self.draw_tab_expand_collapse_buttons(cx, scope, &dock, rooms);
+            self.draw_tab_controls(cx, scope, &dock, rooms);
             // If any tab changed size, update its hover card with that tab's new area rect.
             if self.update_room_tab_sizes(cx, &dock, rooms) || tab_sizes_changed {
                 self.layout_redraw = cx.new_next_frame();
@@ -123,7 +147,10 @@ impl RoomTabs {
         for (tab_id, room) in rooms {
             let tab = dock.tab_widget(*tab_id);
             if let Some(mut tab) = tab.borrow_mut::<Tab>() {
-                let right = if matches!(room, SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. }) {
+                let right = if self.dm_badge_states.contains_key(tab_id) {
+                    // A direct room's verification badge goes between its name and the expansion control.
+                    37.0 + DM_BADGE_GAP + DM_BADGE_SIZE
+                } else if matches!(room, SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. }) {
                     // Include a 4px gap before the expansion control.
                     37.0
                 } else {
@@ -146,12 +173,13 @@ impl RoomTabs {
         changed
     }
 
-    /// Draws the expand/collapse button on each visible joined room or thread tab.
+    /// Draws the expand/collapse button, plus a direct room's verification badge,
+    /// on each visible joined room or thread tab.
     ///
     /// Call this after the dock is drawn (when each tab's position is known),
     /// so it can properly place each button in the right spot.
     /// Also restyles the overlaid buttons whenever their tab becomes active or inactive, or focused or unfocused.
-    fn draw_tab_expand_collapse_buttons(
+    fn draw_tab_controls(
         &mut self,
         cx: &mut Cx2d,
         scope: &mut Scope,
@@ -187,6 +215,8 @@ impl RoomTabs {
                     widget,
                     action_bar: None,
                     drawn_as: None,
+                    dm_verification_badge: cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.dm_verification_badge.as_object().into())),
+                    dm_badge_drawn_as: None,
                 }
             });
             let body = dock.item(*tab_id);
@@ -224,6 +254,17 @@ impl RoomTabs {
             };
             cx.push_clip_rect(clip);
             controls.widget.draw_walk_all(cx, scope, Walk::abs_rect(controls_rect));
+            if let Some(state) = self.dm_badge_states.get(tab_id) {
+                if controls.dm_badge_drawn_as != Some(*state) {
+                    controls.dm_badge_drawn_as = Some(*state);
+                    controls.dm_verification_badge.as_user_verification_badge().show_state(cx, Some(*state));
+                }
+                let badge_rect = Rect {
+                    pos: dvec2(rect.pos.x + rect.size.x - 37.0 - DM_BADGE_SIZE, rect.pos.y + (rect.size.y - DM_BADGE_SIZE) * 0.5),
+                    size: dvec2(DM_BADGE_SIZE, DM_BADGE_SIZE),
+                };
+                controls.dm_verification_badge.draw_walk_all(cx, scope, Walk::abs_rect(badge_rect));
+            }
             cx.pop_clip_rect();
             self.visible_tabs.insert(*tab_id);
         }
@@ -240,7 +281,13 @@ struct TabControls {
     /// The room's action bar, and the uid of the tab body we found it in.
     action_bar: Option<(WidgetUid, RoomActionBarRef)>,
     drawn_as: Option<(bool, bool)>,
+    dm_verification_badge: WidgetRef,
+    dm_badge_drawn_as: Option<UserVerificationState>,
 }
+
+/// The size of a direct room tab's verification badge, and the gap between it and the room name.
+const DM_BADGE_SIZE: f64 = 15.0;
+const DM_BADGE_GAP: f64 = 5.0;
 
 /// State that allows dock tabs to "own" FingerDown drag hits that start on their buttons,
 /// while still only activating those buttons upon FingerUp.

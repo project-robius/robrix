@@ -52,6 +52,9 @@ pub struct AppPreferences {
     /// Whether to let other users see when we're typing a message.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub send_typing_notices: bool,
+    /// Whether to show a red or gray shield next to messages that aren't encrypted or may not be authentic.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub show_message_shields: bool,
     /// The other room directories that we can search for rooms and spaces, besides our homeserver's.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub room_directories: RoomDirectories,
@@ -75,6 +78,7 @@ impl Default for AppPreferences {
             show_read_receipts: true,
             show_typing_notices: true,
             send_typing_notices: true,
+            show_message_shields: false,
             room_directories: RoomDirectories::default(),
         }
     }
@@ -208,6 +212,13 @@ impl AppPreferences {
         cx.action(AppPreferencesAction::SendTypingNoticesChanged(self.send_typing_notices));
     }
 
+    /// Applies the current `show_message_shields` value.
+    pub fn on_show_message_shields_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.show_message_shields = self.show_message_shields;
+        // Message shields check this pref at draw time, so redraw everything.
+        cx.redraw_all();
+    }
+
     /// Applies the current `room_directories` value.
     pub fn on_room_directories_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.room_directories = self.room_directories.clone();
@@ -233,6 +244,7 @@ impl AppPreferences {
         self.on_show_read_receipts_changed(cx);
         self.on_show_typing_notices_changed(cx);
         self.on_send_typing_notices_changed(cx);
+        self.on_show_message_shields_changed(cx);
         self.on_room_directories_changed(cx);
     }
 }

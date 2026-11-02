@@ -18,7 +18,14 @@ script_mod! {
         // Tapping a row shouldn't take key focus away from a text input.
         grab_key_focus: false
         draw_bg +: { color: (COLOR_TRANSPARENT), border_radius: 5.0 }
-        avatar := Avatar { width: 30, height: 30 }
+        avatar_box := View {
+            width: 30, height: 30
+            flow: Overlay
+            align: Align{x: 1.0, y: 0.0}
+            avatar := Avatar { width: Fill, height: Fill }
+            // Only a room's member list shows this badge.
+            verification_badge := UserVerificationBadge { width: 12, height: 12 }
+        }
         info := View {
             width: Fill, height: Fit, flow: Down, spacing: 1
             title := Label {

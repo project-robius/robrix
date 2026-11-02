@@ -2,6 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
 use crate::{
+    profile::user_verification_cache::UserVerificationState,
     sliding_sync::get_client,
     verification::VerificationStateAction,
 };
@@ -95,6 +96,16 @@ script_mod! {
         }
     }
 
+    // Shows whether we've verified another user, or that their identity was reset.
+    mod.widgets.UserVerificationBadge = #(UserVerificationBadge::register_widget(vm)) {
+        visible: false
+        width: 15, height: 15
+        flow: Overlay
+        clip_x: false, clip_y: false
+        verified_icon := mod.widgets.IconYes {}
+        identity_reset_icon := mod.widgets.IconNo {}
+    }
+
     mod.widgets.VerificationBadge = #(VerificationBadge::register_widget(vm)) {
 
         width: Fit, height: Fit
@@ -115,6 +126,33 @@ script_mod! {
             icon_no := mod.widgets.IconNo {}
             icon_unk := mod.widgets.IconUnk {}
         }
+    }
+}
+
+#[derive(Script, ScriptHook, Widget)]
+pub struct UserVerificationBadge {
+    #[deref] view: View,
+}
+
+impl Widget for UserVerificationBadge {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl UserVerificationBadgeRef {
+    /// Shows the icon for the given user's verification state, or hides this badge if there's nothing to show.
+    pub fn show_state(&self, cx: &mut Cx, state: Option<UserVerificationState>) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let is_verified = state == Some(UserVerificationState::Verified);
+        let is_identity_reset = state == Some(UserVerificationState::VerificationViolation);
+        inner.view.view(cx, ids!(verified_icon)).set_visible(cx, is_verified);
+        inner.view.view(cx, ids!(identity_reset_icon)).set_visible(cx, is_identity_reset);
+        inner.view.set_visible(cx, is_verified || is_identity_reset);
     }
 }
 

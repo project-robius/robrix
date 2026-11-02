@@ -1159,8 +1159,9 @@ impl HomeScreen {
                     return None;
                 };
                 Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
-                stack_navigation_view.room_action_bar(cx, ids!(header.content))
-                    .set_expanded(cx, false, false);
+                let room_action_bar = stack_navigation_view.room_action_bar(cx, ids!(header.content));
+                room_action_bar.set_expanded(cx, false, false);
+                room_action_bar.set_room_id(cx, Some(room_name_id.room_id().clone()));
                 Self::set_mobile_stack_header_height(cx, &stack_navigation_view, 45.0);
                 let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = selected_screen {
                     Some(thread_root_event_id.clone())

@@ -317,6 +317,7 @@ script_mod! {
 
     mod.widgets.RoomTabs = mod.widgets.RoomTabsBase {
         room_tab_actions: mod.widgets.RoomTabActions {}
+        dm_verification_badge: mod.widgets.UserVerificationBadge {}
         tab_title_measure: mod.widgets.RobrixTab.draw_text
     }
 
