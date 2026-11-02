@@ -7,8 +7,9 @@ use matrix_sdk::{notification_settings::RoomNotificationMode, ruma::{OwnedMxcUri
 use crate::{
     home::{invite_modal::InviteModalAction, rooms_list::{RoomAvatarUpdated, RoomsListRef}},
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
+    profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
     room::pane_dock::FRAME_PADDING,
-    shared::avatar::AvatarWidgetExt,
+    shared::{avatar::AvatarWidgetExt, verification_badge::UserVerificationBadgeWidgetExt},
     sliding_sync::{MatrixRequest, RoomDataKind, TimelineEndpointsRecreated, submit_async_request},
     utils::RoomNameId,
 };
@@ -75,13 +76,19 @@ script_mod! {
                 align: Align{x: 0.5, y: 0}
                 padding: Inset{top: 4, bottom: 10}
 
-                room_avatar := Avatar {
+                room_avatar_box := View {
                     width: 56, height: 56
-                    text_view +: {
-                        text +: {
-                            draw_text +: { text_style: TITLE_TEXT {font_size: 18} }
+                    flow: Overlay
+                    align: Align{x: 1.0, y: 0.0}
+                    room_avatar := Avatar {
+                        width: Fill, height: Fill
+                        text_view +: {
+                            text +: {
+                                draw_text +: { text_style: TITLE_TEXT {font_size: 18} }
+                            }
                         }
                     }
+                    dm_verification_badge := UserVerificationBadge { width: 18, height: 18 }
                 }
 
                 room_name := Label {
@@ -321,6 +328,9 @@ impl Widget for RoomInfoView {
             {
                 self.show_avatar(cx);
             }
+            if action.downcast_ref::<UserVerificationStatesUpdated>().is_some() {
+                self.view.redraw(cx);
+            }
         }
 
         let Some(room_name_id) = self.room_name_id.as_ref() else { return };
@@ -364,6 +374,9 @@ impl Widget for RoomInfoView {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let dm_verification_state = self.room_name_id.as_ref()
+            .and_then(|room_name_id| get_or_fetch_dm_user_verification_state(cx, room_name_id.room_id()));
+        self.view.user_verification_badge(cx, ids!(dm_verification_badge)).show_state(cx, dm_verification_state);
         self.view.draw_walk(cx, scope, walk)
     }
 }

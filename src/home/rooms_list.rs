@@ -245,6 +245,7 @@ pub enum RoomsListUpdate {
     UpdateIsDirect {
         room_id: OwnedRoomId,
         is_direct: bool,
+        dm_user_id: Option<OwnedUserId>,
     },
     /// Update whether the given invited room is a space.
     UpdateIsSpace {
@@ -412,6 +413,8 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    /// The other user in this room, if it's a direct room with just one other user.
+    pub dm_user_id: Option<OwnedUserId>,
     /// Whether this room is tombstoned (shut down and replaced with a successor room).
     pub is_tombstoned: bool,
 
@@ -1025,8 +1028,9 @@ impl RoomsList {
                     }
                     self.update_status();
                 }
-                RoomsListUpdate::UpdateIsDirect { room_id, is_direct } => {
+                RoomsListUpdate::UpdateIsDirect { room_id, is_direct, dm_user_id } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        room.dm_user_id = dm_user_id;
                         let was_direct = room.is_direct;
                         if was_direct == is_direct {
                             continue;
@@ -2269,6 +2273,11 @@ impl RoomsListRef {
                     .get(room_id)
                     .map(|ir| ir.room_avatar.clone())
             )
+    }
+
+    /// Returns the other user in the given joined room, if it's a direct room with just one other user.
+    pub fn get_dm_user_id(&self, room_id: &OwnedRoomId) -> Option<OwnedUserId> {
+        self.borrow()?.all_joined_rooms.get(room_id)?.dm_user_id.clone()
     }
 
     /// Returns the name of the given room, if it is known and loaded.

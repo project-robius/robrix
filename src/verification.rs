@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -17,7 +16,10 @@ use matrix_sdk::{
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 
-use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
+use crate::{
+    profile::user_verification_cache::{enqueue_user_verification_update, UserVerificationState, UserVerificationUpdate},
+    shared::popup_list::{enqueue_popup_notification, PopupKind},
+};
 
 /// Whether a verification flow is currently in progress. See [`VerificationInProgress`].
 static VERIFICATION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
@@ -43,13 +45,6 @@ impl Drop for VerificationInProgress {
 pub enum VerificationStateAction {
     Update(VerificationState),
 }
-
-/// Whether we've verified each of these users, posted when their identities are fetched or changed.
-/// The key is a user ID, and the value is whether we've verified that user.
-///
-/// This is NOT a widget action.
-#[derive(Debug)]
-pub struct UserVerificationStatesUpdated(pub BTreeMap<OwnedUserId, bool>);
 
 
 pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio::task::JoinHandle<()> {
@@ -101,9 +96,10 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio:
     verification_state_handle
 }
 
-/// Posts a [`UserVerificationStatesUpdated`] action whenever users' identities change.
+/// Keeps the UI's cache of users' verification states up to date as their identities change.
 pub fn handle_user_identities_subscriber(client: Client) -> tokio::task::JoinHandle<()> {
     Handle::current().spawn(async move {
+        let Some(own_user_id) = client.user_id().map(ToOwned::to_owned) else { return };
         let identity_updates = match client.encryption().user_identities_stream().await {
             Ok(stream) => stream,
             Err(e) => {
@@ -113,12 +109,16 @@ pub fn handle_user_identities_subscriber(client: Client) -> tokio::task::JoinHan
         };
         let mut identity_updates = std::pin::pin!(identity_updates);
         while let Some(updates) = identity_updates.next().await {
-            let states: BTreeMap<_, _> = updates.new.into_iter()
+            if updates.new.contains_key(&own_user_id) || updates.changed.contains_key(&own_user_id) {
+                enqueue_user_verification_update(UserVerificationUpdate::OwnIdentityChanged);
+                continue;
+            }
+            let states: Vec<_> = updates.new.into_iter()
                 .chain(updates.changed)
-                .map(|(user_id, identity)| (user_id, identity.is_verified()))
+                .map(|(user_id, identity)| (user_id, UserVerificationState::from(&identity)))
                 .collect();
             if !states.is_empty() {
-                Cx::post_action(UserVerificationStatesUpdated(states));
+                enqueue_user_verification_update(UserVerificationUpdate::States(states));
             }
         }
     })

@@ -30,10 +30,11 @@ use crate::{
     app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{RoomMembershipInfo, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
+        user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_user_verification_state},
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -346,11 +347,14 @@ script_mod! {
             flow: Right,
             padding: Inset{left: 8, right: 10},
 
-            avatar := Avatar {
-                width: 42,
-                height: 42,
+            avatar_box := View {
+                width: Fit, height: Fit
                 // Centered over the timestamp column below it.
                 margin: Inset{top: 7.5, bottom: 6.1, left: 4, right: 12}
+                flow: Overlay
+                align: Align{x: 1.0, y: 0.0}
+                avatar := Avatar { width: 42, height: 42 }
+                verification_badge := UserVerificationBadge { }
             }
             username := Label {
                 width: Fill,
@@ -536,7 +540,7 @@ script_mod! {
     // The view used for a server notice, which always has the same red header.
     mod.widgets.ServerNoticeMessage = mod.widgets.Message {
         header +: {
-            avatar +: { text_view +: { draw_bg.color: (COLOR_BG_DANGER_RED_SOLID), text +: { text: "⚠" } } }
+            avatar_box +: { avatar +: { text_view +: { draw_bg.color: (COLOR_BG_DANGER_RED_SOLID), text +: { text: "⚠" } } } }
             username +: {
                 draw_text +: { color: (COLOR_FG_DANGER_RED) }
                 text: "Server notice"
@@ -1151,6 +1155,15 @@ impl Widget for RoomScreen {
                 // Our timeline may show users whose profiles were just fetched, e.g., for an item whose sender wasn't known.
                 if action.downcast_ref::<user_profile_cache::UserProfilesUpdated>().is_some() {
                     self.redraw(cx);
+                    continue;
+                }
+
+                // Message headers in encrypted rooms show their senders' verification states, which may have just changed.
+                if action.downcast_ref::<UserVerificationStatesUpdated>().is_some() {
+                    if let Some(tl) = self.tl_state.as_mut().filter(|tl| tl.is_encrypted) {
+                        tl.profile_drawn_since_last_update.clear();
+                        self.redraw(cx);
+                    }
                     continue;
                 }
 
@@ -5242,6 +5255,11 @@ fn populate_message_view(
             )
         );
         item.label(cx, ids!(header.username)).set_text(cx, &username);
+        // Verification can't vouch for unencrypted messages, and our own avatar doesn't need a badge.
+        let verification_state = (is_room_encrypted && !event_tl_item.is_own())
+            .then(|| get_or_fetch_user_verification_state(cx, event_tl_item.sender()))
+            .flatten();
+        item.user_verification_badge(cx, ids!(header.verification_badge)).show_state(cx, verification_state);
         new_drawn_status.profile_drawn = profile_drawn;
     }
 

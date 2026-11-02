@@ -2,7 +2,12 @@
 
 use makepad_widgets::{makepad_platform::event::finger::TouchState, *};
 
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupKind}, utils};
+use matrix_sdk::ruma::OwnedRoomId;
+use crate::{
+    profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
+    shared::{popup_list::{enqueue_popup_notification, PopupKind}, verification_badge::UserVerificationBadgeWidgetExt},
+    utils,
+};
 use super::room_pane::RoomPaneKind;
 
 // currently there's a fixed number of action buttons,
@@ -236,6 +241,7 @@ script_mod! {
             align: Align{y: 0.5}
             cursor: MouseCursor.Hand
             grab_key_focus: false
+            dm_verification_badge := UserVerificationBadge { margin: Inset{left: 4} }
             title := Label {
                 width: Fill, height: Fit
                 margin: Inset{left: 4, right: 4}
@@ -320,6 +326,8 @@ pub struct RoomActionBar {
     #[rust] shown_panes: Vec<RoomPaneKind>,
     /// The shown panes whose buttons were last highlighted, or `None` if they must be highlighted again.
     #[rust] highlighted_panes: Option<Vec<RoomPaneKind>>,
+    /// The room beneath this header, whose DM user's verification state we show before its name.
+    #[rust] room_id: Option<OwnedRoomId>,
 }
 
 impl ScriptHook for RoomActionBar {
@@ -342,6 +350,12 @@ impl ScriptHook for RoomActionBar {
 impl Widget for RoomActionBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if self.redraw_next_frame.is_event(event).is_some() {
+            self.redraw(cx);
+        }
+        if !self.is_desktop_mode
+            && let Event::Actions(actions) = event
+            && actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some())
+        {
             self.redraw(cx);
         }
         if std::mem::take(&mut self.needs_animator_resync) {
@@ -399,11 +413,18 @@ impl Widget for RoomActionBar {
         }
         let width = (cx.peek_walk_turtle(walk).size.x - self.view.layout.padding.left - self.view.layout.padding.right).max(0.0);
         let inline = if !self.is_desktop_mode {
+            let dm_verification_state = self.room_id.as_ref()
+                .and_then(|room_id| get_or_fetch_dm_user_verification_state(cx, room_id));
+            let badge = self.view.user_verification_badge(cx, ids!(title_container.dm_verification_badge));
+            badge.show_state(cx, dm_verification_state);
+            let badge_width = badge.borrow()
+                .filter(|badge| badge.visible)
+                .map_or(0.0, |badge| badge.walk.width.to_fixed().unwrap_or(0.0) + badge.walk.margin.width());
             let title = self.view.label(cx, ids!(title_container.title));
             let title_width = title.borrow().map(|title| {
                 utils::unwrapped_text_width(cx, &title.draw_text, &title.text()) + title.walk.margin.width()
             }).unwrap_or(width);
-            inline_count(width, title_width)
+            inline_count(width, badge_width + title_width)
         } else {
             // in desktop view mode, the dock tabs only show the expand/collapse button.
             0
@@ -616,6 +637,13 @@ fn place(cx: &mut Cx, widget: &WidgetRef, x: f64, y: f64, width: f64, height: f6
 }
 
 impl RoomActionBarRef {
+    /// Sets the room beneath this header, so it can show the verification state of that room's DM user.
+    pub fn set_room_id(&self, cx: &mut Cx, room_id: Option<OwnedRoomId>) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.room_id = room_id;
+        inner.redraw(cx);
+    }
+
     pub fn set_shown_panes(&self, cx: &mut Cx, shown_panes: Vec<RoomPaneKind>) {
         let Some(mut inner) = self.borrow_mut() else { return };
         if inner.shown_panes != shown_panes {

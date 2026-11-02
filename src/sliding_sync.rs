@@ -41,9 +41,10 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
+        user_verification_cache::{UserVerificationState, UserVerificationUpdate, enqueue_user_verification_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber, UserVerificationStatesUpdated}
+    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber}
 };
 
 #[derive(Parser, Default)]
@@ -749,7 +750,7 @@ pub enum MatrixRequest {
         user_id: OwnedUserId,
     },
     /// Request to find out whether we've verified the given user.
-    /// The response is delivered via [`UserVerificationStatesUpdated`].
+    /// The response is delivered to the [`crate::profile::user_verification_cache`].
     GetUserVerificationState {
         user_id: OwnedUserId,
     },
@@ -2221,14 +2222,14 @@ async fn matrix_worker_task(
             MatrixRequest::GetUserVerificationState { user_id } => {
                 let Some(client) = get_client() else { continue };
                 let _get_verification_state_task = Handle::current().spawn(async move {
-                    let is_verified = match client.encryption().get_user_identity(&user_id).await {
-                        Ok(identity) => identity.is_some_and(|identity| identity.is_verified()),
+                    let state = match client.encryption().get_user_identity(&user_id).await {
+                        Ok(identity) => identity.as_ref().map_or(UserVerificationState::Unverified, UserVerificationState::from),
                         Err(e) => {
                             error!("Failed to get the identity of {user_id}: {e:?}");
-                            false
+                            UserVerificationState::Unverified
                         }
                     };
-                    Cx::post_action(UserVerificationStatesUpdated([(user_id, is_verified)].into()));
+                    enqueue_user_verification_update(UserVerificationUpdate::States(vec![(user_id, state)]));
                 });
             }
 
@@ -3832,6 +3833,8 @@ struct RoomListServiceRoomInfo {
     room_id: OwnedRoomId,
     state: RoomState,
     is_direct: bool,
+    /// The other user in this room, if it's a direct room with just one other user.
+    dm_user_id: Option<OwnedUserId>,
     is_space: bool,
     is_marked_unread: bool,
     is_tombstoned: bool,
@@ -3891,10 +3894,15 @@ impl RoomListServiceRoomInfo {
         );
 
         let is_invited = room.state() == RoomState::Invited;
+        let is_direct = is_direct.unwrap_or(false);
+        let dm_user_id = is_direct.then(|| room.direct_targets())
+            .filter(|targets| targets.len() == 1)
+            .and_then(|targets| targets.into_iter().next()?.into_user_id());
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
-            is_direct: is_direct.unwrap_or(false),
+            is_direct,
+            dm_user_id,
             is_space: room.is_space(),
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
@@ -4806,7 +4814,7 @@ async fn update_room(
                 });
             }
 
-            if old_room.is_direct != new_room.is_direct {
+            if old_room.is_direct != new_room.is_direct || old_room.dm_user_id != new_room.dm_user_id {
                 log!("Updating room {} is_direct from {} to {}",
                     new_room_id,
                     old_room.is_direct,
@@ -4815,6 +4823,7 @@ async fn update_room(
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateIsDirect {
                     room_id: new_room_id.clone(),
                     is_direct: new_room.is_direct,
+                    dm_user_id: new_room.dm_user_id.clone(),
                 });
             }
 
@@ -5043,6 +5052,7 @@ async fn add_new_room(
         has_been_shown: false,
         is_selected: false,
         is_direct: new_room.is_direct,
+        dm_user_id: new_room.dm_user_id.clone(),
         is_tombstoned: new_room.is_tombstoned,
     }));
 

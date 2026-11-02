@@ -4,9 +4,12 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils, verification::UserVerificationStatesUpdated
+    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetExt}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
 };
-use super::user_profile_cache::{self, UserProfilesUpdated};
+use super::{
+    user_profile_cache::{self, UserProfilesUpdated},
+    user_verification_cache::{UserVerificationState, UserVerificationStatesUpdated, get_or_fetch_user_verification_state},
+};
 
 
 /// Information retrieved about a user: their displayable name, ID, and known avatar state.
@@ -89,7 +92,9 @@ script_mod! {
                 height: 150,
                 margin: 10.0,
                 flow: Overlay,
-                align: Align{x: 1.0, y: 1.0}
+                align: Align{x: 1.0, y: 0.0}
+                // The badge sticks out a bit above the avatar, so don't clip it.
+                clip_x: false, clip_y: false
 
                 avatar := Avatar {
                     width: Fill, height: Fill
@@ -102,8 +107,10 @@ script_mod! {
                     }
                 }
 
-                verified_badge := mod.widgets.IconYes {
-                    width: 40, height: 40
+                // Sized and placed like the nav bar's `ProfileIcon` badge, scaled up to this avatar.
+                verification_badge := UserVerificationBadge {
+                    width: 56.7, height: 56.7
+                    margin: Inset{top: -3.75}
                 }
             }
 
@@ -127,6 +134,34 @@ script_mod! {
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "User ID"
+            }
+
+            verified_label := RoundedView {
+                visible: false
+                width: Fit, height: Fit
+                margin: Inset{top: 8}
+                padding: Inset{top: 4, bottom: 4, left: 7, right: 9}
+                spacing: 5
+                align: Align{y: 0.5}
+                show_bg: true
+                draw_bg +: {
+                    color: (COLOR_BG_ACCEPT_GREEN)
+                    border_radius: 4.0
+                }
+                Icon {
+                    icon_walk: Walk{width: 14, height: 14}
+                    draw_icon +: {
+                        svg: (VERIFICATION_YES)
+                        color: (COLOR_FG_ACCEPT_GREEN)
+                    }
+                }
+                Label {
+                    draw_text +: {
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 },
+                    }
+                    text: "Verified"
+                }
             }
         }
 
@@ -412,7 +447,6 @@ pub struct UserProfileSlidingPane {
 
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_showing_current_account: bool,
-    #[rust] is_user_verified: bool,
     #[rust] is_animating_out: bool,
     /// Held while this pane is shown such that `Escape` closes this pane.
     /// This scope is dropped when the pane starts animating out or is reset.
@@ -527,12 +561,8 @@ impl Widget for UserProfileSlidingPane {
         }
 
         if let Event::Actions(actions) = event
-            && let Some(our_info) = self.info.as_ref()
-            && let Some(&is_verified) = actions.iter().rev()
-                .filter_map(|a| a.downcast_ref::<UserVerificationStatesUpdated>())
-                .find_map(|states| states.0.get(&our_info.user_id))
+            && actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some())
         {
-            self.is_user_verified = is_verified;
             self.redraw(cx);
         }
 
@@ -636,7 +666,11 @@ impl Widget for UserProfileSlidingPane {
             .image()
             .and_then(|image| avatar_ref.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, image)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
-        self.view(cx, ids!(verified_badge)).set_visible(cx, self.is_user_verified);
+
+        let verification_state = get_or_fetch_user_verification_state(cx, &info.user_id);
+        let is_verified = verification_state == Some(UserVerificationState::Verified);
+        self.user_verification_badge(cx, ids!(verification_badge)).show_state(cx, verification_state);
+        self.view(cx, ids!(verified_label)).set_visible(cx, is_verified);
 
         // Set the membership status and role in the room.
         self.view(cx, ids!(membership)).set_visible(cx, info.room.is_some());
@@ -657,7 +691,7 @@ impl Widget for UserProfileSlidingPane {
         //    since you cannot block yourself.
         //    * The button text changes to "Unblock" if the user is already blocked.
         self.button(cx, ids!(direct_message_button)).set_visible(cx, !self.is_showing_current_account);
-        self.button(cx, ids!(verify_this_user_button)).set_visible(cx, !self.is_showing_current_account && !self.is_user_verified);
+        self.button(cx, ids!(verify_this_user_button)).set_visible(cx, !self.is_showing_current_account && !is_verified);
         if info.room.is_none() {
             self.button(cx, ids!(jump_to_read_receipt_button)).set_visible(cx, false);
         }
@@ -745,10 +779,6 @@ impl UserProfileSlidingPane {
         }
 
         self.is_showing_current_account = current_user_id().is_some_and(|uid| uid == info.user_id);
-        if self.info.as_ref().is_none_or(|old_info| old_info.user_id != info.user_id) {
-            self.is_user_verified = false;
-        }
-        submit_async_request(MatrixRequest::GetUserVerificationState { user_id: info.user_id.clone() });
         self.info = Some(info);
     }
 
