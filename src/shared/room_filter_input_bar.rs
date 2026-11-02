@@ -20,6 +20,34 @@ script_mod! {
         icon_walk: Walk{width: Fit, height: 10, margin: 0}
     }
 
+    // A small button that clears the main filter bar, shown next to the rooms and spaces it filtered.
+    mod.widgets.ClearFilterButton = RobrixIconButton {
+        padding: Inset{top: 6, bottom: 6, left: 10, right: 12}
+        spacing: 6
+        align: Align{x: 0.5, y: 0.5}
+        // Only a tap clears the filter, not a press that scrolls the list it's in.
+        enable_long_press: true
+        // It disappears once clicked, so it shouldn't still look hovered when it comes back.
+        reset_hover_on_click: true
+        draw_bg +: {
+            color: (COLOR_BG_ACCENT_TINT)
+            color_hover: (COLOR_BG_ACCENT_TINT_HOVER)
+            color_down: (COLOR_BG_ACCENT_TINT_DOWN)
+        }
+        draw_icon +: {
+            svg: (ICON_CLOSE)
+            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+        }
+        icon_walk: Walk{width: 9, height: 9}
+        draw_text +: {
+            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
+            color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            text_style: REGULAR_TEXT {font_size: 9}
+        }
+        text: "Clear filter"
+    }
+
     mod.widgets.RoomFilterInputBar = set_type_default() do #(RoomFilterInputBar::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
@@ -139,6 +167,8 @@ impl ActionDefaultRef for FilterAction {
 pub enum MainFilterAction {
     /// The user changed the home screen's filter text to the given keywords.
     Changed(String),
+    /// Request to clear the main filter bar's text, which then emits an empty `Changed` action.
+    Clear,
 }
 
 impl Widget for RoomFilterInputBar {
@@ -210,10 +240,15 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             );
         }
 
-        if clear_button.clicked(actions) {
+        let was_clear_button_clicked = clear_button.clicked(actions);
+        let is_clear_requested = self.is_main_filter && actions.iter()
+            .any(|action| matches!(action.downcast_ref(), Some(MainFilterAction::Clear)));
+        if was_clear_button_clicked || is_clear_requested {
             self.speech_text_input(cx, ids!(input)).set_text(cx, "");
             clear_button.set_visible(cx, false);
-            input.set_key_focus(cx);
+            if was_clear_button_clicked {
+                input.set_key_focus(cx);
+            }
             if self.is_main_filter {
                 cx.action(MainFilterAction::Changed(String::new()));
             }

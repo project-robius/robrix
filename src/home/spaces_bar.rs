@@ -129,6 +129,20 @@ script_mod! {
 
         spaces_bar_entry := mod.widgets.SpacesBarEntry {}
         StatusLabel := mod.widgets.SpacesStatusLabel {}
+        // Just the X and "Clear", which wraps below the X in the narrow Desktop bar.
+        clear_filter_button := mod.widgets.ClearFilterButton {
+            width: Fill{max: 70}
+            margin: Inset{top: 2, bottom: 2, left: 6, right: 6}
+            padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
+            flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+            spacing: 5
+            wrap_spacing: 3
+            icon_walk: Walk{width: 8, height: 8}
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 8}
+            }
+            text: "Clear"
+        }
         BottomFiller := View {
             width: (NAVIGATION_TAB_BAR_SIZE)
             height: (NAVIGATION_TAB_BAR_SIZE)
@@ -431,6 +445,9 @@ pub struct SpacesBar {
 
     /// The most recently applied view-mode override.
     #[rust] applied_view_mode: ViewModeOverride,
+
+    /// The list we drew last time, kept so that handling its actions doesn't need a lookup.
+    #[rust] spaces_list: PortalListRef,
 }
 
 impl SpacesBar {
@@ -450,6 +467,14 @@ impl Widget for SpacesBar {
         }
 
         if let Event::Actions(actions) = event {
+            // Handle the "Clear filter" button after the status label being clicked.
+            if self.is_filtered
+                && self.spaces_list.items_with_actions(actions).iter()
+                    .any(|(_, item)| item.as_button().clicked(actions))
+            {
+                cx.action(MainFilterAction::Clear);
+            }
+
             for action in actions {
                 // Only handle filter changes from the home screen's filter bar,
                 // not from any other RoomFilterInputBar instance (e.g., SpaceLobbyScreen's).
@@ -513,6 +538,7 @@ impl Widget for SpacesBar {
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = widget_to_draw.as_portal_list();
+            self.spaces_list = portal_list_ref.clone();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
             // AdaptiveView + CachedWidget does not properly handle DSL-level style overrides,
@@ -522,8 +548,10 @@ impl Widget for SpacesBar {
 
             let num_invited = self.displayed_invited_spaces.len();
             let len = num_invited + self.displayed_joined_spaces.len();
+            // While filtering, the "Clear filter" button comes right after the status label.
+            let num_status_items = 1 + self.is_filtered as usize;
             if len == 0 {
-                list.set_item_range(cx, 0, 1);
+                list.set_item_range(cx, 0, num_status_items);
                 while let Some(portal_list_index) = list.next_visible_item(cx) {
                     let item = if portal_list_index == 0 {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
@@ -536,6 +564,8 @@ impl Widget for SpacesBar {
                             }
                         );
                         item
+                    } else if self.is_filtered && portal_list_index == 1 {
+                        list.item(cx, portal_list_index, id!(clear_filter_button))
                     } else {
                         list.item(cx, portal_list_index, id!(BottomFiller))
                     };
@@ -543,7 +573,7 @@ impl Widget for SpacesBar {
                 }
             }
             else {
-                list.set_item_range(cx, 0, len + 1);
+                list.set_item_range(cx, 0, len + num_status_items);
                 while let Some(portal_list_index) = list.next_visible_item(cx) {
                     let item = if let Some(invite) = self.displayed_invited_spaces.get(portal_list_index) {
                         let item = list.item(cx, portal_list_index, id!(spaces_bar_entry));
@@ -585,6 +615,9 @@ impl Widget for SpacesBar {
                         };
                         item.label(cx, ids!(label)).set_text(cx, &text);
                         item
+                    }
+                    else if self.is_filtered && portal_list_index == len + 1 {
+                        list.item(cx, portal_list_index, id!(clear_filter_button))
                     }
                     else {
                         list.item(cx, portal_list_index, id!(BottomFiller))

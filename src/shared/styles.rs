@@ -190,6 +190,11 @@ script_mod! {
     mod.widgets.COLOR_ACTIVE_PRIMARY_HOVER = #x106fcc
     mod.widgets.COLOR_ACTIVE_PRIMARY_DOWN = #x0C5DAA
 
+    // Translucent tints of COLOR_ACTIVE_PRIMARY, so they work atop any background.
+    mod.widgets.COLOR_BG_ACCENT_TINT = #x0F88FE21
+    mod.widgets.COLOR_BG_ACCENT_TINT_HOVER = #x0F88FE38
+    mod.widgets.COLOR_BG_ACCENT_TINT_DOWN = #x0F88FE4D
+
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
     // Looks like COLOR_BG_PREVIEW atop white, but it also darkens a hovered or highlighted message behind it.
     mod.widgets.COLOR_BG_PREVIEW_TRANSLUCENT = #x1060FF10
