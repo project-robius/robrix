@@ -252,8 +252,12 @@ script_mod! {
             color_active: (COLOR_ROBRIX_PURPLE)
             border_color_active: (COLOR_ROBRIX_PURPLE)
             mark_color_active: (COLOR_TEXT_ON_ACCENT)
+            // Hovering a toggle darkens its track, whether it's on or off.
+            color_hover: (COLOR_TOGGLE_BG_HOVER)
+            color_down: (COLOR_TOGGLE_BG_HOVER)
+            color_active_hover: uniform((COLOR_TOGGLE_BG_ACTIVE_HOVER))
 
-            // This is ToggleFlat's shader, except an enabled toggle stays purple while hovered or pressed.
+            // This is ToggleFlat's shader, except hovering an enabled toggle darkens its purple instead of turning it gray.
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
 
@@ -274,6 +278,7 @@ script_mod! {
                     .mix(self.color_hover, self.hover)
                     .mix(self.color_down, self.down)
                     .mix(self.color_active, self.active)
+                    .mix(self.color_active_hover, self.active * self.hover)
                     .mix(self.color_disabled, self.disabled)
 
                 let color_stroke = self.border_color
@@ -281,6 +286,7 @@ script_mod! {
                     .mix(self.border_color_hover, self.hover)
                     .mix(self.border_color_down, self.down)
                     .mix(self.border_color_active, self.active)
+                    .mix(self.color_active_hover, self.active * self.hover)
                     .mix(self.border_color_disabled, self.disabled)
 
                 sdf.fill_keep(color_fill)

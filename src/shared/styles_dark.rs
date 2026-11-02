@@ -361,6 +361,9 @@ script_mod! {
     // Toggles, checkboxes, and radio buttons.
     // The mark is a toggle's knob, a checkbox's check, or a radio button's dot.
     mod.widgets.COLOR_TOGGLE_BG = #xFFFFFF19
+    mod.widgets.COLOR_TOGGLE_BG_HOVER = #xFFFFFF2E
+    // A darker Robrix purple, for hovering over an enabled toggle.
+    mod.widgets.COLOR_TOGGLE_BG_ACTIVE_HOVER = #x4624A3
     mod.widgets.COLOR_TOGGLE_BG_DISABLED = #xFFFFFF08
     mod.widgets.COLOR_TOGGLE_BORDER = #xFFFFFF1F
     mod.widgets.COLOR_TOGGLE_BORDER_HOVER = #xFFFFFF3F
