@@ -839,4 +839,9 @@ impl SpacesBarRef {
     pub fn get_space_avatar(&self, space_id: &OwnedRoomId) -> Option<FetchedRoomAvatar> {
         self.borrow()?.all_joined_spaces.get(space_id).map(|space| space.space_avatar.clone())
     }
+
+    /// Returns whether the given space is a joined top-level space in this bar.
+    pub fn is_joined_space(&self, space_id: &OwnedRoomId) -> bool {
+        self.borrow().is_some_and(|inner| inner.all_joined_spaces.contains_key(space_id))
+    }
 }

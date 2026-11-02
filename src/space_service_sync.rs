@@ -3,14 +3,15 @@
 
 use std::{collections::{HashMap, HashSet}, iter::Peekable, sync::Arc};
 use eyeball_im::VectorDiff;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, media::MediaRequestParameters, ruma::api::error::ErrorKind};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
 use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
+use rustc_hash::{FxBuildHasher, FxHashSet};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
-use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId, stringify_matrix_error}};
+use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, utils::{self, RoomNameId, stringify_matrix_error}};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
@@ -145,9 +146,17 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
     let (space_request_sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRequest>();
     // Give the request sender channel endpoint to the RoomsList widget.
     enqueue_rooms_list_update(RoomsListUpdate::SpaceRequestSender(space_request_sender.clone()));
+    // Restore the space graph we cached last time (while the space service below starts up),
+    // so we can show each space's rooms right away.
+    let restore_space_graph = async {
+        if let Some(user_id) = client.user_id() {
+            enqueue_rooms_list_update(RoomsListUpdate::RestoreSpaceGraph(persistence::load_space_graph(&client, user_id).await));
+        }
+    };
 
     // Create the actual space service.
-    let space_service = Arc::new(SpaceService::new(client.clone()).await);
+    let (_, space_service) = tokio::join!(restore_space_graph, SpaceService::new(client.clone()));
+    let space_service = Arc::new(space_service);
 
     // The set of async tasks that are handling room list requests for each top-level joined space,
     // along with a sender to send `SpaceRoomListRequest`s to those tasks.
@@ -785,6 +794,16 @@ async fn space_room_list_loop(
     // A tuple of: the latest `(direct child rooms, and direct subspaces)` within this space.
     // This makes it very cheap & fast to repeatedly handle `GetChildren` requests.
     let mut cached_hash_sets = space_children_to_hash_sets(&all_rooms_in_space);
+    // Sends the latest sets of this space's children, and whether we've fetched all of them.
+    let post_updated_children = |(rooms, subspaces): &(Arc<FxHashSet<OwnedRoomId>>, Arc<FxHashSet<OwnedRoomId>>)| {
+        Cx::post_action(SpaceRoomListAction::UpdatedChildren {
+            space_id: space_id.clone(),
+            parent_chain: parent_chain.clone(),
+            direct_child_rooms: Arc::clone(rooms),
+            direct_subspaces: Arc::clone(subspaces),
+            is_complete: matches!(space_room_list.pagination_state(), SpaceRoomListPaginationState::Idle { end_reached: true }),
+        })
+    };
 
     loop { tokio::select! {
         // Handles requests first such that a Shutdown takes priority over other updates.
@@ -795,12 +814,20 @@ async fn space_room_list_loop(
             let Some(request) = request_opt else { break };
             match request {
                 SpaceRoomListRequest::GetChildren => {
-                    Cx::post_action(SpaceRoomListAction::UpdatedChildren {
-                        space_id: space_id.clone(),
-                        parent_chain: parent_chain.clone(),
-                        direct_child_rooms: Arc::clone(&cached_hash_sets.0),
-                        direct_subspaces: Arc::clone(&cached_hash_sets.1),
-                    });
+                    // Requests are handled before room updates, so we apply any pending room updates first
+                    // (ignoring tokio's coop budget, which could hide them) so we don't send outdated children.
+                    if let Some(Some(batch)) = tokio::task::coop::unconstrained(space_room_stream.next()).now_or_never() {
+                        apply_space_room_diffs(
+                            batch,
+                            &mut all_rooms_in_space,
+                            &space_id,
+                            &parent_chain,
+                            &mut known_subspaces,
+                            &request_sender,
+                            &mut cached_hash_sets,
+                        );
+                    }
+                    post_updated_children(&cached_hash_sets);
                 }
                 SpaceRoomListRequest::GetDetailedChildren => {
                     Cx::post_action(SpaceRoomListAction::DetailedChildren {
@@ -843,42 +870,68 @@ async fn space_room_list_loop(
         // Handle updates to the list of rooms and subspaces in this space.
         batch_opt = space_room_stream.next() => {
             let Some(batch) = batch_opt else { break };
-            for diff in batch {
-                // Manually inspect any diff that could result in new space room(s),
-                // such that we can check to see if any of them are nested subspaces.
-                match &diff {
-                    VectorDiff::Append { values }
-                    | VectorDiff::Reset { values } => handle_subspaces(
-                        &space_id,
-                        &parent_chain,
-                        &mut known_subspaces,
-                        values.iter(),
-                        &request_sender,
-                    ),
-                    VectorDiff::PushFront { value }
-                    | VectorDiff::PushBack { value }
-                    | VectorDiff::Insert { value, .. }
-                    | VectorDiff::Set { value, .. } => handle_subspaces(
-                        &space_id,
-                        &parent_chain,
-                        &mut known_subspaces,
-                        std::iter::once(value),
-                        &request_sender,
-                    ),
-                    _ => { }
-                };
-                diff.apply(&mut all_rooms_in_space);
-            }
-            // Here: children have changed, so we re-calculate the sets of child rooms and subspaces.
-            cached_hash_sets = space_children_to_hash_sets(&all_rooms_in_space);
-            Cx::post_action(SpaceRoomListAction::UpdatedChildren {
-                space_id: space_id.clone(),
-                parent_chain: parent_chain.clone(),
-                direct_child_rooms: Arc::clone(&cached_hash_sets.0),
-                direct_subspaces: Arc::clone(&cached_hash_sets.1),
-            });
+            apply_space_room_diffs(
+                batch,
+                &mut all_rooms_in_space,
+                &space_id,
+                &parent_chain,
+                &mut known_subspaces,
+                &request_sender,
+                &mut cached_hash_sets,
+            );
+            post_updated_children(&cached_hash_sets);
         }
     } }
+}
+
+/// Applies the given changes to a space's list of rooms, subscribing to any new subspaces among them.
+///
+/// We only rebuild the cached sets of the space's children if they changed,
+/// so that receivers can tell nothing changed by comparing their pointers.
+fn apply_space_room_diffs(
+    batch: Vec<VectorDiff<SpaceRoom>>,
+    all_rooms_in_space: &mut Vector<SpaceRoom>,
+    space_id: &OwnedRoomId,
+    parent_chain: &ParentChain,
+    known_subspaces: &mut HashSet<OwnedRoomId>,
+    request_sender: &UnboundedSender<SpaceRequest>,
+    cached_hash_sets: &mut (Arc<FxHashSet<OwnedRoomId>>, Arc<FxHashSet<OwnedRoomId>>),
+) {
+    let mut are_children_changed = false;
+    for diff in batch {
+        // Manually inspect any diff that could result in new space room(s),
+        // such that we can check to see if any of them are nested subspaces.
+        match &diff {
+            VectorDiff::Append { values }
+            | VectorDiff::Reset { values } => handle_subspaces(
+                space_id,
+                parent_chain,
+                known_subspaces,
+                values.iter(),
+                request_sender,
+            ),
+            VectorDiff::PushFront { value }
+            | VectorDiff::PushBack { value }
+            | VectorDiff::Insert { value, .. }
+            | VectorDiff::Set { value, .. } => handle_subspaces(
+                space_id,
+                parent_chain,
+                known_subspaces,
+                std::iter::once(value),
+                request_sender,
+            ),
+            _ => { }
+        };
+        // The SDK re-sets a child room whenever anything about it changes, which keeps the same children.
+        are_children_changed |= !matches!(&diff, VectorDiff::Set { index, value }
+            if all_rooms_in_space.get(*index).is_some_and(|old| old.room_id == value.room_id && old.is_space() == value.is_space())
+        );
+        diff.apply(all_rooms_in_space);
+    }
+    if are_children_changed {
+        // Here: children have changed, so we re-calculate the sets of child rooms and subspaces.
+        *cached_hash_sets = space_children_to_hash_sets(all_rooms_in_space);
+    }
 }
 
 /// Finds nested/subspaces within a list of space rooms and submits a request
@@ -919,9 +972,9 @@ fn handle_subspaces<'a>(
 /// 2. the set of subspaces directly within this space.
 fn space_children_to_hash_sets(
     all_rooms_in_space: &Vector<SpaceRoom>
-) -> (Arc<HashSet<OwnedRoomId>>, Arc<HashSet<OwnedRoomId>>) {
-    let mut direct_child_rooms = HashSet::new();
-    let mut direct_subspaces = HashSet::new();
+) -> (Arc<FxHashSet<OwnedRoomId>>, Arc<FxHashSet<OwnedRoomId>>) {
+    let mut direct_child_rooms = FxHashSet::with_capacity_and_hasher(all_rooms_in_space.len(), FxBuildHasher);
+    let mut direct_subspaces = FxHashSet::default();
     for sr in all_rooms_in_space.iter() {
         if sr.is_space() {
             direct_subspaces.insert(sr.room_id.clone());
@@ -953,9 +1006,11 @@ pub enum SpaceRoomListAction {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
         /// The child rooms within this space itself, excluding nested rooms/subspaces.
-        direct_child_rooms: Arc<HashSet<OwnedRoomId>>,
+        direct_child_rooms: Arc<FxHashSet<OwnedRoomId>>,
         /// The nested subspaces (only spaces) directly within this space.
-        direct_subspaces: Arc<HashSet<OwnedRoomId>>,
+        direct_subspaces: Arc<FxHashSet<OwnedRoomId>>,
+        /// Whether these are all of this space's children, i.e., we've fully paginated it.
+        is_complete: bool,
     },
     /// The state of the background pagination process that was fetching the list
     /// of rooms in the given space has changed.
@@ -1000,12 +1055,13 @@ pub enum SpaceRoomListAction {
 impl std::fmt::Debug for SpaceRoomListAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, direct_child_rooms, direct_subspaces } => {
+            SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, direct_child_rooms, direct_subspaces, is_complete } => {
                 f.debug_struct("SpaceRoomListAction::UpdatedChildren")
                     .field("space_id", space_id)
                     .field("parent_chain", &parent_chain)
                     .field("num_direct_child_rooms", &direct_child_rooms.len())
                     .field("num_direct_subspaces", &direct_subspaces.len())
+                    .field("is_complete", is_complete)
                     .finish()
             }
             SpaceRoomListAction::PaginationState { space_id, parent_chain, state } => {

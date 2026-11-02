@@ -15,6 +15,7 @@ use crate::{
     app_data_dir,
     cache_dir,
     login::login_screen::LoginAction,
+    persistence::delete_space_graph,
 };
 
 /// The data needed to re-build a client.
@@ -110,6 +111,11 @@ pub fn persistent_state_dir(user_id: &UserId) -> PathBuf {
     app_data_dir()
         .join(user_id_to_file_name(user_id))
         .join("persistent_state")
+}
+
+/// Returns the path to the cache directory for the given user.
+pub fn user_cache_dir(user_id: &UserId) -> PathBuf {
+    cache_dir().join(user_id_to_file_name(user_id))
 }
 
 /// Returns the path to the session file for the given user.
@@ -403,6 +409,9 @@ pub async fn save_session(
     };
 
     save_latest_user_id(&user_session.meta.user_id).await?;
+    // A new session gets a new store, which never learns about the spaces we left before it,
+    // so we couldn't prune those from our old space graph.
+    delete_space_graph(&user_session.meta.user_id).await;
     let sliding_sync_version = client.sliding_sync_version().into();
     // Save that user's session.
     let session_file = session_file_path(&user_session.meta.user_id);
