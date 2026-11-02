@@ -101,33 +101,42 @@ script_mod! {
 
     mod.widgets.RoomsListStatusLabel = View {
         width: Fill, height: Fit,
-        flow: Right,
+        flow: Down,
         align: Align{ x: 0.5, y: 0 }
         padding: 15.0,
+        spacing: 10,
 
-        loading_spinner := LoadingSpinner {
-            visible: false,
-            width: 13,
-            height: 13,
-            margin: Inset{right: 8, top: 2}
-            draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY)
-                stroke_width: 2.25
+        View {
+            width: Fill, height: Fit,
+            flow: Right,
+            align: Align{ x: 0.5, y: 0 }
+
+            loading_spinner := LoadingSpinner {
+                visible: false,
+                width: 13,
+                height: 13,
+                margin: Inset{right: 8, top: 2}
+                draw_bg +: {
+                    color: (COLOR_ACTIVE_PRIMARY)
+                    stroke_width: 2.25
+                }
+            }
+
+            label := Label {
+                padding: 0
+                width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
+                text_overflow: Ellipsis,
+                flow: Flow.Right{wrap: true},
+                align: Align{ x: 0, y: 0 }
+                draw_text +: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: REGULAR_TEXT {}
+                }
+                text: "Loading rooms…"
             }
         }
 
-        label := Label {
-            padding: 0
-            width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
-            text_overflow: Ellipsis,
-            flow: Flow.Right{wrap: true},
-            align: Align{ x: 0, y: 0 }
-            draw_text +: {
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: REGULAR_TEXT {}
-            }
-            text: "Loading rooms…"
-        }
+        clear_filter_button := mod.widgets.ClearFilterButton {}
     }
 
     mod.widgets.RoomsList = #(RoomsList::register_widget(vm)) {
@@ -1731,6 +1740,14 @@ impl Widget for RoomsList {
         let rooms_list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::empty())
         );
+        // Handle the "Clear filter" button below the status label being clicked.
+        if !rooms_list_actions.is_empty()
+            && self.display_filter.is_some()
+            && self.view.portal_list(cx, ids!(list)).items_with_actions(&rooms_list_actions).iter()
+                .any(|(_, item)| item.button(cx, ids!(clear_filter_button)).clicked(&rooms_list_actions))
+        {
+            cx.action(MainFilterAction::Clear);
+        }
         for action in rooms_list_actions {
             // Handle a regular room (joined or invited) being clicked.
             if let RoomsListEntryAction::PrimaryClicked { room_id, is_touch } = action.as_widget_action().cast() {
@@ -2201,6 +2218,8 @@ impl Widget for RoomsList {
                     label.set_text(cx, &self.status);
                     item.child_by_path(ids!(loading_spinner))
                         .set_visible(cx, self.is_selected_space_loading);
+                    item.child_by_path(ids!(clear_filter_button))
+                        .set_visible(cx, self.display_filter.is_some());
                     item.draw_all(cx, &mut scope);
                 }
                 else if self.has_bar_spaces && portal_list_index == status_label_id + 1 {
