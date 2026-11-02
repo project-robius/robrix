@@ -5446,9 +5446,11 @@ dependencies = [
  "robius-use-makepad",
  "robius-web-auth-session",
  "ruma",
+ "rustc-hash 2.1.1",
  "sanitize-filename",
  "serde",
  "serde_json",
+ "strpack",
  "thiserror 2.0.20",
  "tokio",
  "toml",
@@ -6484,6 +6486,11 @@ dependencies = [
  "unicode-normalization",
  "unicode-properties 0.1.3",
 ]
+
+[[package]]
+name = "strpack"
+version = "0.1.0"
+source = "git+https://github.com/project-robius/strpack#3b9a9c29600c242d4419bf2c23e1bef0c443f853"
 
 [[package]]
 name = "strsim"

@@ -21,14 +21,17 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
 use ruma::events::tag::TagName;
+use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::mpsc::UnboundedSender;
-use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId, RoomAliasId}};
+use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId, RoomAliasId, UserId}};
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesListUpdate, enqueue_spaces_list_update}
+        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
     },
+    login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
+    persistence,
     room::{
         FetchedRoomAvatar,
         room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
@@ -292,6 +295,8 @@ pub enum RoomsListUpdate {
     /// The background space service is now listening for requests,
     /// and the sender-side channel endpoint is included.
     SpaceRequestSender(UnboundedSender<SpaceRequest>),
+    /// Restore the space graph that we saved to the cache dir.
+    RestoreSpaceGraph(SavedSpaceGraph),
     /// Update the ordering of rooms based on the given diff.
     RoomOrderUpdate(VecDiff<OwnedRoomId>),
 }
@@ -492,6 +497,9 @@ pub enum InviteState {
 /// This has nothing to do with any subspaces within those children.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum SpacePaginationState {
+    /// We know about this space from the space graph we saved,
+    /// but haven't started fetching its children from the homeserver yet.
+    NotStarted,
     #[default]
     InProgress,
     Complete,
@@ -501,9 +509,10 @@ enum SpacePaginationState {
 }
 
 /// The direct children of a space: its child rooms, and its nested subspaces.
-struct SpaceChildren {
-    rooms: Arc<HashSet<OwnedRoomId>>,
-    subspaces: Arc<HashSet<OwnedRoomId>>,
+#[derive(Clone, PartialEq, Eq)]
+pub struct SpaceChildren {
+    pub rooms: Arc<FxHashSet<OwnedRoomId>>,
+    pub subspaces: Arc<FxHashSet<OwnedRoomId>>,
 }
 
 
@@ -515,11 +524,26 @@ struct SpaceMapValue {
     ///
     /// `None` means we haven't received any info from the homeserver (not that there are no children).
     direct_children: Option<SpaceChildren>,
+    /// Whether `direct_children` holds all of this space's children.
+    has_all_children: bool,
+    /// The direct children we saved to the cache dir, which we also show
+    /// until we've fetched all of this space's children again.
+    saved_children: Option<SpaceChildren>,
     /// The chain of parents that this space has, ordered from highest to lowest level.
     ///
     /// That is, the first element is this space's top-level ancestor space,
     /// while the last element is this space's immediate parent.
     parent_chain: ParentChain,
+}
+
+/// The graph of spaces that we save to the cache dir, which only has spaces we'd fully fetched.
+/// The key is a space ID, and the value is that space's direct children and parent chain.
+pub type SavedSpaceGraph = FxHashMap<OwnedRoomId, SavedSpace>;
+
+/// A space's direct child rooms, direct subspaces, and parent chain.
+pub struct SavedSpace {
+    pub parent_chain: ParentChain,
+    pub children: SpaceChildren,
 }
 
 /// The room lists and unread-count totals produced by a full display-filter pass.
@@ -565,7 +589,16 @@ pub struct RoomsList {
     /// and nested subspaces *directly* within that space.
     ///
     /// This can include both joined and non-joined spaces.
-    #[rust] space_map: HashMap<OwnedRoomId, SpaceMapValue>,
+    #[rust] space_map: FxHashMap<OwnedRoomId, SpaceMapValue>,
+
+    /// The space graph that's in our cache file, or `None` if we haven't loaded it yet.
+    #[rust] saved_space_graph: Option<SavedSpaceGraph>,
+
+    /// Spaces we've fully fetched whose children might not match `saved_space_graph` anymore.
+    #[rust] unsaved_space_ids: FxHashSet<OwnedRoomId>,
+
+    /// Whether our cache file is missing changes that we've made to `saved_space_graph`.
+    #[rust] is_space_graph_file_outdated: bool,
 
     /// Rooms that are explicitly hidden and should never be shown in the rooms list.
     #[rust] hidden_rooms: HashSet<OwnedRoomId>,
@@ -616,7 +649,7 @@ pub struct RoomsList {
 
     /// The child-room set of the selected space and of each of its subspaces,
     /// basically just a cache for perf reasons.
-    #[rust] rooms_in_selected_space: Vec<Arc<HashSet<OwnedRoomId>>>,
+    #[rust] rooms_in_selected_space: Vec<Arc<FxHashSet<OwnedRoomId>>>,
 
     /// The currently-selected room.
     #[rust] current_active_room: Option<SelectedRoom>,
@@ -1262,6 +1295,35 @@ impl RoomsList {
                     self.space_request_sender = Some(sender);
                     num_updates -= 1;  // this does not require a redraw.
                 }
+                RoomsListUpdate::RestoreSpaceGraph(saved_graph) => {
+                    self.space_map.reserve(saved_graph.len());
+                    for (space_id, saved_space) in &saved_graph {
+                        // Anything we already know about this space is newer than what we saved.
+                        if let Entry::Vacant(vacant) = self.space_map.entry(space_id.clone()) {
+                            vacant.insert(SpaceMapValue {
+                                pagination: SpacePaginationState::NotStarted,
+                                saved_children: Some(saved_space.children.clone()),
+                                parent_chain: saved_space.parent_chain.clone(),
+                                ..Default::default()
+                            });
+                        }
+                        // We only saved the subspaces we'd fully fetched, so we add the other ones too,
+                        // otherwise they'd look like they're loading even though nothing is fetching them.
+                        for subspace_id in saved_space.children.subspaces.iter() {
+                            if !saved_graph.contains_key(subspace_id) {
+                                self.space_map.entry(subspace_id.clone()).or_insert_with(|| SpaceMapValue {
+                                    pagination: SpacePaginationState::NotStarted,
+                                    ..Default::default()
+                                });
+                            }
+                        }
+                    }
+                    // A restore starts a new session, so we drop anything we were tracking for the previous one.
+                    self.clear_saved_space_graph();
+                    self.saved_space_graph = Some(saved_graph);
+                    self.refresh_selected_space(cx);
+                    num_updates -= 1;  // refresh_selected_space() redraws if it needs to.
+                }
                 RoomsListUpdate::RoomOrderUpdate(diff) => {
                     match diff {
                         VecDiff::Append { values } => {
@@ -1552,7 +1614,7 @@ impl RoomsList {
     /// Handle any incoming updates to spaces' room lists and pagination state.
     fn handle_space_room_list_action(&mut self, cx: &mut Cx, action: &SpaceRoomListAction) {
         match action {
-            SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, direct_child_rooms, direct_subspaces } => {
+            SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, direct_child_rooms, direct_subspaces, is_complete } => {
                 match self.space_map.entry(space_id.clone()) {
                     Entry::Occupied(mut occ) => {
                         let occ_mut = occ.get_mut();
@@ -1561,6 +1623,10 @@ impl RoomsList {
                             rooms: Arc::clone(direct_child_rooms),
                             subspaces: Arc::clone(direct_subspaces),
                         });
+                        occ_mut.has_all_children = *is_complete;
+                        if *is_complete {
+                            occ_mut.saved_children = None;
+                        }
                     }
                     Entry::Vacant(vac) => {
                         vac.insert_entry(SpaceMapValue {
@@ -1569,8 +1635,28 @@ impl RoomsList {
                                 rooms: Arc::clone(direct_child_rooms),
                                 subspaces: Arc::clone(direct_subspaces),
                             }),
+                            has_all_children: *is_complete,
                             ..Default::default()
                         });
+                    }
+                }
+                // The space service only sends new sets when the children changed, so comparing pointers is enough.
+                if *is_complete
+                    && self.saved_space_graph.as_ref()
+                        .and_then(|saved_graph| saved_graph.get(space_id))
+                        .is_none_or(|saved_space| !Arc::ptr_eq(&saved_space.children.rooms, direct_child_rooms)
+                            || !Arc::ptr_eq(&saved_space.children.subspaces, direct_subspaces)
+                            || saved_space.parent_chain != *parent_chain
+                        )
+                {
+                    self.unsaved_space_ids.insert(space_id.clone());
+                }
+                // The space service has started fetching every subspace that it tells us about.
+                for subspace_id in direct_subspaces.iter() {
+                    if let Some(subspace) = self.space_map.get_mut(subspace_id)
+                        && subspace.pagination == SpacePaginationState::NotStarted
+                    {
+                        subspace.pagination = SpacePaginationState::InProgress;
                     }
                 }
                 // `parent_chain` is just the path we happened to discover this space through,
@@ -1682,6 +1768,13 @@ impl RoomsList {
         }
     }
 
+    /// Forgets the space graph we loaded from our cache file, along with any changes we haven't saved to it.
+    fn clear_saved_space_graph(&mut self) {
+        self.saved_space_graph = None;
+        self.unsaved_space_ids.clear();
+        self.is_space_graph_file_outdated = false;
+    }
+
     /// Updates only what actually changed: the room list, or just the status label.
     fn refresh_selected_space(&mut self, cx: &mut Cx) {
         if self.selected_space.is_none() { return }
@@ -1715,10 +1808,10 @@ impl RoomsList {
             };
             is_loading |= match smv.pagination {
                 SpacePaginationState::InProgress => true,
-                SpacePaginationState::Complete => smv.direct_children.is_none(),
-                SpacePaginationState::Failed => false,
+                SpacePaginationState::Complete => !smv.has_all_children,
+                SpacePaginationState::NotStarted | SpacePaginationState::Failed => false,
             };
-            if let Some(children) = smv.direct_children.as_ref() {
+            for children in smv.direct_children.iter().chain(&smv.saved_children) {
                 rooms.push(Arc::clone(&children.rooms));
                 to_visit.extend(children.subspaces.iter());
             }
@@ -1878,6 +1971,11 @@ impl Widget for RoomsList {
                     _ => {}
                 }
 
+                // A failed login ends the previous session, so we must never save its space graph for the next one.
+                if let Some(LoginAction::LoginFailure(_)) = action.downcast_ref() {
+                    self.clear_saved_space_graph();
+                }
+
                 // Clear widget state upon logout.
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                     self.invited_rooms.borrow_mut().clear();
@@ -1886,6 +1984,7 @@ impl Widget for RoomsList {
                     self.selected_space = None;
                     self.space_request_sender = None;
                     self.space_map.clear();
+                    self.clear_saved_space_graph();
                     self.hidden_rooms.clear();
                     self.displayed_invited_rooms.clear();
                     self.invited_rooms_indexes = Default::default();
@@ -1936,10 +2035,12 @@ impl Widget for RoomsList {
                             self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_visible(cx, !self.has_bar_spaces);
 
                             // If we don't have the full list of children in this newly-selected space, then fetch it.
-                            let (pagination, parent_chain) = self.space_map
+                            let pagination = self.space_map
                                 .get(space_name_id.room_id())
-                                .map(|smv| (smv.pagination, smv.parent_chain.clone()))
+                                .map(|smv| smv.pagination)
                                 .unwrap_or_default();
+                            // A selected space is always a top-level space, even if we saved it as a subspace before.
+                            let parent_chain = ParentChain::new();
                             if pagination != SpacePaginationState::Complete
                                 && let Some(sender) = self.space_request_sender.as_ref()
                             {
@@ -2332,6 +2433,47 @@ impl RoomsListRef {
             .space_map
             .get(space_id)
             .map(|smv| smv.parent_chain.clone())
+    }
+
+    /// Saves every space we've fully fetched within the user's joined spaces to our cached space graph,
+    /// if any of them changed since we last saved it.
+    ///
+    /// Every other space in the cached graph keeps whatever we last saved for it.
+    pub fn save_space_graph(&self, cx: &mut Cx, user_id: &UserId) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let inner = &mut *inner;
+        if (inner.unsaved_space_ids.is_empty() && !inner.is_space_graph_file_outdated)
+            || !cx.has_global::<SpacesBarRef>()
+        { return }
+        // We can't add to the cached graph until we've loaded it.
+        let Some(saved_graph) = inner.saved_space_graph.as_mut() else { return };
+        let spaces_bar = cx.get_global::<SpacesBarRef>().clone();
+        for space_id in inner.unsaved_space_ids.drain() {
+            let Some(smv) = inner.space_map.get(&space_id) else { continue };
+            let Some(children) = smv.direct_children.as_ref().filter(|_| smv.has_all_children) else { continue };
+            // A parent chain can be outdated, e.g., a subspace became a top-level space after we left its parent.
+            if !smv.parent_chain.iter().chain([&space_id]).any(|id| spaces_bar.is_joined_space(id)) { continue }
+            match saved_graph.entry(space_id) {
+                Entry::Occupied(mut occ) => {
+                    let saved_space = occ.get_mut();
+                    inner.is_space_graph_file_outdated |= saved_space.children != *children
+                        || saved_space.parent_chain != smv.parent_chain;
+                    // We keep the latest sets even when they're equal, so the next check can just compare pointers.
+                    saved_space.children = children.clone();
+                    saved_space.parent_chain = smv.parent_chain.clone();
+                }
+                Entry::Vacant(vacant) => {
+                    vacant.insert(SavedSpace { parent_chain: smv.parent_chain.clone(), children: children.clone() });
+                    inner.is_space_graph_file_outdated = true;
+                }
+            }
+        }
+        if inner.is_space_graph_file_outdated {
+            match persistence::save_space_graph(saved_graph, user_id) {
+                Ok(()) => inner.is_space_graph_file_outdated = false,
+                Err(e) => error!("Failed to save the space graph to the cache dir. Error: {e}"),
+            }
+        }
     }
 
     /// Sets the heights of the blank spaces at the top and bottom of the list,

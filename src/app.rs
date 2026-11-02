@@ -1064,6 +1064,10 @@ impl App {
 
         self.app_state.room_pane_layout = room_pane::saved_layout();
         self.app_state.last_synced_at = get_last_synced_at(cx).or(self.app_state.last_synced_at);
+        // The rooms list isn't created until it's first shown.
+        if cx.has_global::<RoomsListRef>() {
+            cx.get_global::<RoomsListRef>().clone().save_space_graph(cx, &user_id);
+        }
         let app_state_json = match persistence::serialize_app_state(&self.app_state) {
             Ok(bytes) => bytes,
             Err(e) => {
