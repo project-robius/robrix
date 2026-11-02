@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -6,12 +7,12 @@ use makepad_widgets::{error, log, Cx};
 use matrix_sdk_base::crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString};
 use matrix_sdk::{
     encryption::{
-        verification::{SasState, SasVerification, Verification, VerificationRequest, VerificationRequestState}, VerificationState}, ruma::{
+        identities::UserIdentity, verification::{SasState, SasVerification, Verification, VerificationRequest, VerificationRequestState}, VerificationState}, ruma::{
         events::{
             key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod},
             room::message::{MessageType, OriginalSyncRoomMessageEvent},
         },
-        UserId,
+        OwnedUserId, UserId,
     }, Client
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
@@ -42,6 +43,13 @@ impl Drop for VerificationInProgress {
 pub enum VerificationStateAction {
     Update(VerificationState),
 }
+
+/// Whether we've verified each of these users, posted when their identities are fetched or changed.
+/// The key is a user ID, and the value is whether we've verified that user.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub struct UserVerificationStatesUpdated(pub BTreeMap<OwnedUserId, bool>);
 
 
 pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio::task::JoinHandle<()> {
@@ -91,6 +99,29 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio:
     );
 
     verification_state_handle
+}
+
+/// Posts a [`UserVerificationStatesUpdated`] action whenever users' identities change.
+pub fn handle_user_identities_subscriber(client: Client) -> tokio::task::JoinHandle<()> {
+    Handle::current().spawn(async move {
+        let identity_updates = match client.encryption().user_identities_stream().await {
+            Ok(stream) => stream,
+            Err(e) => {
+                error!("Failed to subscribe to user identity updates: {e:?}");
+                return;
+            }
+        };
+        let mut identity_updates = std::pin::pin!(identity_updates);
+        while let Some(updates) = identity_updates.next().await {
+            let states: BTreeMap<_, _> = updates.new.into_iter()
+                .chain(updates.changed)
+                .map(|(user_id, identity)| (user_id, identity.is_verified()))
+                .collect();
+            if !states.is_empty() {
+                Cx::post_action(UserVerificationStatesUpdated(states));
+            }
+        }
+    })
 }
 
 
@@ -399,6 +430,48 @@ pub async fn request_self_verification_handler(client: Client) {
         Err(e) => error!("Couldn't list our own devices before self-verification: {e:?}"),
     }
 
+    outgoing_verification_request_handler(client, identity).await;
+}
+
+
+/// Sends a verification request to another user in our DM room with them,
+/// which the SDK creates (or re-invites them to) if needed.
+pub async fn request_user_verification_handler(client: Client, user_id: OwnedUserId) {
+    // Only a device with our user-signing key can sign (verify) another user's identity.
+    if !client.encryption().cross_signing_status().await.is_some_and(|status| status.has_user_signing) {
+        enqueue_popup_notification(
+            "You need to verify this device before you can verify other users.\n\n\
+            You can verify it in Settings.",
+            PopupKind::Error,
+            Some(8.0),
+        );
+        return;
+    }
+
+    // Get a fresh copy of their identity, don't rely on a cached one
+    let identity = match client.encryption().request_user_identity(&user_id).await {
+        Ok(Some(identity)) => identity,
+        Ok(None) => {
+            enqueue_popup_notification(
+                format!("Can't verify {user_id} yet, since they haven't set up cross-signing."),
+                PopupKind::Error,
+                Some(8.0),
+            );
+            return;
+        }
+        Err(e) => {
+            error!("Failed to get the identity of {user_id} for verification: {e:?}");
+            enqueue_popup_notification(format!("Couldn't start verification: {e}"), PopupKind::Error, Some(6.0));
+            return;
+        }
+    };
+
+    outgoing_verification_request_handler(client, identity).await;
+}
+
+
+/// Sends a verification request to the given identity, then runs that verification flow.
+async fn outgoing_verification_request_handler(client: Client, identity: UserIdentity) {
     // Now we try to start the verification flow.
     let Some(in_progress) = VerificationInProgress::start() else {
         enqueue_popup_notification(
@@ -412,12 +485,12 @@ pub async fn request_self_verification_handler(client: Client) {
     let request = match identity.request_verification_with_methods(vec![VerificationMethod::SasV1]).await {
         Ok(request) => request,
         Err(e) => {
-            error!("Failed to send self-verification request: {e:?}");
+            error!("Failed to send verification request to {}: {e:?}", identity.user_id());
             enqueue_popup_notification(format!("Couldn't send verification request: {e}"), PopupKind::Error, Some(6.0));
             return;
         }
     };
-    log!("Sent self-verification request, flow ID: {}", request.flow_id());
+    log!("Sent verification request to {}, flow ID: {}", identity.user_id(), request.flow_id());
 
     // we use the same verification modal as we do for incoming requests.
     let (sender, mut response_receiver) = tokio::sync::mpsc::unbounded_channel::<VerificationUserResponse>();
