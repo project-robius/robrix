@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 552 | MIT License | `MIT` |
+| 554 | MIT License | `MIT` |
 | 23 | Apache License 2.0 | `Apache-2.0` |
 | 21 | Unicode License v3 | `Unicode-3.0` |
 | 11 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -434,6 +434,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `ruma-macros` | 0.20.0 | MIT |
 | `rusqlite` | 0.40.2 | MIT |
 | `rustc-hash` | 1.1.0 | Apache-2.0 OR MIT |
+| `rustc-hash` | 2.1.1 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `rustls` | 0.23.37 | Apache-2.0 OR MIT OR ISC |
@@ -483,6 +484,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `stable_deref_trait` | 1.2.0 | MIT OR Apache-2.0 |
 | `string_cache` | 0.9.0 | MIT OR Apache-2.0 |
 | `string_cache_codegen` | 0.6.1 | MIT OR Apache-2.0 |
+| `strpack` | 0.1.0 | MIT |
 | `strsim` | 0.11.1 | MIT |
 | `subtle` | 2.6.1 | BSD-3-Clause |
 | `syn` | 2.0.119 | MIT OR Apache-2.0 |
