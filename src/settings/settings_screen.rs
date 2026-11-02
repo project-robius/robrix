@@ -39,13 +39,13 @@ script_mod! {
                 // The privacy settings section.
                 privacy_settings := PrivacySettings {}
 
-                // The section listing the other room directories that we search.
-                room_directory_settings := RoomDirectorySettings {}
-
                 LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
                 // The recovery and encryption identity section.
                 encryption_settings := EncryptionSettings {}
+
+                // The section listing the other room directories that we search.
+                room_directory_settings := RoomDirectorySettings {}
 
                 // The TSP wallet settings section.
                 tsp_settings_screen := TspSettingsScreen {}
