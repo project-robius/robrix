@@ -43,7 +43,7 @@ use crate::{
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
+    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber, UserVerificationStatesUpdated}
 };
 
 #[derive(Parser, Default)]
@@ -743,6 +743,16 @@ pub enum MatrixRequest {
     /// Request to verify this device by sending an outgoing verification request
     /// to the user's other logged-in devices, which'll open the verification modal.
     RequestSelfVerification,
+    /// Request to verify another user by sending them a verification request
+    /// in our DM room with them, which'll open the verification modal.
+    RequestUserVerification {
+        user_id: OwnedUserId,
+    },
+    /// Request to find out whether we've verified the given user.
+    /// The response is delivered via [`UserVerificationStatesUpdated`].
+    GetUserVerificationState {
+        user_id: OwnedUserId,
+    },
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -2199,6 +2209,27 @@ async fn matrix_worker_task(
                 let _verify_task = Handle::current().spawn(
                     crate::verification::request_self_verification_handler(client)
                 );
+            }
+
+            MatrixRequest::RequestUserVerification { user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _verify_task = Handle::current().spawn(
+                    crate::verification::request_user_verification_handler(client, user_id)
+                );
+            }
+
+            MatrixRequest::GetUserVerificationState { user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _get_verification_state_task = Handle::current().spawn(async move {
+                    let is_verified = match client.encryption().get_user_identity(&user_id).await {
+                        Ok(identity) => identity.is_some_and(|identity| identity.is_verified()),
+                        Err(e) => {
+                            error!("Failed to get the identity of {user_id}: {e:?}");
+                            false
+                        }
+                    };
+                    Cx::post_action(UserVerificationStatesUpdated([(user_id, is_verified)].into()));
+                });
             }
 
             MatrixRequest::GetRoomDiagnostics { room_id } => {
@@ -4070,6 +4101,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         let mut subscriber_task_handles: Vec<JoinHandle<()>> = vec![
             // Listen for changes to our verification status and incoming verification requests.
             add_verification_event_handlers_and_sync_client(client.clone()),
+            // Listen for changes to users' identities, e.g., after we verify someone.
+            handle_user_identities_subscriber(client.clone()),
             handle_recovery_state_subscriber(client.clone(), e2ee_ready_sender.clone()),
             // Listen for updates to the blocked user list.
             handle_blocked_user_list_subscriber(client.clone()),

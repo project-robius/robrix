@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
+    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils, verification::UserVerificationStatesUpdated
 };
 use super::user_profile_cache::{self, UserProfilesUpdated};
 
@@ -84,16 +84,26 @@ script_mod! {
             spacing: 3
             flow: Down
 
-            avatar := Avatar {
+            avatar_box := View {
                 width: 150,
                 height: 150,
                 margin: 10.0,
-                text_view +: {
-                    text +: {
-                        draw_text +: {
-                            text_style: theme.font_regular { font_size: 40.0 }
+                flow: Overlay,
+                align: Align{x: 1.0, y: 1.0}
+
+                avatar := Avatar {
+                    width: Fill, height: Fill
+                    text_view +: {
+                        text +: {
+                            draw_text +: {
+                                text_style: theme.font_regular { font_size: 40.0 }
+                            }
                         }
                     }
+                }
+
+                verified_badge := mod.widgets.IconYes {
+                    width: 40, height: 40
                 }
             }
 
@@ -187,6 +197,14 @@ script_mod! {
                 draw_icon.svg: (mod.widgets.ICON_DOUBLE_CHAT)
                 icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                 text: "Direct Message"
+            }
+
+            verify_this_user_button := RobrixPositiveIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (VERIFICATION_YES)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
+                text: "Verify this User"
             }
 
             copy_link_to_user_button := RobrixNeutralIconButton {
@@ -394,6 +412,7 @@ pub struct UserProfileSlidingPane {
 
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_showing_current_account: bool,
+    #[rust] is_user_verified: bool,
     #[rust] is_animating_out: bool,
     /// Held while this pane is shown such that `Escape` closes this pane.
     /// This scope is dropped when the pane starts animating out or is reset.
@@ -507,6 +526,16 @@ impl Widget for UserProfileSlidingPane {
             self.redraw(cx);
         }
 
+        if let Event::Actions(actions) = event
+            && let Some(our_info) = self.info.as_ref()
+            && let Some(&is_verified) = actions.iter().rev()
+                .filter_map(|a| a.downcast_ref::<UserVerificationStatesUpdated>())
+                .find_map(|states| states.0.get(&our_info.user_id))
+        {
+            self.is_user_verified = is_verified;
+            self.redraw(cx);
+        }
+
         // A Signal may mean that the avatar image we're waiting for has been fetched.
         if let Event::Signal = event
             && let Some(our_info) = self.info.as_mut()
@@ -525,6 +554,10 @@ impl Widget for UserProfileSlidingPane {
                     // Don't just create a new DM room; we want to first get confirmation from the user.
                     allow_create: false,
                 });
+            }
+
+            if self.button(cx, ids!(verify_this_user_button)).clicked(actions) {
+                submit_async_request(MatrixRequest::RequestUserVerification { user_id: info.user_id.clone() });
             }
 
             if self.button(cx, ids!(copy_link_to_user_button)).clicked(actions) {
@@ -603,6 +636,7 @@ impl Widget for UserProfileSlidingPane {
             .image()
             .and_then(|image| avatar_ref.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, image)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
+        self.view(cx, ids!(verified_badge)).set_visible(cx, self.is_user_verified);
 
         // Set the membership status and role in the room.
         self.view(cx, ids!(membership)).set_visible(cx, info.room.is_some());
@@ -616,12 +650,14 @@ impl Widget for UserProfileSlidingPane {
         // Draw and show/hide the buttons according to user and room membership info:
         // * `direct_message_button` is hidden if the user is the same as the account user,
         //    since you cannot direct message yourself.
+        // * `verify_this_user_button` is hidden for the account user and for already-verified users.
         // * `copy_link_to_user_button` is always enabled with the same text.
         // * `jump_to_read_receipt_button` is hidden if there's no room, since there's no timeline to jump in.
         // * `block_user_button` is hidden if the user is the same as the account user,
         //    since you cannot block yourself.
         //    * The button text changes to "Unblock" if the user is already blocked.
         self.button(cx, ids!(direct_message_button)).set_visible(cx, !self.is_showing_current_account);
+        self.button(cx, ids!(verify_this_user_button)).set_visible(cx, !self.is_showing_current_account && !self.is_user_verified);
         if info.room.is_none() {
             self.button(cx, ids!(jump_to_read_receipt_button)).set_visible(cx, false);
         }
@@ -709,6 +745,10 @@ impl UserProfileSlidingPane {
         }
 
         self.is_showing_current_account = current_user_id().is_some_and(|uid| uid == info.user_id);
+        if self.info.as_ref().is_none_or(|old_info| old_info.user_id != info.user_id) {
+            self.is_user_verified = false;
+        }
+        submit_async_request(MatrixRequest::GetUserVerificationState { user_id: info.user_id.clone() });
         self.info = Some(info);
     }
 
@@ -722,6 +762,7 @@ impl UserProfileSlidingPane {
 
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         self.view.button(cx, ids!(direct_message_button)).reset_hover(cx);
+        self.view.button(cx, ids!(verify_this_user_button)).reset_hover(cx);
         self.view.button(cx, ids!(copy_link_to_user_button)).reset_hover(cx);
         self.view.button(cx, ids!(jump_to_read_receipt_button)).reset_hover(cx);
         self.view.button(cx, ids!(block_user_button)).reset_hover(cx);
