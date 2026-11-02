@@ -27,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, message_shield::MessageShieldWidgetRefExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{RoomMembershipInfo, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
         user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_user_verification_state},
@@ -387,6 +387,7 @@ script_mod! {
                 flow: Down,
                 timestamp := Timestamp { }
                 edited_indicator := EditedIndicator { }
+                message_shield := MessageShield { }
                 tsp_sign_indicator := TspSignIndicator { }
             }
 
@@ -5302,6 +5303,8 @@ fn populate_message_view(
         edited_indicator.hide(cx);
     }
 
+    item.message_shield(cx, ids!(profile.message_shield)).show_for_message(cx, event_tl_item);
+
     #[cfg(feature = "tsp")] {
         use matrix_sdk::ruma::serde::Base64;
         use crate::tsp::{self, tsp_sign_indicator::{TspSignState, TspSignIndicatorWidgetRefExt}};
@@ -6609,6 +6612,7 @@ impl Message {
                 self.view.send_status_indicator(cx, ids!(send_status_indicator)).has_tooltip_at(cx, abs)
                 || self.view.widget(cx, ids!(timestamp)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(edited_indicator)).area().clipped_rect(cx).contains(abs)
+                || self.view.widget(cx, ids!(message_shield)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(tsp_sign_indicator)).area().clipped_rect(cx).contains(abs)
             ))
     }

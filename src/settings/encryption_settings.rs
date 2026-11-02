@@ -1,4 +1,4 @@
-//! Settings related to encryption: recovery key management and encryption identity reset.
+//! Settings related to encryption: warnings on messages, recovery key management, and encryption identity reset.
 
 use std::cell::RefCell;
 use makepad_widgets::*;
@@ -6,11 +6,11 @@ use matrix_sdk::encryption::recovery::RecoveryState;
 use url::Url;
 
 use crate::{
-    app::{ConfirmDeleteAction, PositiveConfirmationModalAction},
+    app::{AppState, ConfirmDeleteAction, PositiveConfirmationModalAction},
     shared::password_input::PasswordTextInputWidgetExt,
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
-    settings::is_settings_screen_shown,
+    settings::{is_settings_screen_shown, app_preferences::AppPreferencesGlobal},
     shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}},
     sliding_sync::{submit_async_request, IdentityResetAuth, MatrixRequest, RecoveryAction},
     utils,
@@ -63,6 +63,22 @@ script_mod! {
         flow: Down
 
         TitleLabel { text: "Encryption Settings" }
+
+        SubsectionLabel { text: "Encryption warnings" }
+
+        View {
+            width: Fill, height: Fit
+            flow: Down,
+            margin: Inset{left: 6},
+
+            show_message_shields_toggle := mod.widgets.RobrixSettingsToggle {
+                active: false,
+                text: "Show warning shields on messages"
+            }
+            show_message_shields_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `populate_inner()`
+            }
+        }
 
         SubsectionLabel { text: "Key backup & recovery" }
 
@@ -355,6 +371,20 @@ impl Widget for EncryptionSettings {
 impl WidgetMatchEvent for EncryptionSettings {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let is_shown = is_settings_screen_shown(scope);
+        if is_shown
+            && let Some(show) = self.view.check_box(cx, ids!(show_message_shields_toggle)).changed(actions)
+            && let Some(app_state) = scope.data.get_mut::<AppState>()
+            && show != app_state.app_prefs.show_message_shields
+        {
+            app_state.app_prefs.show_message_shields = show;
+            app_state.app_prefs.on_show_message_shields_changed(cx);
+            self.populate_inner(cx);
+            enqueue_popup_notification(
+                "Updated encryption warning visibility.",
+                PopupKind::Success,
+                Some(3.0),
+            );
+        }
         if is_shown && self.view.button(cx, ids!(enable_recovery_button)).clicked(actions) {
             self.pending_request = Some(PendingRecoveryRequest::EnableRecovery);
             submit_async_request(MatrixRequest::EnableRecovery);
@@ -564,8 +594,12 @@ impl WidgetMatchEvent for EncryptionSettings {
 }
 
 impl EncryptionSettings {
-    /// Shows the app's latest known recovery state and queries the current one.
+    /// Shows the message shields setting and the app's latest known recovery state,
+    /// and queries the current recovery state.
     fn populate(&mut self, cx: &mut Cx, recovery_state: RecoveryState) {
+        let show_message_shields = cx.global::<AppPreferencesGlobal>().0.show_message_shields;
+        self.view.check_box(cx, ids!(show_message_shields_toggle))
+            .set_active(cx, show_message_shields, Animate::No);
         self.recovery_state = recovery_state;
         // The encryption settings section gets created lazily, so we may have missed
         // the subscriber's earlier updates, hence why we have to query it again.
@@ -592,6 +626,13 @@ impl EncryptionSettings {
     }
 
     fn populate_inner(&mut self, cx: &mut Cx) {
+        let shields_description = if cx.global::<AppPreferencesGlobal>().0.show_message_shields {
+            "<ul><li>Currently: messages show a red or gray shield if they're not encrypted or may not be authentic.</li></ul>"
+        } else {
+            "<ul><li>Currently: messages don't show encryption warnings.</li></ul>"
+        };
+        self.view.html(cx, ids!(show_message_shields_description)).set_text(cx, shields_description);
+
         let is_resetting = self.reset_stage != IdentityResetStage::None;
         let (status, can_enable, can_recover, can_change_key) = if self.is_reset_incomplete {
             ("Your encryption identity reset didn't finish. Run it again to complete it; you can set up key backup afterwards.", false, false, false)

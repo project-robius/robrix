@@ -20,6 +20,7 @@ use crate::{
     home::{identity_reset_banner::IdentityReset, room_screen::TimelineUpdate},
     profile::user_verification_cache::{enqueue_user_verification_update, UserVerificationState, UserVerificationUpdate},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
+    sliding_sync::refresh_encryption_info_of_messages,
 };
 
 /// Whether a verification flow is currently in progress. See [`VerificationInProgress`].
@@ -112,14 +113,19 @@ pub fn handle_user_identities_subscriber(client: Client) -> tokio::task::JoinHan
         while let Some(updates) = identity_updates.next().await {
             if updates.new.contains_key(&own_user_id) || updates.changed.contains_key(&own_user_id) {
                 enqueue_user_verification_update(UserVerificationUpdate::OwnIdentityChanged);
+                refresh_encryption_info_of_messages(None).await;
                 continue;
             }
+            let changed_user_ids: Vec<OwnedUserId> = updates.changed.keys().cloned().collect();
             let states: Vec<_> = updates.new.into_iter()
                 .chain(updates.changed)
                 .map(|(user_id, identity)| (user_id, UserVerificationState::from(&identity)))
                 .collect();
             if !states.is_empty() {
                 enqueue_user_verification_update(UserVerificationUpdate::States(states));
+            }
+            if !changed_user_ids.is_empty() {
+                refresh_encryption_info_of_messages(Some(&changed_user_ids)).await;
             }
         }
     })

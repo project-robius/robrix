@@ -3619,12 +3619,37 @@ impl Drop for JoinedRoomDetails {
     }
 }
 impl JoinedRoomDetails {
+    /// Returns the details of this room's main timeline and all of its thread timelines.
+    fn all_timelines(&self) -> impl Iterator<Item = &PerTimelineDetails> {
+        std::iter::once(&self.main_timeline).chain(self.thread_timelines.values())
+    }
+
     /// Returns the update senders for this room's main timeline and all of its thread timelines.
     fn all_timeline_update_senders(&self) -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
-        std::iter::once(&self.main_timeline)
-            .chain(self.thread_timelines.values())
+        self.all_timelines()
             .map(|d| d.timeline_update_sender.clone())
             .collect()
+    }
+}
+
+/// Asks every timeline to re-check the encryption info of messages sent by the given users
+/// (or by anyone, if `None`), so that those messages show their senders' current verification state.
+pub async fn refresh_encryption_info_of_messages(senders: Option<&[OwnedUserId]>) {
+    let timelines: Vec<Arc<Timeline>> = ALL_JOINED_ROOMS.lock().unwrap()
+        .values()
+        .flat_map(JoinedRoomDetails::all_timelines)
+        .map(|details| details.timeline.clone())
+        .collect();
+    for timeline in timelines {
+        let session_ids: Vec<String> = timeline.items().await
+            .iter()
+            .filter_map(|item| item.as_event())
+            .filter(|event| senders.is_none_or(|senders| senders.iter().any(|s| s == event.sender())))
+            .filter_map(|event| event.encryption_info()?.session_id().map(ToOwned::to_owned))
+            .collect();
+        if !session_ids.is_empty() {
+            timeline.retry_decryption(session_ids).await;
+        }
     }
 }
 
