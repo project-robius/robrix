@@ -34,7 +34,7 @@ use crate::{
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, lazy_view::{LazyViewRef, LazyViewWidgetExt, LazyViewWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -329,15 +329,18 @@ script_mod! {
         }
 
         // A preview of the earlier message that this message was in reply to.
-        replied_to_message := mod.widgets.RepliedToMessage {
-            flow: Down
-            margin: Inset{ bottom: 0, top: 10 }
-            // The left bar hangs down to 4px above the sender's avatar.
-            left_bar_overhang: 3.5
-            preview_content +: {
-                margin +: { left: 20 }
-                // Lines up the reply's text with this message's text.
-                padding +: { left: 32.5 }
+        replied_to_message := LazyView {
+            template: mod.widgets.RepliedToMessage {
+                visible: true
+                flow: Down
+                margin: Inset{ bottom: 0, top: 10 }
+                // The left bar hangs down to 4px above the sender's avatar.
+                left_bar_overhang: 3.5
+                preview_content +: {
+                    margin +: { left: 20 }
+                    // Lines up the reply's text with this message's text.
+                    padding +: { left: 32.5 }
+                }
             }
         }
 
@@ -386,7 +389,7 @@ script_mod! {
                 margin: Inset{right: 8}
                 flow: Down,
                 timestamp := Timestamp { }
-                edited_indicator := EditedIndicator { }
+                edited_indicator := LazyView { template: EditedIndicator { visible: true } }
                 message_shield := MessageShield { }
                 tsp_sign_indicator := TspSignIndicator { }
             }
@@ -399,7 +402,7 @@ script_mod! {
 
                 message := HtmlOrPlaintext { }
                 link_preview_view := mod.widgets.LinkPreview {}
-                download_section := mod.widgets.MessageDownloadSection {}
+                download_section := LazyView { template: mod.widgets.MessageDownloadSection { visible: true } }
                 View {
                     width: Fill,
                     height: Fit
@@ -408,7 +411,7 @@ script_mod! {
                     avatar_row := mod.widgets.AvatarRow {}
                     send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
+                thread_root_summary := LazyView { template: mod.widgets.ThreadRootSummary { visible: true } }
             }
         }
     }
@@ -417,14 +420,14 @@ script_mod! {
     // from the same sender, and thus doesn't need to display the sender's profile again.
     mod.widgets.CondensedMessage = mod.widgets.Message {
         padding: Inset{ top: 2.0, bottom: 2.0 }
-        replied_to_message +: {
+        replied_to_message +: { template +: {
             left_bar_overhang: 0.0
             reply_left_bar +: { draw_bg +: { arc_radius: 5.0 } }
             preview_content +: {
                 margin: Inset{ left: 55, bottom: 5.0 }
                 padding +: { left: 22 }
             }
-        }
+        } }
         header +: { visible: false }
         body +: {
             padding: Inset{ top: 2.5, bottom: 2.5, left: 8.0, right: 10.0 },
@@ -461,16 +464,6 @@ script_mod! {
                         }
                     }
                 }
-                download_section := mod.widgets.MessageDownloadSection {}
-                View {
-                    width: Fill,
-                    height: Fit,
-                    flow: Right,
-                    reaction_list := mod.widgets.ReactionList { }
-                    avatar_row := mod.widgets.AvatarRow {}
-                    send_status_indicator := mod.widgets.SendStatusIndicator {}
-                }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
             }
 
         }
@@ -501,16 +494,6 @@ script_mod! {
                         }
                     }
                 }
-                download_section := mod.widgets.MessageDownloadSection {}
-                View {
-                    width: Fill,
-                    height: Fit,
-                    flow: Right,
-                    reaction_list := mod.widgets.ReactionList { }
-                    avatar_row := mod.widgets.AvatarRow {}
-                    send_status_indicator := mod.widgets.SendStatusIndicator {}
-                }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
             }
         }
     }
@@ -5189,7 +5172,7 @@ fn populate_message_view(
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
         let is_reply_fully_drawn = draw_replied_to_message(
             cx,
-            &item.widget(cx, ids!(replied_to_message)),
+            &item.lazy_view(cx, ids!(replied_to_message)),
             timeline_kind,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
@@ -5296,11 +5279,12 @@ fn populate_message_view(
 
     // Set the "edited" indicator if this message was edited, otherwise hide it
     // (this widget may be reused for a non-edited message at the same row).
-    let edited_indicator = item.edited_indicator(cx, ids!(profile.edited_indicator));
+    let edited_indicator = item.lazy_view(cx, ids!(profile.edited_indicator));
     if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
-        edited_indicator.set_latest_edit(cx, event_tl_item);
+        edited_indicator.set_visible(cx, true);
+        edited_indicator.content().as_edited_indicator().set_latest_edit(cx, event_tl_item);
     } else {
-        edited_indicator.hide(cx);
+        edited_indicator.set_visible(cx, false);
     }
 
     item.message_shield(cx, ids!(profile.message_shield)).show_for_message(cx, event_tl_item);
@@ -5872,9 +5856,9 @@ fn populate_redacted_message_content(
 /// Draws a ReplyPreview above a message if it was in-reply to another message.
 ///
 /// ## Arguments
-/// * `replied_to_message_view`: the destination `RepliedToMessage` view that will be populated.
+/// * `replied_to_message`: the destination `RepliedToMessage` view that will be populated.
 /// * `timeline_kind`: the [`TimelineKind`] of the timeline that is being drawn.
-/// * `in_reply_to`: if `Some`, the details that will be used to populate the `replied_to_message_view`.
+/// * `in_reply_to`: if `Some`, the details that will be used to populate the `replied_to_message`.
 ///   If `None`, this function will mark it as non-visible and consider it fully drawn.
 /// * `message_event_id`: the [`EventId`] of the message that is the reply itself (the response).
 ///   This is needed to fetch the details of the replied-to message (if not yet available).
@@ -5883,16 +5867,17 @@ fn populate_redacted_message_content(
 /// i.e., whether it can be considered cached and not needing to be redrawn later.
 fn draw_replied_to_message(
     cx: &mut Cx2d,
-    replied_to_message_view: &WidgetRef,
+    replied_to_message: &LazyViewRef,
     timeline_kind: &TimelineKind,
     in_reply_to: Option<&InReplyToDetails>,
     message_event_id: Option<&EventId>,
 ) -> bool {
     let fully_drawn: bool;
-    let show_reply: bool;
+    // We show the reply preview before populating it, since it only gets built once it's shown.
+    replied_to_message.set_visible(cx, in_reply_to.is_some());
+    let replied_to_message_view = replied_to_message.content();
 
     if let Some(in_reply_to_details) = in_reply_to {
-        show_reply = true;
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
                 let (in_reply_to_username, is_avatar_fully_drawn) =
@@ -5960,11 +5945,9 @@ fn draw_replied_to_message(
         }
     } else {
         // This message was not in reply to another message, so we don't need to show a reply.
-        show_reply = false;
         fully_drawn = true;
     }
 
-    replied_to_message_view.set_visible(cx, show_reply);
     // After we changed a reply preview's content, we need to clear its cached view and measured height.
     replied_to_message_view.view(cx, ids!(preview_content)).redraw_texture_cache();
     replied_to_message_view.as_collapsible_preview().reset_measured_height();
@@ -5985,7 +5968,7 @@ fn populate_thread_root_summary(
     fetched_thread_summaries: &HashMap<OwnedEventId, FetchedThreadSummary>,
     pending_thread_summary_fetches: &mut HashSet<OwnedEventId>,
 ) -> bool {
-    let thread_summary_view = item.view(cx, ids!(thread_root_summary));
+    let thread_summary_view = item.lazy_view(cx, ids!(thread_root_summary));
     thread_summary_view.set_visible(cx, false); // hide by default
     let fully_drawn: bool;
 
@@ -6318,10 +6301,13 @@ pub struct Message {
     #[rust] pressed_touch_uid: Option<u64>,
 
     // Belowhere: cached references to child widgets, for efficiency.
-    #[rust] replied_to_message_view: Option<CollapsiblePreviewRef>,
+    #[rust] replied_to_message_view: Option<LazyViewRef>,
     #[rust] replied_to_message_content: Option<WidgetRef>,
-    #[rust] thread_root_summary_view: Option<ViewRef>,
+    #[rust] reply_expand_button: Option<ButtonRef>,
+    #[rust] reply_collapse_button: Option<ButtonRef>,
+    #[rust] thread_root_summary_view: Option<LazyViewRef>,
     #[rust] send_status_indicator: Option<SendStatusIndicatorRef>,
+    #[rust] download_section: Option<LazyViewRef>,
 }
 
 impl ScriptHook for Message {
@@ -6329,8 +6315,11 @@ impl ScriptHook for Message {
         // A script reload changes the Message's children; invalidate the ones we cached.
         self.replied_to_message_view = None;
         self.replied_to_message_content = None;
+        self.reply_expand_button = None;
+        self.reply_collapse_button = None;
         self.thread_root_summary_view = None;
         self.send_status_indicator = None;
+        self.download_section = None;
     }
 }
 
@@ -6385,9 +6374,14 @@ impl Widget for Message {
         // because we don't want any widgets within the replied-to message to be
         // clickable or otherwise interactive.
         let reply = self.replied_to_message_view(cx);
-        let reply_content_area = self.replied_to_message_content
-            .get_or_insert_with(|| reply.widget(cx, ids!(preview_content)))
-            .area();
+        // A reply preview that was never shown hasn't been built yet, so there's nothing to hit or cache.
+        let reply_content_area = if reply.is_empty() {
+            Area::Empty
+        } else {
+            self.replied_to_message_content
+                .get_or_insert_with(|| reply.widget(cx, ids!(preview_content)))
+                .area()
+        };
         let reply_hit = event.hits(cx, reply_content_area);
         match reply_hit {
             Hit::FingerHoverIn(..) => {
@@ -6532,16 +6526,24 @@ impl Widget for Message {
                 }
             }
 
-            // Handle clicks on the reply preview's "show more" or "show less" buttons.
-            let reply_expand_button = self.button(cx, ids!(replied_to_message.reply_expand_button));
-            let reply_collapse_button = self.button(cx, ids!(replied_to_message.reply_collapse_button));
-            if reply_expand_button.clicked(actions) || reply_collapse_button.clicked(actions)             {
-                cx.widget_action(
-                    room_screen_widget_uid,
-                    MessageAction::ToggleReplyPreviewExpanded(self.details.clone().unwrap()), // guaranteed to be Some()
-                );
-                reply_expand_button.reset_hover(cx);
-                reply_collapse_button.reset_hover(cx);
+            // Handle clicks on the reply preview's "show more" or "show less" buttons,
+            // which only exist once the reply preview has been built.
+            let reply = self.replied_to_message_view(cx);
+            if !reply.is_empty() {
+                let reply_expand_button = self.reply_expand_button
+                    .get_or_insert_with(|| reply.button(cx, ids!(reply_expand_button)))
+                    .clone();
+                let reply_collapse_button = self.reply_collapse_button
+                    .get_or_insert_with(|| reply.button(cx, ids!(reply_collapse_button)))
+                    .clone();
+                if reply_expand_button.clicked(actions) || reply_collapse_button.clicked(actions) {
+                    cx.widget_action(
+                        room_screen_widget_uid,
+                        MessageAction::ToggleReplyPreviewExpanded(self.details.clone().unwrap()), // guaranteed to be Some()
+                    );
+                    reply_expand_button.reset_hover(cx);
+                    reply_collapse_button.reset_hover(cx);
+                }
             }
 
             // Handle clicks on the media-related buttons (download, share, cancel) beneath media messages.
@@ -6591,13 +6593,14 @@ impl Widget for Message {
 }
 
 impl Message {
+    /// Returns the reply preview, or an empty ref if this message has never shown one.
     fn replied_to_message_view(&mut self, cx: &mut Cx) -> CollapsiblePreviewRef {
         if let Some(reply) = &self.replied_to_message_view {
-            return reply.clone();
+            return reply.content().as_collapsible_preview();
         }
-        let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+        let reply = self.view.lazy_view(cx, ids!(replied_to_message));
         self.replied_to_message_view = Some(reply.clone());
-        reply
+        reply.content().as_collapsible_preview()
     }
 
     /// Whether a click/tap at `abs` is within a child widget (within this message) that has its own hit behavior.
@@ -6628,13 +6631,14 @@ impl Message {
         );
     }
 
+    /// Returns the thread summary, or an empty ref if this message has never shown one.
     fn thread_root_summary_view(&mut self, cx: &mut Cx) -> ViewRef {
         if let Some(view) = &self.thread_root_summary_view {
-            return view.clone();
+            return view.content().as_view();
         }
-        let view = self.view(cx, ids!(thread_root_summary));
+        let view = self.lazy_view(cx, ids!(thread_root_summary));
         self.thread_root_summary_view = Some(view.clone());
-        view
+        view.content().as_view()
     }
 
     fn send_status_indicator(&mut self, cx: &mut Cx) -> SendStatusIndicatorRef {
@@ -6676,10 +6680,12 @@ impl Message {
         self.send_status_indicator(cx).set_from_event(cx, event_tl_item, is_newest_sent, is_blocked_by_failed_send, is_room_encrypted);
 
         // Re-apply this every time to ensure a re-used portallist item is still correctly expanded.
-        self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview().set_expanded(is_reply_expanded);
+        self.replied_to_message_view(cx).set_expanded(is_reply_expanded);
 
         let section_visible = self.download_info.is_some();
-        self.view.view(cx, ids!(content.download_section)).set_visible(cx, section_visible);
+        self.download_section
+            .get_or_insert_with(|| self.view.lazy_view(cx, ids!(content.download_section)))
+            .set_visible(cx, section_visible);
         if section_visible {
             let download_button  = self.view.button(cx, ids!(content.download_section.download_button));
             let share_button     = self.view.button(cx, ids!(content.download_section.share_button));

@@ -4,7 +4,7 @@
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventShieldState, TimelineEventShieldStateCode};
 
-use crate::settings::app_preferences::AppPreferencesGlobal;
+use crate::{settings::app_preferences::AppPreferencesGlobal, shared::lazy_view::{LazyViewRef, LazyViewWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -24,13 +24,13 @@ script_mod! {
         View {
             width: 12, height: 12
             flow: Overlay
-            warning_icon := mod.widgets.IconNo {}
-            notice_icon := mod.widgets.IconUnk {}
+            warning_icon := LazyView { template: mod.widgets.IconNo { visible: true } }
+            notice_icon := LazyView { template: mod.widgets.IconUnk { visible: true } }
         }
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct MessageShield {
     #[deref] view: View,
 
@@ -38,6 +38,15 @@ pub struct MessageShield {
     #[live] tooltip_bg_color_notice: Vec4f,
 
     #[rust(TimelineEventShieldState::None)] shield: TimelineEventShieldState,
+    #[rust] warning_icon: Option<LazyViewRef>,
+    #[rust] notice_icon: Option<LazyViewRef>,
+}
+
+impl ScriptHook for MessageShield {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        self.warning_icon = None;
+        self.notice_icon = None;
+    }
 }
 
 impl Widget for MessageShield {
@@ -79,6 +88,13 @@ impl Widget for MessageShield {
         if !cx.global::<AppPreferencesGlobal>().0.show_message_shields {
             return DrawStep::done();
         }
+        // Showing an icon builds it, so we only do that once we know it'll be drawn.
+        self.warning_icon
+            .get_or_insert_with(|| self.view.lazy_view(cx, ids!(warning_icon)))
+            .set_visible(cx, matches!(self.shield, TimelineEventShieldState::Red { .. }));
+        self.notice_icon
+            .get_or_insert_with(|| self.view.lazy_view(cx, ids!(notice_icon)))
+            .set_visible(cx, matches!(self.shield, TimelineEventShieldState::Grey { .. }));
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -94,8 +110,6 @@ impl MessageShield {
             event_tl_item.get_shield(false)
         };
         self.visible = self.shield != TimelineEventShieldState::None;
-        self.view.view(cx, ids!(warning_icon)).set_visible(cx, matches!(self.shield, TimelineEventShieldState::Red { .. }));
-        self.view.view(cx, ids!(notice_icon)).set_visible(cx, matches!(self.shield, TimelineEventShieldState::Grey { .. }));
         self.redraw(cx);
     }
 }

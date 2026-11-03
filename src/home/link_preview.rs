@@ -15,7 +15,7 @@ use url::Url;
 use crate::{
     home::room_screen::TimelineUpdate,
     media_cache::MediaCache,
-    shared::{styles::set_view_bg_color, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}},
+    shared::{lazy_view::LazyViewWidgetExt, styles::set_view_bg_color, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}},
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
@@ -58,72 +58,73 @@ script_mod! {
         card_bg_color: (COLOR_BG_PREVIEW_TRANSLUCENT)
         card_bg_color_hover: (COLOR_BG_PREVIEW_HOVER)
 
-        collapsible_buttons := View {
-            width: Fill, height: Fit,
-            flow: Right,
-            align: Align{x: 0.5, y: 0.5},
-            padding: Inset{top: 4},
-            visible: false,
+        collapsible_buttons := LazyView {
+            template: View {
+                width: Fill, height: Fit,
+                flow: Right,
+                align: Align{x: 0.5, y: 0.5},
+                padding: Inset{top: 4},
 
-            expand_button := RobrixIconButton {
-                width: Fit, height: Fit,
-                spacing: 4,
-                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
-                draw_icon +: {
-                    svg: (ICON_TRIANGLE_DOWN)
-                    color: (COLOR_TEXT_MUTED)
+                expand_button := RobrixIconButton {
+                    width: Fit, height: Fit,
+                    spacing: 4,
+                    padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
+                    draw_icon +: {
+                        svg: (ICON_TRIANGLE_DOWN)
+                        color: (COLOR_TEXT_MUTED)
+                    }
+                    icon_walk: Walk{width: 10, height: 10}
+                    draw_text +: {
+                        text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                            font_size: 10.0,
+                        },
+                        color: (COLOR_TEXT_MUTED),
+                        color_hover: (COLOR_TEXT_MUTED),
+                        color_down: (COLOR_TEXT_MUTED),
+                    }
+                    draw_bg +: {
+                        color: (COLOR_BG_PREVIEW)
+                        color_hover: (COLOR_BG_PREVIEW_HOVER)
+                        color_down: (COLOR_BG_PREVIEW_DOWN)
+                        border_size: 1.0
+                        border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                        border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                        border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                        border_radius: 4.0
+                    }
+                    text: "Show more links"
                 }
-                icon_walk: Walk{width: 10, height: 10}
-                draw_text +: {
-                    text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                        font_size: 10.0,
-                    },
-                    color: (COLOR_TEXT_MUTED),
-                    color_hover: (COLOR_TEXT_MUTED),
-                    color_down: (COLOR_TEXT_MUTED),
-                }
-                draw_bg +: {
-                    color: (COLOR_BG_PREVIEW)
-                    color_hover: (COLOR_BG_PREVIEW_HOVER)
-                    color_down: (COLOR_BG_PREVIEW_DOWN)
-                    border_size: 1.0
-                    border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-                    border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-                    border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-                    border_radius: 4.0
-                }
-                text: "Show more links"
-            }
 
-            collapse_button := RobrixIconButton {
-                visible: false,
-                width: Fit, height: Fit,
-                spacing: 4,
-                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
-                draw_icon +: {
-                    svg: (ICON_TRIANGLE_UP)
-                    color: (COLOR_TEXT_MUTED)
+                collapse_button := RobrixIconButton {
+                    visible: false,
+                    width: Fit, height: Fit,
+                    spacing: 4,
+                    padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
+                    draw_icon +: {
+                        svg: (ICON_TRIANGLE_UP)
+                        color: (COLOR_TEXT_MUTED)
+                    }
+                    icon_walk: Walk{width: 10, height: 10}
+                    draw_text +: {
+                        text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                            font_size: 10.0,
+                        },
+                        color: (COLOR_TEXT_MUTED),
+                        color_hover: (COLOR_TEXT_MUTED),
+                        color_down: (COLOR_TEXT_MUTED),
+                    }
+                    draw_bg +: {
+                        color: (COLOR_BG_PREVIEW)
+                        color_hover: (COLOR_BG_PREVIEW_HOVER)
+                        color_down: (COLOR_BG_PREVIEW_DOWN)
+                        border_size: 1.0
+                        border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                        border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                        border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
+                        border_radius: 4.0
+                    }
+                    text: "Show fewer links"
                 }
-                icon_walk: Walk{width: 10, height: 10}
-                draw_text +: {
-                    text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                        font_size: 10.0,
-                    },
-                    color: (COLOR_TEXT_MUTED),
-                    color_hover: (COLOR_TEXT_MUTED),
-                    color_down: (COLOR_TEXT_MUTED),
-                }
-                draw_bg +: {
-                    color: (COLOR_BG_PREVIEW)
-                    color_hover: (COLOR_BG_PREVIEW_HOVER)
-                    color_down: (COLOR_BG_PREVIEW_DOWN)
-                    border_size: 1.0
-                    border_color: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-                    border_color_hover: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-                    border_color_down: (COLOR_PREVIEW_TOGGLE_BUTTON_BORDER)
-                    border_radius: 4.0
-                }
-                text: "Show fewer links"
             }
         }
 
@@ -374,7 +375,7 @@ impl Widget for LinkPreview {
 impl LinkPreview {
     fn update_button_and_visibility(&mut self, cx: &mut Cx) {
         if self.num_hidden_links > 0 {
-            self.view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
+            self.lazy_view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
             let expand_btn = self.button(cx, ids!(collapsible_buttons.expand_button));
             let collapse_btn = self.button(cx, ids!(collapsible_buttons.collapse_button));
             if self.is_expanded {
@@ -388,7 +389,7 @@ impl LinkPreview {
             expand_btn.reset_hover(cx);
             collapse_btn.reset_hover(cx);
         } else {
-            self.view(cx, ids!(collapsible_buttons)).set_visible(cx, false);
+            self.lazy_view(cx, ids!(collapsible_buttons)).set_visible(cx, false);
         }
     }
 }

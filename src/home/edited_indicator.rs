@@ -108,12 +108,6 @@ impl EditedIndicator {
         self.visible = true;
         self.redraw(cx);
     }
-
-    /// Hides this indicator, e.g., for a message that has not been edited.
-    pub fn hide(&mut self, cx: &mut Cx) {
-        self.visible = false;
-        self.redraw(cx);
-    }
 }
 
 impl EditedIndicatorRef {
@@ -121,13 +115,6 @@ impl EditedIndicatorRef {
     pub fn set_latest_edit(&self, cx: &mut Cx, event_tl_item: &EventTimelineItem) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_latest_edit(cx, event_tl_item);
-        }
-    }
-
-    /// See [`EditedIndicator::hide()`].
-    pub fn hide(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.hide(cx);
         }
     }
 }
