@@ -97,15 +97,11 @@ script_mod! {
             progress_bar_color: uniform((COLOR_POPUP_PROGRESS_BAR)), //Black with 50% opacity.
             // Display progress bar when there is auto_dismissal_duration.
             display_progress_bar: instance(1.0)
-            // Display progress bar even when progress.on is off.
-            // 0.0 animate according to anim_time, 1.0 displays an oscillating progress bar.
-            debug_progress_bar: uniform(0.0),
             anim_time: instance(0.0),
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 let rect_size = self.rect_size;
-                let is_debug = step(0.5, self.debug_progress_bar);
-                let time = (1.0 - is_debug) * self.anim_time + is_debug * (0.5 + 0.5 * sin(self.draw_pass.time * PI));
+                let time = self.anim_time;
                 if self.display_progress_bar > 0.5 {
                     if self.direction > 0.5 {
                         // Top to bottom

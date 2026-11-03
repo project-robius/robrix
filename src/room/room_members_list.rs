@@ -53,6 +53,7 @@ script_mod! {
             scroll_bar: ListScrollBar {}
             auto_tail: false
             keep_invisible: false
+            emit_scroll_actions: false
 
             member_row := mod.widgets.AvatarListRow { padding: Inset{left: 6, right: 6} }
             loading_row := mod.widgets.ListLoadingRow {}

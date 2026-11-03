@@ -127,6 +127,7 @@ script_mod! {
         scroll_bar: ListScrollBar {}
         auto_tail: false
         keep_invisible: false
+        emit_scroll_actions: false
     }
 }
 

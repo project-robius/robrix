@@ -34,7 +34,7 @@ use crate::{
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, lazy_view::{LazyViewRef, LazyViewWidgetExt, LazyViewWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonRef, JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, lazy_view::{LazyViewRef, LazyViewWidgetExt, LazyViewWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -608,10 +608,11 @@ script_mod! {
             // before that, reaching the top back-paginates instead of bouncing.
             bounce_at_start: false,
             bounce_at_end: true,
-            // Read-receipt logic listens for scroll position changes.
-            emit_scroll_actions: true,
+            // RoomScreen checks for scroll position changes itself after drawing the list.
+            emit_scroll_actions: false,
             // Prefetch older history shortly before the user actually hits the top.
             reached_start_margin: 2,
+            keep_nearby_items: true,
             // TODO: enable `reuse_items: true` once Makepad's Html/TextFlow widget
             //   properly resets all internal state during `script_apply(Reload)`.
             //   Currently, stale TextFlow layout state (particularly related to
@@ -740,6 +741,8 @@ struct ReadReceiptState {
     user_scroll_travel_at_timer_start: f64,
     /// The timeline's `user_scroll_travel` when we last sampled it.
     last_user_scroll_travel: f64,
+    /// The timeline's first item and its scroll offset when it was last drawn.
+    last_drawn_position: (usize, f64),
 }
 
 impl ReadReceiptState {
@@ -769,9 +772,13 @@ impl ReadReceiptState {
         self.from_user_input = false;
     }
 
-    /// Reacts to the timeline having scrolled, based on whether the user
-    /// caused the movement and in which direction.
+    /// Reacts to the timeline having scrolled since it was last drawn,
+    /// based on whether the user caused the movement and in which direction.
     fn handle_scroll(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        let position = (portal_list.first_id(), portal_list.scroll_position());
+        if position == std::mem::replace(&mut self.last_drawn_position, position) {
+            return;
+        }
         let user_travel = portal_list.user_scroll_travel();
         let did_scroll_up = user_travel > self.last_user_scroll_travel;
         let did_scroll_down = user_travel < self.last_user_scroll_travel;
@@ -829,6 +836,8 @@ pub struct RoomScreen {
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// The timeline whose items our timeline list holds.
+    #[rust] drawn_timeline_kind: Option<TimelineKind>,
     /// The set of pinned events in this room.
     #[rust] pinned_events: Vec<OwnedEventId>,
     /// Whether this room has been successfully loaded (received from the homeserver).
@@ -860,6 +869,7 @@ struct RoomScreenWidgetRefs {
     loading_pane: LoadingPaneRef,
     room_input_popup_menu: RoomInputPopupMenuRef,
     top_space: ViewRef,
+    jump_to_bottom_button: JumpToBottomButtonRef,
 }
 
 impl Drop for RoomScreen {
@@ -917,6 +927,7 @@ impl Widget for RoomScreen {
             user_profile_sliding_pane,
             loading_pane,
             room_input_popup_menu,
+            jump_to_bottom_button,
             ..
         } = self.cached_widget_refs(cx);
 
@@ -1303,14 +1314,8 @@ impl Widget for RoomScreen {
             // Back paginate the timeline when the start of the timeline comes into view.
             self.send_pagination_request_on_reached_start(cx, actions, &portal_list);
 
-            // Once scrolling stops, the read receipt timer determines which events are
-            // actually visible and sends read receipts for them.
-            if portal_list.scrolled(actions) {
-                self.read_receipt_state.handle_scroll(cx, &portal_list);
-            }
-
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button)).update_from_actions(
+            jump_to_bottom_button.update_from_actions(
                 cx,
                 &portal_list,
                 actions,
@@ -1522,9 +1527,10 @@ impl Widget for RoomScreen {
         }
 
         self.update_top_space_visibility(cx);
-        let top_space = self.cached_widget_refs(cx).top_space;
+        let RoomScreenWidgetRefs { portal_list, top_space, jump_to_bottom_button, .. } = self.cached_widget_refs(cx);
 
         let room_screen_widget_uid = self.widget_uid();
+        let mut is_list_drawn = false;
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1532,6 +1538,7 @@ impl Widget for RoomScreen {
                 error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
                 continue;
             };
+            is_list_drawn = true;
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
@@ -1679,6 +1686,13 @@ impl Widget for RoomScreen {
                 tl_state.paginate_backwards();
             }
             top_space.set_visible(cx, tl_state.backwards_pagination.is_loading());
+        }
+
+        if is_list_drawn {
+            // Once scrolling stops, the read receipt timer determines which events are
+            // actually visible and sends read receipts for them.
+            self.read_receipt_state.handle_scroll(cx, &portal_list);
+            jump_to_bottom_button.update_visibility_after_draw(cx, &portal_list);
         }
 
         let room_rect = self.view.area().rect(cx);
@@ -3232,6 +3246,7 @@ impl RoomScreen {
                     content_drawn_since_last_update: RangeSet::new(),
                     profile_drawn_since_last_update: RangeSet::new(),
                     drawn_reload_generation: cx.reload_generation,
+                    drawn_room_screen_uid: owner,
                     update_receiver,
                     request_sender,
                     media_cache: MediaCache::new(Some(update_sender.clone())),
@@ -3257,6 +3272,14 @@ impl RoomScreen {
                 (tl_state, true)
             }
         };
+        // Re-populate all items if our list's widgets were last drawn for another timeline,
+        // or if another RoomScreen drew this timeline since we did.
+        if tl_state.drawn_room_screen_uid != owner || self.drawn_timeline_kind.as_ref() != Some(&tl_state.kind) {
+            tl_state.content_drawn_since_last_update.clear();
+            tl_state.profile_drawn_since_last_update.clear();
+        }
+        tl_state.drawn_room_screen_uid = owner;
+        self.drawn_timeline_kind = Some(tl_state.kind.clone());
         let mut is_first_time_being_loaded = is_new_tl_state;
 
         // It is possible that this room has already been loaded (received from the server)
@@ -3807,6 +3830,7 @@ impl RoomScreen {
             loading_pane: self.loading_pane(cx, ids!(loading_pane)),
             room_input_popup_menu: self.room_input_popup_menu(cx, ids!(room_input_popup_menu)),
             top_space: self.view.view(cx, ids!(top_space)),
+            jump_to_bottom_button: self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button)),
         };
         self.cached_refs = Some(refs.clone());
         refs
@@ -4410,6 +4434,9 @@ struct TimelineUiState {
 
     /// The `cx.reload_generation` that the above drawn-item caches were filled in.
     drawn_reload_generation: u64,
+
+    /// The RoomScreen whose timeline list the above drawn-item caches were filled in.
+    drawn_room_screen_uid: WidgetUid,
 
     /// The channel receiver for timeline updates for this room.
     ///

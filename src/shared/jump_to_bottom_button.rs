@@ -110,17 +110,25 @@ pub struct JumpToBottomButton {
     #[deref] view: View,
     /// The unread badge's border size, which is smaller for counts with more digits.
     #[rust] unread_badge_border_size: Option<f32>,
+    /// The child widgets we use on every event and draw, looked up once.
+    #[rust] child_refs: Option<ChildRefs>,
+}
+
+struct ChildRefs {
+    inner_button: ButtonRef,
+    unread_message_badge: ViewRef,
 }
 
 impl ScriptHook for JumpToBottomButton {
     fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        self.child_refs = None;
         vm.with_cx_mut(|cx| self.apply_unread_badge_border_size(cx));
     }
 }
 
 impl Widget for JumpToBottomButton {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let button_area = self.button(cx, ids!(inner_button)).area();
+        let button_area = self.child_refs(cx).inner_button.area();
         match event.hits(cx, button_area) {
             Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
                 cx.widget_action(
@@ -153,6 +161,13 @@ impl Widget for JumpToBottomButton {
 }
 
 impl JumpToBottomButton {
+    fn child_refs(&mut self, cx: &mut Cx) -> &ChildRefs {
+        self.child_refs.get_or_insert_with(|| ChildRefs {
+            inner_button: self.view.button(cx, ids!(inner_button)),
+            unread_message_badge: self.view.view(cx, ids!(unread_message_badge)),
+        })
+    }
+
     /// Updates the visibility of the jump to bottom button *without* redrawing.
     ///
     /// * If `is_at_bottom` is `true`, both the main jump to bottom view and
@@ -164,7 +179,7 @@ impl JumpToBottomButton {
     pub fn update_visibility(&mut self, cx: &mut Cx, is_at_bottom: bool) {
         if is_at_bottom {
             self.visible = false;
-            self.view(cx, ids!(unread_message_badge)).set_visible(cx, false);
+            self.child_refs(cx).unread_message_badge.set_visible(cx, false);
         } else {
             self.visible = true;
         }
@@ -178,19 +193,19 @@ impl JumpToBottomButton {
         match count {
             UnreadMessageCount::Unknown => {
                 self.visible = true;
-                self.view(cx, ids!(unread_message_badge)).set_visible(cx, true);
+                self.child_refs(cx).unread_message_badge.set_visible(cx, true);
                 self.label(cx, ids!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(0) => {
                 // Only hide the badge, not the entire button.
                 // The button's visibility is controlled by `update_visibility()`
                 // based on whether the portal list is at the end.
-                self.view(cx, ids!(unread_message_badge)).set_visible(cx, false);
+                self.child_refs(cx).unread_message_badge.set_visible(cx, false);
                 self.label(cx, ids!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(unread_message_count) => {
                 self.visible = true;
-                self.view(cx, ids!(unread_message_badge)).set_visible(cx, true);
+                self.child_refs(cx).unread_message_badge.set_visible(cx, true);
                 let (border_size, plus_sign) = if unread_message_count > 99 {
                     (0.0, "+")
                 } else if unread_message_count > 9 {
@@ -232,7 +247,7 @@ impl JumpToBottomButton {
         //       to check if the portallist has been scrolled than to just directly
         //       query the portallist's `at_end` state and set the visibility accordingly.
 
-        if self.button(cx, ids!(inner_button)).clicked(actions) {
+        if self.child_refs(cx).inner_button.clicked(actions) {
             portal_list.smooth_scroll_to_end(
                 cx,
                 SCROLL_TO_BOTTOM_SPEED,
@@ -248,6 +263,14 @@ impl JumpToBottomButton {
         }
     }
 
+    /// Updates the visibility of the jump to bottom button after the portal list has been drawn.
+    pub fn update_visibility_after_draw(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        let was_visible = self.visible;
+        self.update_visibility(cx, portal_list.is_at_end());
+        if self.visible != was_visible {
+            cx.redraw_area_in_draw(portal_list.area());
+        }
+    }
 }
 
 impl JumpToBottomButtonRef {
@@ -274,6 +297,13 @@ impl JumpToBottomButtonRef {
     ) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.update_from_actions(cx, portal_list, actions);
+        }
+    }
+
+    /// See [`JumpToBottomButton::update_visibility_after_draw()`].
+    pub fn update_visibility_after_draw(&self, cx: &mut Cx, portal_list: &PortalListRef) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.update_visibility_after_draw(cx, portal_list);
         }
     }
 }
