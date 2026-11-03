@@ -112,6 +112,18 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
      <details>
+     <summary>OpenMandriva Lx (<code>dnf</code>)</summary>
+
+     ```sh
+     sudo dnf install --refresh clang make git cmake pkgconf \
+       lib64openssl-devel lib64x11-devel lib64xcursor-devel \
+       lib64asound-devel lib64pulseaudio-devel lib64wayland-devel \
+       lib64xkbcommon-devel
+     ```
+
+     </details>
+
+     <details>
      <summary>openSUSE / SUSE (<code>zypper</code>)</summary>
 
      On openSUSE, run:
