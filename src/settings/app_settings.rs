@@ -4,7 +4,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride, set_appearance}},
+    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride, set_appearance}, text_rendering::{is_simpler_text_rendering_enabled, set_simpler_text_rendering}},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -429,6 +429,31 @@ script_mod! {
         }
 
 
+        text_rendering_section := View {
+            width: Fill, height: Fit
+            flow: Down,
+
+            SubsectionLabel {
+                margin: Inset{top: 10}
+                text: "Text Rendering"
+            }
+
+            View {
+                width: Fill, height: Fit
+                flow: Down,
+                margin: Inset{left: 6},
+
+                simpler_text_rendering_toggle := mod.widgets.RobrixSettingsToggle {
+                    active: false,
+                    text: "Use simpler text rendering"
+                }
+                mod.widgets.SettingsSectionDescription {
+                    body: "<ul><li>Draws text faster on older devices, but it may look slightly softer.</li></ul>"
+                }
+            }
+        }
+
+
         SubsectionLabel {
             margin: Inset{top: 10}
             text: "Keyboard Shortcut to Send Message"
@@ -771,6 +796,18 @@ impl AppSettings {
             }
         }
 
+        if is_shown
+            && let Some(enabled) = self.view.check_box(cx, ids!(simpler_text_rendering_toggle)).changed(actions)
+            && enabled != is_simpler_text_rendering_enabled(cx)
+        {
+            set_simpler_text_rendering(cx, enabled);
+            enqueue_popup_notification(
+                "Updated text rendering.",
+                PopupKind::Success,
+                Some(3.0),
+            );
+        }
+
         if is_shown && let Some(cmd_enter_active) = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle)).changed(actions)
         {
             // The toggle's "active" state is the invert of `send_on_enter`.
@@ -996,6 +1033,9 @@ impl AppSettings {
             .set_active(cx, prefs.show_typing_notices, Animate::No);
         self.view.check_box(cx, ids!(send_typing_notices_toggle))
             .set_active(cx, prefs.send_typing_notices, Animate::No);
+        let is_simpler_text_rendering = is_simpler_text_rendering_enabled(cx);
+        self.view.check_box(cx, ids!(simpler_text_rendering_toggle))
+            .set_active(cx, is_simpler_text_rendering, Animate::No);
 
         let (small, medium, large, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
@@ -1052,6 +1092,9 @@ impl AppSettings {
         // A mouse on iOS/Android acts like a touch, which can always drag to scroll.
         view.widget(cx, ids!(mouse_drag_scrolling_section))
             .set_visible(cx, !cfg!(any(target_os = "ios", target_os = "android")));
+        // Linux and Windows already draw small text from the atlas, so there's nothing simpler to switch to.
+        view.widget(cx, ids!(text_rendering_section))
+            .set_visible(cx, !cfg!(any(target_os = "linux", target_os = "windows")));
 
         let custom_active = matches!(prefs.thumbnail_max_height, ThumbnailMaxHeight::Custom(_));
         Self::set_thumb_custom_input_read_only(cx, view, custom_active);

@@ -1,7 +1,7 @@
-use std::io::Write;
+use std::{fmt::Debug, io::Write};
 
 use makepad_widgets::*;
-use serde::{self, Deserialize, Serialize};
+use serde::{self, Deserialize, Serialize, de::DeserializeOwned};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
 use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir, settings::app_preferences::Appearance};
 
@@ -10,6 +10,8 @@ const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.json";
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
 const APPEARANCE_FILE_NAME: &str = "appearance.json";
+
+const SIMPLER_TEXT_RENDERING_FILE_NAME: &str = "simpler_text_rendering.json";
 
 /// Persistable state of the window's size, position, and fullscreen status.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -103,22 +105,22 @@ impl WindowGeomTracker {
 
 /// Loads the saved [`Appearance`], or the default if there isn't a valid one.
 pub fn load_appearance() -> Appearance {
-    let path = app_data_dir().join(APPEARANCE_FILE_NAME);
-    let Ok(bytes) = std::fs::read(path) else { return Appearance::default() };
-    serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-        error!("Failed to parse the saved appearance: {e}");
-        Appearance::default()
-    })
+    load_device_setting(APPEARANCE_FILE_NAME)
 }
 
 /// Saves the given [`Appearance`] to persistent storage.
 pub fn save_appearance(appearance: Appearance) -> anyhow::Result<()> {
-    std::fs::write(
-        app_data_dir().join(APPEARANCE_FILE_NAME),
-        serde_json::to_string(&appearance)?,
-    )?;
-    log!("Successfully saved appearance: {appearance:?}");
-    Ok(())
+    save_device_setting(APPEARANCE_FILE_NAME, appearance)
+}
+
+/// Loads whether text uses simpler rendering on this device, which is off by default.
+pub fn load_simpler_text_rendering() -> bool {
+    load_device_setting(SIMPLER_TEXT_RENDERING_FILE_NAME)
+}
+
+/// Saves whether text uses simpler rendering on this device.
+pub fn save_simpler_text_rendering(enabled: bool) -> anyhow::Result<()> {
+    save_device_setting(SIMPLER_TEXT_RENDERING_FILE_NAME, enabled)
 }
 
 /// Save the current app state to persistent storage.
@@ -183,5 +185,24 @@ pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<Option<AppState>
             Ok(None)
         }
     }
+}
+
+/// Loads a setting we save per device rather than per account, or its default if there isn't a valid one.
+fn load_device_setting<T: DeserializeOwned + Default>(file_name: &str) -> T {
+    let path = app_data_dir().join(file_name);
+    let Ok(bytes) = std::fs::read(path) else { return T::default() };
+    serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+        error!("Failed to parse the saved {file_name}: {e}");
+        T::default()
+    })
+}
+
+fn save_device_setting<T: Serialize + Debug>(file_name: &str, setting: T) -> anyhow::Result<()> {
+    std::fs::write(
+        app_data_dir().join(file_name),
+        serde_json::to_string(&setting)?,
+    )?;
+    log!("Successfully saved {file_name}: {setting:?}");
+    Ok(())
 }
 
