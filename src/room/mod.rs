@@ -127,6 +127,18 @@ impl BasicRoomDetails {
             _ => None,
         }
     }
+
+    /// Returns whether this is a space, which we only know from its fetched preview.
+    pub fn is_space(&self) -> bool {
+        matches!(self, Self::FetchedRoomPreview(frp) if frp.room_type == Some(RoomType::Space))
+    }
+
+    /// Returns whether this is a space that we've joined, according to its fetched preview.
+    pub fn is_joined_space(&self) -> bool {
+        matches!(self, Self::FetchedRoomPreview(frp)
+            if frp.room_type == Some(RoomType::Space) && frp.state == Some(RoomState::Joined)
+        )
+    }
 }
 
 

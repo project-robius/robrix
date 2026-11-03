@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
     avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::{clear_room_preview_cache, process_room_preview_updates}, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatusGlobal, RoomsListHeaderAction, get_last_synced_at}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, invite_screen::JoinRoomResultAction, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatusGlobal, RoomsListHeaderAction, get_last_synced_at}, spaces_bar::{SpacesListUpdate, enqueue_spaces_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -548,6 +548,10 @@ impl MatchEvent for App {
                     self.navigate_to_room(cx, room_to_close.as_ref(), destination_room);
                     continue;
                 }
+                Some(AppStateAction::NavigateToSpace { space_name_id }) => {
+                    self.navigate_to_space(cx, BasicRoomDetails::Name(space_name_id.clone()), None);
+                    continue;
+                }
                 // If we successfully loaded a room that we were waiting on,
                 // we can now navigate to it and optionally close a previous room.
                 Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) if
@@ -561,6 +565,24 @@ impl MatchEvent for App {
                     continue;
                 }
                 _ => {}
+            }
+
+            // Unlike a room, a space never gets loaded into the rooms list,
+            // so we navigate to a space as soon as we've joined it.
+            if let Some(JoinRoomResultAction::Joined { room_id }) = action.downcast_ref()
+                && let Some((space, room_to_close)) = self.waiting_to_navigate_to_room
+                    .take_if(|(dr, _)| dr.room_id() == room_id && dr.is_space())
+            {
+                self.navigate_to_space(cx, space, room_to_close);
+                continue;
+            }
+            // We now know where to show the joined space that we're navigating to.
+            if let Some(SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space, .. }) = action.downcast_ref()
+                && let Some((_, room_to_close)) = self.waiting_to_navigate_to_room
+                    .take_if(|(dr, _)| dr.room_id() == space_name_id.room_id())
+            {
+                self.show_joined_space(cx, space_name_id, dock_space.as_ref(), room_to_close.as_ref());
+                continue;
             }
 
             // Handle actions needed to open/close the block user modal.
@@ -1149,19 +1171,6 @@ impl App {
         room_to_close: Option<&OwnedRoomId>,
         destination_room: &BasicRoomDetails,
     ) {
-        // A closure that closes the given `room_to_close`, if it exists in an open tab.
-        let close_room_closure_opt = room_to_close.map(|to_close| {
-            let tab_id = LiveId::from_str(to_close.as_str());
-            let widget_uid = self.ui.widget_uid();
-            move |cx: &mut Cx| {
-                cx.widget_action(
-                    widget_uid, 
-                    DockAction::TabCloseWasPressed(tab_id),
-                );
-                enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: to_close.clone() });
-            }
-        });
-
         let destination_room_id = destination_room.room_id();
         let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id);
         let new_selected_room = match room_state {
@@ -1171,6 +1180,11 @@ impl App {
             Some(RoomState::Invited) => SelectedRoom::InvitedRoom {
                 room_name_id: destination_room.room_name_id().clone(),
             },
+            // Joined spaces aren't in the rooms list.
+            _ if destination_room.is_joined_space() => {
+                self.navigate_to_space(cx, destination_room.clone(), room_to_close.cloned());
+                return;
+            }
             // If the destination room is not yet loaded, show a join modal.
             _ => {
                 log!("Destination room {:?} not loaded, showing join modal...", destination_room.room_name_id());
@@ -1181,7 +1195,7 @@ impl App {
                 cx.action(JoinLeaveRoomModalAction::Open {
                     kind: JoinLeaveModalKind::JoinRoom {
                         details: destination_room.clone(),
-                        is_space: false,
+                        is_space: destination_room.is_space(),
                         via: destination_room.via().to_vec(),
                     },
                     show_tip: false,
@@ -1210,9 +1224,71 @@ impl App {
         enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
 
         // Close a previously/currently-open room if specified.
-        if let Some(closure) = close_room_closure_opt {
-            closure(cx);
+        if let Some(room_to_close) = room_to_close {
+            self.close_room(cx, room_to_close);
         }
+    }
+
+    /// Navigates to the given joined space, optionally closing the `room_to_close`.
+    ///
+    /// We first have to find out which top-level space it's in, since we show it there.
+    fn navigate_to_space(
+        &mut self,
+        cx: &mut Cx,
+        space: BasicRoomDetails,
+        room_to_close: Option<OwnedRoomId>,
+    ) {
+        let space_name_id = space.room_name_id().clone();
+        let was_sent = cx.get_global::<RoomsListRef>().get_space_request_sender().is_some_and(|sender|
+            sender.send(SpaceRequest::ResolveJoinedSpaceAncestor {
+                space_name_id: space_name_id.clone(),
+                was_invite: false,
+            }).is_ok()
+        );
+        if was_sent {
+            self.waiting_to_navigate_to_room = Some((space, room_to_close));
+        } else {
+            error!("Couldn't determine where joined space {space_name_id} should be shown; opening it here.");
+            self.show_joined_space(cx, &space_name_id, None, room_to_close.as_ref());
+        }
+    }
+
+    /// Shows the given joined space's lobby within its top-level space, `dock_space`,
+    /// or within the current dock if that's unknown.
+    fn show_joined_space(
+        &self,
+        cx: &mut Cx,
+        space_name_id: &RoomNameId,
+        dock_space: Option<&RoomNameId>,
+        room_to_close: Option<&OwnedRoomId>,
+    ) {
+        log!("Navigating to joined space {space_name_id:?} within space {dock_space:?}");
+        match dock_space {
+            Some(dock_space) => {
+                cx.action(NavigationBarAction::GoToSpace { space_name_id: dock_space.clone() });
+                enqueue_spaces_list_update(SpacesListUpdate::ScrollToSpace(dock_space.room_id().clone()));
+            }
+            None if matches!(self.app_state.selected_tab, SelectedTab::AddRoom | SelectedTab::Settings) => {
+                cx.action(NavigationBarAction::GoToHome);
+            }
+            None => {}
+        }
+        cx.widget_action(
+            self.ui.widget_uid(),
+            RoomsListAction::Selected(SelectedRoom::Space { space_name_id: space_name_id.clone() }),
+        );
+        if let Some(room_to_close) = room_to_close {
+            self.close_room(cx, room_to_close);
+        }
+    }
+
+    /// Closes the given room's tab, if it's open, and hides it from the rooms list.
+    fn close_room(&self, cx: &mut Cx, room_id: &OwnedRoomId) {
+        cx.widget_action(
+            self.ui.widget_uid(),
+            DockAction::TabCloseWasPressed(LiveId::from_str(room_id.as_str())),
+        );
+        enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: room_id.clone() });
     }
 
 
@@ -1514,6 +1590,10 @@ pub enum AppStateAction {
     NavigateToRoom {
         room_to_close: Option<OwnedRoomId>,
         destination_room: BasicRoomDetails,
+    },
+    /// A request to show the given joined space's lobby within the top-level space that it's in.
+    NavigateToSpace {
+        space_name_id: RoomNameId,
     },
     None,
 }

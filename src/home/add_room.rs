@@ -528,6 +528,13 @@ impl AddRoomState {
     }
 
     fn transition_to_joined(&mut self) {
+        // We never get a `RoomLoadedSuccessfully` for a space, so we can go to it as soon as we've joined it.
+        if let Self::FetchedRoomPreview { frp, .. } = self
+            && frp.room_type == Some(RoomType::Space)
+        {
+            self.transition_to_loaded(false);
+            return;
+        }
         let prev = std::mem::take(self);
         if let Self::FetchedRoomPreview { frp, .. } = prev {
             *self = Self::Joined { frp };
@@ -539,9 +546,11 @@ impl AddRoomState {
     fn transition_to_loaded(&mut self, is_invite: bool) {
         let prev = std::mem::take(self);
         match prev {
-            Self::FetchedRoomPreview { frp, .. }
-            | Self::Joined { frp }
-            | Self::Knocked { frp } => {
+            Self::FetchedRoomPreview { mut frp, .. }
+            | Self::Joined { mut frp }
+            | Self::Knocked { mut frp } => {
+                // Going to a joined space depends on its preview's state, so we keep that up to date.
+                frp.state = Some(if is_invite { RoomState::Invited } else { RoomState::Joined });
                 *self = Self::Loaded { frp, is_invite };
             }
             _ => {

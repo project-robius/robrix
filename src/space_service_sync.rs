@@ -11,7 +11,7 @@ use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::S
 use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
-use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, utils::{self, RoomNameId, stringify_matrix_error}};
+use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, sliding_sync::wait_for_create_event, utils::{self, RoomNameId, stringify_matrix_error}};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
@@ -74,11 +74,13 @@ pub enum SpaceRequest {
     GetSpaceDetails {
         space_id: OwnedRoomId,
     },
-    /// Determine which top-level space's dock a newly-joined space's lobby belongs in.
+    /// Determine which top-level space's dock a joined space's lobby belongs in.
     ///
     /// This will result in a [`SpaceRoomListAction::JoinedSpaceAncestor`] action being emitted.
     ResolveJoinedSpaceAncestor {
         space_name_id: RoomNameId,
+        /// Whether this space was an invite that we just accepted.
+        was_invite: bool,
     },
 }
 
@@ -290,14 +292,17 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                         error!("GetSpaceDetails: space {space_id} is unknown to the space service");
                     }
                 }
-                SpaceRequest::ResolveJoinedSpaceAncestor { space_name_id } => {
+                SpaceRequest::ResolveJoinedSpaceAncestor { space_name_id, was_invite } => {
                     let space_service = Arc::clone(&space_service);
                     let client = client.clone();
                     // this is potentially a long-running operation, so spawn it in a new task.
                     Handle::current().spawn(async move {
-                        if !client.get_room(space_name_id.room_id())
-                            .is_some_and(|r| r.state() == RoomState::Joined)
-                        {
+                        let space = client.get_room(space_name_id.room_id());
+                        // The space graph won't have a space that we just joined until its state arrives.
+                        if let Some(space) = space.as_ref() {
+                            wait_for_create_event(space).await;
+                        }
+                        if !space.is_some_and(|r| r.state() == RoomState::Joined) {
                             log!("Space {space_name_id:?} was not actually joined, ignoring it.");
                             return;
                         }
@@ -312,7 +317,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                                 matrix_sdk::RoomDisplayName::Named(ancestor.display_name.clone()),
                                 ancestor.room_id.clone(),
                             ));
-                        Cx::post_action(SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space });
+                        Cx::post_action(SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space, was_invite });
                     });
                 }
             }
@@ -1037,7 +1042,7 @@ pub enum SpaceRoomListAction {
     ///
     /// This is sent in response to a [`SpaceRequest::GetSpaceDetails`] request.
     SpaceDetails(SpaceRoom),
-    /// Which top-level space's dock a newly-joined space should be shown in
+    /// Which top-level space's dock a joined space should be shown in
     ///
     /// This is sent in response to a [`SpaceRequest::ResolveJoinedSpaceAncestor`] request.
     JoinedSpaceAncestor {
@@ -1045,6 +1050,8 @@ pub enum SpaceRoomListAction {
         /// The top-level ancestor whose dock should host the lobby, which is
         /// `space_name_id` itself when that space is top-level.
         dock_space: Option<RoomNameId>,
+        /// The `was_invite` value that was originally sent with the request.
+        was_invite: bool,
     },
     /// The result of a [`SpaceRequest::LeaveSpace`].
     LeaveSpaceResult {
@@ -1089,10 +1096,11 @@ impl std::fmt::Debug for SpaceRoomListAction {
                     .field(space)
                     .finish()
             }
-            SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space } => {
+            SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space, was_invite } => {
                 f.debug_struct("SpaceRoomListAction::JoinedSpaceAncestor")
                     .field("space_name_id", space_name_id)
                     .field("dock_space", dock_space)
+                    .field("was_invite", was_invite)
                     .finish()
             }
             SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => {
