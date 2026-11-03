@@ -1,9 +1,9 @@
 //! The room tab hover card is a little overlay view that shows a room's
 //! avatar and full name when the user hovers over that tab in the dock.
 
-use std::collections::HashMap;
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::ScrollPhase;
+use rustc_hash::FxHashMap;
 use crate::{app::SelectedRoom, room::FetchedRoomAvatar, shared::avatar::AvatarWidgetRefExt};
 
 script_mod! {
@@ -140,7 +140,7 @@ impl RoomTabHoverCard {
         }
     }
 
-    fn update_hover(&mut self, cx: &mut Cx, event: &Event, hover_available: bool, dock: &DockRef, rooms: &HashMap<LiveId, SelectedRoom>) {
+    fn update_hover(&mut self, cx: &mut Cx, event: &Event, hover_available: bool, dock: &DockRef, rooms: &FxHashMap<LiveId, SelectedRoom>) {
         if self.tab_id.is_some_and(|id| !rooms.contains_key(&id)) {
             self.hide(cx);
         }
@@ -205,7 +205,7 @@ impl RoomTabHoverCard {
         }
     }
 
-    fn show_for_hovered_tab(&mut self, cx: &mut Cx, dock: &DockRef, rooms: &HashMap<LiveId, SelectedRoom>) {
+    fn show_for_hovered_tab(&mut self, cx: &mut Cx, dock: &DockRef, rooms: &FxHashMap<LiveId, SelectedRoom>) {
         let Some(tab_id) = self.tab_id else { return };
         let Some(room) = rooms.get(&tab_id) else { return };
         let name = room.display_name();
@@ -302,7 +302,7 @@ impl RoomTabHoverCardRef {
         event: &Event,
         hover_available: bool,
         dock: &DockRef,
-        rooms: &HashMap<LiveId, SelectedRoom>,
+        rooms: &FxHashMap<LiveId, SelectedRoom>,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.update_hover(cx, event, hover_available, dock, rooms);

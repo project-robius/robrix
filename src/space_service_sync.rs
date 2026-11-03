@@ -1,7 +1,7 @@
 //! Background tasks that subscribe to the Matrix SpaceService in order to
 //! track changes to the user's joined spaces and send updates the UI.
 
-use std::{collections::{HashMap, HashSet}, iter::Peekable, sync::Arc};
+use std::{iter::Peekable, sync::Arc};
 use eyeball_im::VectorDiff;
 use futures_util::{FutureExt, StreamExt};
 use imbl::Vector;
@@ -9,7 +9,7 @@ use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, media::MediaRequestParameters, ruma::api::error::ErrorKind};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
 use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
-use rustc_hash::{FxBuildHasher, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
 use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, utils::{self, RoomNameId, stringify_matrix_error}};
 
@@ -118,7 +118,7 @@ fn is_still_in_space(space: &SpaceRoom) -> bool {
 /// Because a subspace can be within multiple parent spaces, we skip any subspace that
 /// is itself a joined space; the rest are restarted by `ResubscribeSubspaces`.
 fn shutdown_space_room_list_tasks(
-    space_room_list_tasks: &mut HashMap<OwnedRoomId, SpaceRoomListTask>,
+    space_room_list_tasks: &mut FxHashMap<OwnedRoomId, SpaceRoomListTask>,
     space_id: &OwnedRoomId,
     all_joined_spaces: &Vector<SpaceRoom>,
 ) {
@@ -160,10 +160,10 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
 
     // The set of async tasks that are handling room list requests for each top-level joined space,
     // along with a sender to send `SpaceRoomListRequest`s to those tasks.
-    let mut space_room_list_tasks: HashMap<OwnedRoomId, SpaceRoomListTask> = HashMap::new();
+    let mut space_room_list_tasks: FxHashMap<OwnedRoomId, SpaceRoomListTask> = FxHashMap::default();
     // A closure to make it easier to use/spawn a `space_room_list_loop` task.
     let get_or_spawn_space_room_list = async |
-        space_room_list_tasks: &mut HashMap<OwnedRoomId, SpaceRoomListTask>,
+        space_room_list_tasks: &mut FxHashMap<OwnedRoomId, SpaceRoomListTask>,
         space_name_id: &RoomNameId,
         parent_chain: &ParentChain,
     | -> UnboundedSender<SpaceRoomListRequest> {
@@ -786,7 +786,7 @@ async fn space_room_list_loop(
     paginate_once().await;
 
     // The set of subspaces within this `space_id` that are already known to us.
-    let mut known_subspaces = HashSet::new();
+    let mut known_subspaces = FxHashSet::default();
 
     let (mut all_rooms_in_space, mut space_room_stream) = space_room_list.subscribe_to_room_updates().await;
     handle_subspaces(&space_id, &parent_chain, &mut known_subspaces, all_rooms_in_space.iter(), &request_sender);
@@ -893,7 +893,7 @@ fn apply_space_room_diffs(
     all_rooms_in_space: &mut Vector<SpaceRoom>,
     space_id: &OwnedRoomId,
     parent_chain: &ParentChain,
-    known_subspaces: &mut HashSet<OwnedRoomId>,
+    known_subspaces: &mut FxHashSet<OwnedRoomId>,
     request_sender: &UnboundedSender<SpaceRequest>,
     cached_hash_sets: &mut (Arc<FxHashSet<OwnedRoomId>>, Arc<FxHashSet<OwnedRoomId>>),
 ) {
@@ -939,7 +939,7 @@ fn apply_space_room_diffs(
 fn handle_subspaces<'a>(
     parent_space_id: &OwnedRoomId,
     parent_chain: &ParentChain,
-    known_subspaces: &mut HashSet<OwnedRoomId>,
+    known_subspaces: &mut FxHashSet<OwnedRoomId>,
     changed_space_rooms: impl Iterator<Item = &'a SpaceRoom>,
     request_sender: &UnboundedSender<SpaceRequest>,
 ) {

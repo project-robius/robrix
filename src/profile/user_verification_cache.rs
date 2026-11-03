@@ -5,7 +5,8 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{Cx, SignalToUI};
 use matrix_sdk::{encryption::identities::UserIdentity, ruma::{OwnedRoomId, OwnedUserId, UserId}};
-use std::{cell::RefCell, collections::BTreeMap};
+use rustc_hash::{FxBuildHasher, FxHashMap};
+use std::cell::RefCell;
 
 use crate::{home::rooms_list::RoomsListRef, sliding_sync::{submit_async_request, MatrixRequest}};
 
@@ -13,7 +14,7 @@ thread_local! {
     /// Whether we've verified each user that the UI has asked about.
     /// The key is a user ID,
     /// and the value is that user's verification state, or `None` while it's being fetched.
-    static USER_VERIFICATION_CACHE: RefCell<BTreeMap<OwnedUserId, Option<UserVerificationState>>> = const { RefCell::new(BTreeMap::new()) };
+    static USER_VERIFICATION_CACHE: RefCell<FxHashMap<OwnedUserId, Option<UserVerificationState>>> = const { RefCell::new(FxHashMap::with_hasher(FxBuildHasher)) };
 }
 
 /// Whether we've verified a user's cryptographic identity.

@@ -27,12 +27,13 @@ use matrix_sdk_ui::{
 #[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
 use ruma::{OwnedRoomAliasId, OwnedRoomOrAliasId, RoomId, events::tag::Tags, room::JoinRuleSummary};
+use rustc_hash::FxBuildHasher;
 use tokio::{
     runtime::Handle,
     sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::{Instant, error::Elapsed},
 };
 use url::Url;
-use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, SystemTime}};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, SystemTime}};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
@@ -3655,11 +3656,11 @@ pub async fn refresh_encryption_info_of_messages(senders: Option<&[OwnedUserId]>
 
 
 /// A const-compatible hasher, used for `static` items containing `HashMap`s or `HashSet`s.
-type ConstHasher = BuildHasherDefault<DefaultHasher>;
+type ConstHasher = FxBuildHasher;
 
 /// Information about all joined rooms that our client currently know about.
 /// We use a `HashMap` for O(1) lookups, as this is accessed frequently (e.g. every timeline update).
-static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
+static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(FxBuildHasher));
 
 /// The diagnostic info gathered upon a [`MatrixRequest::GetRoomDiagnostics`] request.
 ///
@@ -3830,7 +3831,7 @@ pub fn stop_sync_service_for_shutdown(timeout: Duration) -> Result<(), Elapsed> 
 /// The list of users that the current user has chosen to block.
 /// Ideally we shouldn't have to maintain this list ourselves,
 /// but the Matrix SDK doesn't currently properly maintain the list of blocked users.
-static BLOCKED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
+static BLOCKED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(HashSet::with_hasher(FxBuildHasher));
 
 /// Returns a sorted list of the currently blocked users.
 #[doc(alias("ignored"))]

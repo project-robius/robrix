@@ -9,13 +9,14 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt::Write as _;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use imbl::Vector;
 use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
 use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::{OwnedRoomAliasId, room::JoinRuleSummary};
+use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::{AvatarImage, AvatarState};
 use crate::shared::expand_arrow::ExpandArrow;
@@ -657,7 +658,7 @@ thread_local! {
 #[derive(Default)]
 struct SpaceLobbyUiState {
     /// The set of space IDs that are currently expanded (showing their children).
-    expanded_spaces: HashSet<OwnedRoomId>,
+    expanded_spaces: FxHashSet<OwnedRoomId>,
 }
 
 
@@ -1062,16 +1063,16 @@ pub struct SpaceLobbyScreen {
 
     /// Cache of detailed children for each space we've fetched.
     /// Key is the space_id, value is the list of its direct children.
-    #[rust] children_cache: HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+    #[rust] children_cache: FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
 
     /// The set of space IDs that are currently expanded (showing their children).
-    #[rust] expanded_spaces: HashSet<OwnedRoomId>,
+    #[rust] expanded_spaces: FxHashSet<OwnedRoomId>,
 
     /// The ordered list of children to display in the space tree.
     #[rust] tree_entries: Vec<TreeEntry>,
 
     /// The set of space IDs that are currently loading their children.
-    #[rust] loading_subspaces: HashSet<OwnedRoomId>,
+    #[rust] loading_subspaces: FxHashSet<OwnedRoomId>,
 
     /// Whether we are currently loading the initial data.
     #[rust] is_loading: bool,
@@ -1565,7 +1566,7 @@ impl SpaceLobbyScreen {
     ///
     /// Returns `true` if any matching entry was added within this subtree.
     fn build_filtered_tree(
-        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
         tree_entries: &mut Vec<TreeEntry>,
         space_id: &OwnedRoomId,
         keywords: &str,
@@ -1663,7 +1664,7 @@ impl SpaceLobbyScreen {
 
     /// Returns `true` if any entry in the subtree rooted at `space_id` matches the keywords.
     fn subtree_has_match(
-        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
         space_id: &OwnedRoomId,
         keywords: &str,
     ) -> bool {
@@ -1678,7 +1679,7 @@ impl SpaceLobbyScreen {
     /// Like [`build_tree_for_space`] but ignores expansion state — shows all children.
     /// Used to display the full contents of a space that itself matched the filter.
     fn build_tree_for_space_ignoring_expansion(
-        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
         tree_entries: &mut Vec<TreeEntry>,
         space_id: &OwnedRoomId,
         level: usize,
@@ -1729,9 +1730,9 @@ impl SpaceLobbyScreen {
     // in order to make it possible to recursively call it while immutably borrowing
     // only select fields of `Self`.
     fn build_tree_for_space(
-        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
-        expanded_spaces: &HashSet<OwnedRoomId>,
-        loading_subspaces: &HashSet<OwnedRoomId>,
+        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        expanded_spaces: &FxHashSet<OwnedRoomId>,
+        loading_subspaces: &FxHashSet<OwnedRoomId>,
         tree_entries: &mut Vec<TreeEntry>,
         space_id: &OwnedRoomId,
         level: usize,

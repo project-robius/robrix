@@ -2,11 +2,12 @@
 //!
 //! Each list shows its messages in a [`MessageListRow`], and keeps a [`MessageListState`].
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId, UserId};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails, TimelineItemContent};
+use rustc_hash::FxHashSet;
 
 use crate::{
     event_preview::{UNSUPPORTED_MESSAGE_PREVIEW, text_preview_of_timeline_item},
@@ -310,9 +311,9 @@ pub struct MessageListState {
     /// at its last row until we get more messages loaded.
     has_scrolled_to_pending: bool,
     /// The indices of the rows whose message is set.
-    rows_with_content: HashSet<usize>,
+    rows_with_content: FxHashSet<usize>,
     /// The indices of the rows that are completely populated, including their sender's profile.
-    populated_rows: HashSet<usize>,
+    populated_rows: FxHashSet<usize>,
     /// Whether all rows were fully drawn, i.e., no senders' profiles or avatars are still being fetched.
     is_fully_drawn: bool,
     /// Triggers every [`TIMESTAMP_REFRESH_INTERVAL`] to keep relative timestamps correct.
@@ -328,8 +329,8 @@ impl MessageListState {
             main_timeline_kind: None,
             pending_scroll: None,
             has_scrolled_to_pending: false,
-            rows_with_content: HashSet::new(),
-            populated_rows: HashSet::new(),
+            rows_with_content: FxHashSet::default(),
+            populated_rows: FxHashSet::default(),
             is_fully_drawn: true,
             timestamp_refresh_timer: Timer::empty(),
         }

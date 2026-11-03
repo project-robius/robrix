@@ -14,8 +14,8 @@ version = "1.0.0-beta.5"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "view_scroll_pos_robrix", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "view_scroll_pos_robrix" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "fast_hash_maps_robrix", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "fast_hash_maps_robrix" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
@@ -80,7 +80,7 @@ rustc-hash = "2.1.1"
 sanitize-filename = "0.6"
 serde = "1.0"
 serde_json = "1.0"
-strpack = { git = "https://github.com/project-robius/strpack" }
+strpack = "0.1.0"
 thiserror = "2.0.16"
 tokio = { version = "1.44.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
