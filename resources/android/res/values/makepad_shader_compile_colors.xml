@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces Makepad's file of the same name, so the shader compile screen uses Robrix's colors. -->
+<resources>
+    <color name="makepad_shader_compile_title_light">#FF1C274C</color>
+    <color name="makepad_shader_compile_note_light">#FF5A6378</color>
+    <color name="makepad_shader_compile_spinner_light">#FF0F88FE</color>
+    <color name="makepad_shader_compile_title_dark">#FFDCE1EE</color>
+    <color name="makepad_shader_compile_note_dark">#FFA3A9B6</color>
+    <color name="makepad_shader_compile_spinner_dark">#FF0675DF</color>
+</resources>
