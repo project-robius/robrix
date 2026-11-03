@@ -107,7 +107,6 @@ pub struct RoomsListHeader {
     #[live] tooltip_bg_color_synced: Vec4f,
 
     #[rust(State::Idle)] sync_state: State,
-    #[rust] room_list_sync_status: Option<RoomListSyncStatus>,
     #[rust] sync_status_area: Area,
     #[rust] shown_tooltip: Option<SyncStatus>,
 
@@ -117,10 +116,7 @@ pub struct RoomsListHeader {
 
 impl ScriptHook for RoomsListHeader {
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
-        vm.with_cx_mut(|cx| {
-            self.room_list_sync_status = cx.global::<RoomListSyncStatusGlobal>().0.clone();
-            self.show_sync_status(cx, &mut Scope::empty());
-        });
+        vm.with_cx_mut(|cx| self.show_sync_status(cx, &mut Scope::empty()));
     }
 }
 
@@ -129,8 +125,7 @@ impl Widget for RoomsListHeader {
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
-                    Some(RoomsListHeaderAction::SetSyncStatus(status)) => {
-                        self.room_list_sync_status = Some(status.clone());
+                    Some(RoomsListHeaderAction::SetSyncStatus(_)) => {
                         self.show_sync_status(cx, scope);
                         continue;
                     }
@@ -215,20 +210,8 @@ impl Widget for RoomsListHeader {
 }
 
 impl RoomsListHeader {
-    fn get_sync_status(&self) -> SyncStatus {
-        // If we are offline, keep showing the offline_icon,
-        // as showing the loading_spinner would be misleading if we're offline.
-        if matches!(self.sync_state, State::Offline) {
-            SyncStatus::Offline
-        } else if self.room_list_sync_status.as_ref().is_some_and(|status| status.is_fully_synced) {
-            SyncStatus::Synced
-        } else {
-            SyncStatus::Syncing
-        }
-    }
-
     fn show_sync_status(&mut self, cx: &mut Cx, scope: &mut Scope) {
-        let sync_status = self.get_sync_status();
+        let sync_status = get_sync_status(cx);
         self.view.view(cx, ids!(loading_spinner)).set_visible(cx, sync_status == SyncStatus::Syncing);
         self.view.view(cx, ids!(offline_icon)).set_visible(cx, sync_status == SyncStatus::Offline);
         self.view.view(cx, ids!(synced_icon)).set_visible(cx, sync_status == SyncStatus::Synced);
@@ -240,16 +223,14 @@ impl RoomsListHeader {
 
     /// Shows the sync status tooltip, or with `only_if_shown`, just updates it if it's still showing.
     fn show_sync_status_tooltip(&mut self, cx: &mut Cx, scope: &mut Scope, only_if_shown: bool) {
-        let sync_status = self.get_sync_status();
+        let sync_status = get_sync_status(cx);
         let (status_text, bg_color) = match sync_status {
             SyncStatus::Syncing => ("Syncing...", self.tooltip_bg_color_syncing),
             SyncStatus::Offline => ("Offline", self.tooltip_bg_color_offline),
             SyncStatus::Synced => ("Fully synced", self.tooltip_bg_color_synced),
         };
         // Until we get a sync response, show when we last synced before Robrix was closed.
-        let last_synced_at = self.room_list_sync_status.as_ref()
-            .and_then(|status| *status.last_sync_time.borrow())
-            .or_else(|| scope.data.get::<AppState>()?.last_synced_at);
+        let last_synced_at = get_last_synced_at(cx).or_else(|| scope.data.get::<AppState>()?.last_synced_at);
         let text = match last_synced_at.and_then(time_ago) {
             Some(age) => format!("{status_text}\nLast sync: {}", age.to_ascii_lowercase()),
             None => status_text.to_string(),
@@ -286,18 +267,35 @@ pub struct RoomListSyncStatus {
     pub last_sync_time: watch::Receiver<Option<MilliSecondsSinceUnixEpoch>>,
 }
 
-/// A `Cx` global holding the latest [`RoomsListHeaderAction::SetSyncStatus`],
-/// which a `RoomsListHeader` shows when it's created.
+/// A `Cx` global holding the latest sync status from the [`RoomsListHeaderAction`]s,
+/// which a sync indicator shows when it's created.
 #[derive(Clone, Debug, Default)]
-pub struct RoomListSyncStatusGlobal(pub Option<RoomListSyncStatus>);
+pub struct SyncStatusGlobal {
+    pub room_list_sync_status: Option<RoomListSyncStatus>,
+    pub is_offline: bool,
+}
 
 /// Returns when we last got a sync response, so we can save it in the app state.
 pub fn get_last_synced_at(cx: &mut Cx) -> Option<MilliSecondsSinceUnixEpoch> {
-    cx.global::<RoomListSyncStatusGlobal>().0.as_ref().and_then(|status| *status.last_sync_time.borrow())
+    cx.global::<SyncStatusGlobal>().room_list_sync_status.as_ref().and_then(|status| *status.last_sync_time.borrow())
+}
+
+/// Returns the sync status that a sync indicator should show.
+pub fn get_sync_status(cx: &mut Cx) -> SyncStatus {
+    let global = cx.global::<SyncStatusGlobal>();
+    // If we are offline, keep showing the offline_icon,
+    // as showing the loading_spinner would be misleading if we're offline.
+    if global.is_offline {
+        SyncStatus::Offline
+    } else if global.room_list_sync_status.as_ref().is_some_and(|status| status.is_fully_synced) {
+        SyncStatus::Synced
+    } else {
+        SyncStatus::Syncing
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum SyncStatus {
+pub enum SyncStatus {
     Syncing,
     Offline,
     Synced,
