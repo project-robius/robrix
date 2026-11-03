@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetExt}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
+    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetExt}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils, verification::UserVerificationRequestAction
 };
 use super::{
     user_profile_cache::{self, UserProfilesUpdated},
@@ -262,12 +262,25 @@ script_mod! {
                 text: "Direct Message"
             }
 
-            verify_this_user_button := RobrixPositiveIconButton {
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                margin: 0,
-                draw_icon.svg: (VERIFICATION_YES)
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
-                text: "Verify this User"
+            verify_this_user_view := View {
+                width: Fit, height: Fit
+                flow: Right,
+                align: Align{y: 0.5}
+                spacing: 10
+
+                verify_this_user_button := RobrixPositiveIconButton {
+                    padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                    margin: 0,
+                    draw_icon.svg: (VERIFICATION_YES)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
+                    text: "Verify this User"
+                }
+
+                verify_this_user_spinner := LoadingSpinner {
+                    width: 16, height: 16
+                    visible: false
+                    draw_bg.color: (COLOR_ACTIVE_PRIMARY)
+                }
             }
 
             copy_link_to_user_button := RobrixNeutralIconButton {
@@ -476,6 +489,7 @@ pub struct UserProfileSlidingPane {
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_showing_current_account: bool,
     #[rust] is_animating_out: bool,
+    #[rust] sending_verification_request_to: Option<OwnedUserId>,
     /// Held while this pane is shown such that `Escape` closes this pane.
     /// This scope is dropped when the pane starts animating out or is reset.
     #[rust] cancel_scope: Option<CancelScope>,
@@ -484,6 +498,15 @@ pub struct UserProfileSlidingPane {
 impl Widget for UserProfileSlidingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+
+        // We check this even while hidden, so the spinner isn't still going when we're shown again.
+        if let Event::Actions(actions) = event
+            && let Some(user_id) = self.sending_verification_request_to.as_ref()
+            && actions.iter().any(|a| matches!(a.downcast_ref(), Some(UserVerificationRequestAction::Done(done_user_id)) if done_user_id == user_id))
+        {
+            self.sending_verification_request_to = None;
+            self.redraw(cx);
+        }
 
         if !self.visible {
             self.cancel_scope = None;
@@ -614,8 +637,12 @@ impl Widget for UserProfileSlidingPane {
                 });
             }
 
-            if self.button(cx, ids!(verify_this_user_button)).clicked(actions) {
+            if self.button(cx, ids!(verify_this_user_button)).clicked(actions)
+                && self.sending_verification_request_to.as_ref() != Some(&info.user_id)
+            {
+                self.sending_verification_request_to = Some(info.user_id.clone());
                 submit_async_request(MatrixRequest::RequestUserVerification { user_id: info.user_id.clone() });
+                self.view.redraw(cx);
             }
 
             if self.button(cx, ids!(withdraw_verification_button)).clicked(actions) {
@@ -721,13 +748,18 @@ impl Widget for UserProfileSlidingPane {
         // * `direct_message_button` is hidden if the user is the same as the account user,
         //    since you cannot direct message yourself.
         // * `verify_this_user_button` is hidden for the account user and for already-verified users.
+        //    * A spinner shows next to it while we're sending this user a verification request.
         // * `copy_link_to_user_button` is always enabled with the same text.
         // * `jump_to_read_receipt_button` is hidden if there's no room, since there's no timeline to jump in.
         // * `block_user_button` is hidden if the user is the same as the account user,
         //    since you cannot block yourself.
         //    * The button text changes to "Unblock" if the user is already blocked.
         self.button(cx, ids!(direct_message_button)).set_visible(cx, !self.is_showing_current_account);
-        self.button(cx, ids!(verify_this_user_button)).set_visible(cx, !self.is_showing_current_account && !is_verified);
+        self.view(cx, ids!(verify_this_user_view)).set_visible(cx, !self.is_showing_current_account && !is_verified);
+        self.view(cx, ids!(verify_this_user_spinner)).set_visible(
+            cx,
+            self.sending_verification_request_to.as_ref() == Some(&info.user_id),
+        );
         if info.room.is_none() {
             self.button(cx, ids!(jump_to_read_receipt_button)).set_visible(cx, false);
         }

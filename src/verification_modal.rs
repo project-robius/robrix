@@ -1,9 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell};
 
 use makepad_widgets::*;
 use matrix_sdk::{encryption::verification::Verification, ruma::{events::key::verification::cancel::CancelCode, UserId}};
+use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{profile::user_profile_cache, verification::{VerificationAction, VerificationRequestActionState, VerificationUserResponse}};
+use crate::{app::PositiveConfirmationModalAction, profile::user_profile_cache, shared::confirmation_modal::ConfirmationModalContent, verification::{VerificationAction, VerificationRequestActionState, VerificationUserResponse}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -422,6 +423,30 @@ impl VerificationModalRef {
             inner.initialize_with_data(cx, state);
         }
     }
+}
+
+/// Asks the user whether we should create a DM room with the given user,
+/// which we need in order to send them a verification request.
+pub fn show_dm_room_creation_confirmation(
+    cx: &mut Cx,
+    user_id: &UserId,
+    response_sender: &UnboundedSender<VerificationUserResponse>,
+) {
+    let accept_sender = response_sender.clone();
+    let cancel_sender = response_sender.clone();
+    let body_text = format!(
+        "Verifying {} requires a direct message room with them, but you don't have one yet.\n\n\
+        Would you like to create one now?",
+        get_user_name_and_id(cx, user_id),
+    );
+    cx.action(PositiveConfirmationModalAction::Show(RefCell::new(Some(ConfirmationModalContent {
+        title_text: "Create New Direct Message".into(),
+        body_text: body_text.into(),
+        accept_button_text: Some("Create DM".into()),
+        on_accept_clicked: Some(Box::new(move |_cx| { let _ = accept_sender.send(VerificationUserResponse::Accept); })),
+        on_cancel_clicked: Some(Box::new(move |_cx| { let _ = cancel_sender.send(VerificationUserResponse::Cancel); })),
+        ..Default::default()
+    }))));
 }
 
 /// Returns the given user's display name and user ID, or just their user ID if we don't know their name.
