@@ -274,6 +274,9 @@ icons = [
     "./resources/icon_256.png",
     "./resources/icon_512.png",
     "./resources/icon.ico",
+    ## macOS uses this as-is. We build it from the PNGs above with `iconutil`, since cargo-packager's
+    ## own `.icns` uses legacy image types that macOS 26 shrinks into a gray frame.
+    "./packaging/macos/Robrix.icns",
 ]
 out_dir = "./dist"
 
