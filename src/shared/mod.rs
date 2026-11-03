@@ -14,6 +14,7 @@ pub mod hover_highlight;
 pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
+pub mod lazy_view;
 pub mod list_rows;
 pub mod mention_popup;
 pub mod mentionable_text_input;
@@ -46,6 +47,7 @@ pub fn script_mod(vm: &mut ScriptVm, appearance: Appearance) {
         styles_dark::script_mod(vm);
     }
     helpers::script_mod(vm);
+    lazy_view::script_mod(vm);
     icon_button::script_mod(vm);
     page_header::script_mod(vm);
     password_input::script_mod(vm);

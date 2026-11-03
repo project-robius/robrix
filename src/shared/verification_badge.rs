@@ -3,6 +3,7 @@ use matrix_sdk::encryption::VerificationState;
 
 use crate::{
     profile::user_verification_cache::UserVerificationState,
+    shared::lazy_view::LazyViewWidgetExt,
     sliding_sync::get_client,
     verification::VerificationStateAction,
 };
@@ -102,8 +103,8 @@ script_mod! {
         width: 15, height: 15
         flow: Overlay
         clip_x: false, clip_y: false
-        verified_icon := mod.widgets.IconYes {}
-        identity_reset_icon := mod.widgets.IconNo {}
+        verified_icon := LazyView { template: mod.widgets.IconYes { visible: true } }
+        identity_reset_icon := LazyView { template: mod.widgets.IconNo { visible: true } }
     }
 
     mod.widgets.VerificationBadge = #(VerificationBadge::register_widget(vm)) {
@@ -150,8 +151,8 @@ impl UserVerificationBadgeRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         let is_verified = state == Some(UserVerificationState::Verified);
         let is_identity_reset = state == Some(UserVerificationState::VerificationViolation);
-        inner.view.view(cx, ids!(verified_icon)).set_visible(cx, is_verified);
-        inner.view.view(cx, ids!(identity_reset_icon)).set_visible(cx, is_identity_reset);
+        inner.view.lazy_view(cx, ids!(verified_icon)).set_visible(cx, is_verified);
+        inner.view.lazy_view(cx, ids!(identity_reset_icon)).set_visible(cx, is_identity_reset);
         inner.view.set_visible(cx, is_verified || is_identity_reset);
     }
 }
