@@ -4,10 +4,11 @@
 //! The list doesn't fetch members itself: its host provides them, e.g., a RoomScreen
 //! gives its timeline's members to a docked list, while a popped-out list's screen fetches them.
 
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{OwnedRoomId, events::room::{member::MembershipState, power_levels::UserPowerLevel}}};
+use rustc_hash::FxHashSet;
 
 use crate::{
     profile::{
@@ -174,7 +175,7 @@ pub struct RoomMembersList {
     #[rust] error: Option<String>,
     #[rust] hovered_index: Option<usize>,
     /// The indices of the rows whose content is up to date, which needn't be set again when drawn.
-    #[rust] populated_rows: HashSet<usize>,
+    #[rust] populated_rows: FxHashSet<usize>,
 }
 
 impl ScriptHook for RoomMembersList {

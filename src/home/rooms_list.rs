@@ -16,12 +16,12 @@
 //! so you can use it from other widgets or functions on the main UI thread
 //! that need to query basic info about a particular room or space.
 
-use std::{borrow::Cow, cell::RefCell, collections::{HashMap, HashSet, VecDeque, hash_map::Entry}, rc::Rc, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, collections::{VecDeque, hash_map::Entry}, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
 use ruma::events::tag::TagName;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use tokio::sync::mpsc::UnboundedSender;
 use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId, RoomAliasId, UserId}};
 use crate::{
@@ -57,7 +57,7 @@ thread_local! {
     /// because the backend doesn't need to track any info about them.
     ///
     /// This must only be accessed by the main UI thread.
-    static ALL_INVITED_ROOMS: Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>> = Rc::new(RefCell::new(HashMap::new()));
+    static ALL_INVITED_ROOMS: Rc<RefCell<FxHashMap<OwnedRoomId, InvitedRoomInfo>>> = Rc::new(RefCell::new(FxHashMap::default()));
 }
 
 /// Returns a reference to the list of all invited rooms.
@@ -65,7 +65,7 @@ thread_local! {
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
-pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>> {
+pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<FxHashMap<OwnedRoomId, InvitedRoomInfo>>> {
     ALL_INVITED_ROOMS.with(Rc::clone)
 }
 
@@ -551,7 +551,7 @@ struct GeneratedDisplayedRooms {
     invited: Vec<OwnedRoomId>,
     regular: Vec<OwnedRoomId>,
     direct: Vec<OwnedRoomId>,
-    joined_room_ids: HashSet<OwnedRoomId>,
+    joined_room_ids: FxHashSet<OwnedRoomId>,
     regular_unread_mentions: u64,
     regular_unread_messages: u64,
     direct_unread_mentions: u64,
@@ -565,11 +565,11 @@ pub struct RoomsList {
     /// The list of all rooms that the user has been invited to.
     ///
     /// This is a shared reference to the thread-local [`ALL_INVITED_ROOMS`] variable.
-    #[rust] invited_rooms: Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>>,
+    #[rust] invited_rooms: Rc<RefCell<FxHashMap<OwnedRoomId, InvitedRoomInfo>>>,
 
     /// The set of all joined rooms and their cached info.
     /// This includes both direct rooms and regular rooms, but not invited rooms.
-    #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
+    #[rust] all_joined_rooms: FxHashMap<OwnedRoomId, JoinedRoomInfo>,
 
     /// The list of all room IDs in display order, matching the order from the room list service.
     #[rust] all_known_rooms_order: VecDeque<OwnedRoomId>,
@@ -601,7 +601,7 @@ pub struct RoomsList {
     #[rust] is_space_graph_file_outdated: bool,
 
     /// Rooms that are explicitly hidden and should never be shown in the rooms list.
-    #[rust] hidden_rooms: HashSet<OwnedRoomId>,
+    #[rust] hidden_rooms: FxHashSet<OwnedRoomId>,
 
     /// The currently-active filter function for the list of rooms.
     ///
@@ -639,7 +639,7 @@ pub struct RoomsList {
     #[rust] regular_rooms_indexes: RoomCategoryIndexes,
 
     /// A membership cache for applying unread-count deltas without scanning either displayed list.
-    #[rust] displayed_joined_room_ids: HashSet<OwnedRoomId>,
+    #[rust] displayed_joined_room_ids: FxHashSet<OwnedRoomId>,
 
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: Cow<'static, str>,
@@ -1474,7 +1474,7 @@ impl RoomsList {
         let mut new_displayed_invited_rooms = Vec::new();
         let mut new_displayed_regular_rooms = Vec::new();
         let mut new_displayed_direct_rooms = Vec::new();
-        let mut new_displayed_joined_room_ids = HashSet::new();
+        let mut new_displayed_joined_room_ids = FxHashSet::with_capacity_and_hasher(self.all_joined_rooms.len(), FxBuildHasher);
         let mut regular_unread_mentions = 0_u64;
         let mut regular_unread_messages = 0_u64;
         let mut direct_unread_mentions = 0_u64;
@@ -1798,7 +1798,7 @@ impl RoomsList {
         };
         let mut rooms = Vec::new();
         let mut is_loading = false;
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         let mut to_visit = vec![selected.room_id()];
         while let Some(space_id) = to_visit.pop() {
             if !visited.insert(space_id) { continue }

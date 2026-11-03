@@ -5,7 +5,7 @@
 //! Each event becomes a [`SummaryEntry`], which contains who it's about and what happened.
 //! We combine similar verbs/actions together, e.g., "Alice, Bob, Carol, and 37 others joined."
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use crate::utils::{distinct_user_labels, join_with_and};
 
 /// How many people get named in one sentence before "and N others".
@@ -442,7 +442,7 @@ fn collect_people(entries: &[SummaryEntry]) -> Vec<Person<'_>> {
         .filter(|entry| entry.change == StateChange::Room(RoomChange::Created))
         .map(|entry| &entry.who);
 
-    let mut index_of: HashMap<&Who, usize> = HashMap::new();
+    let mut index_of: FxHashMap<&Who, usize> = FxHashMap::default();
     let mut people: Vec<Person> = Vec::new();
     let mut creator_joined = false;
     for entry in entries {
@@ -518,7 +518,7 @@ pub fn summarize(entries: &[SummaryEntry], mut name_of: impl FnMut(&Who) -> Opti
         }
     }
     if sentences.len() > MAX_CHRONOLOGICAL_SENTENCES {
-        let mut sentence_with_phrases: HashMap<&[String], usize> = HashMap::new();
+        let mut sentence_with_phrases: FxHashMap<&[String], usize> = FxHashMap::default();
         sentences.clear();
         for (index, phrases) in phrases_per_person.iter().enumerate() {
             match sentence_with_phrases.get(phrases.as_slice()) {

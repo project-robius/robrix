@@ -10,6 +10,7 @@ use std::{
 };
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, encryption::recovery::RecoveryState, ruma::{MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
@@ -1266,7 +1267,7 @@ pub struct SavedDockState {
     /// All items contained in the dock, keyed by their room or space ID.
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by their room or space ID.
-    pub open_rooms: HashMap<LiveId, SelectedRoom>,
+    pub open_rooms: FxHashMap<LiveId, SelectedRoom>,
     /// The order in which room/thread tabs were last viewed,
     /// from oldest at the front to most recent at the end.
     pub room_order: Vec<SelectedRoom>,

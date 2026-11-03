@@ -1,8 +1,8 @@
 //! Support for Robrix's custom dock tabs: extra buttons, layout, and input handling.
 
-use std::collections::{HashMap, HashSet};
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::{ScrollPhase, finger::TAP_COUNT_DISTANCE};
+use rustc_hash::FxHashMap;
 use crate::{
     app::SelectedRoom,
     profile::user_verification_cache::{UserVerificationState, UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
@@ -29,12 +29,12 @@ pub struct RoomTabs {
     #[live] tab_title_measure: DrawText,
     /// The badge that each tab of a direct room shows after its name.
     /// The key is a tab's ID, and the value is the verification state of that room's other user.
-    #[rust] dm_badge_states: HashMap<LiveId, UserVerificationState>,
+    #[rust] dm_badge_states: FxHashMap<LiveId, UserVerificationState>,
     /// The set of each tab's buttons, so we don't recreate them on every draw,
     /// and whether they were last drawn for an active tab and for the focused tab (`None` if not yet drawn).
-    #[rust] controls: HashMap<LiveId, TabControls>,
+    #[rust] controls: FxHashMap<LiveId, TabControls>,
     /// Tabs that have visible buttons, which need to receive events.
-    #[rust] visible_tabs: HashSet<LiveId>,
+    #[rust] visible_tabs: Vec<LiveId>,
     /// State that tracks what a user is doing with a click/press on a tab button
     /// (basically are they clicking a button or just doing a drag that starts over a button).
     #[rust] interaction: TabButtonInteraction,
@@ -59,7 +59,7 @@ impl RoomTabs {
     }
 
     /// Forward events to the dock, with the tab buttons and hover card layered over it.
-    pub fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope, view: &mut View, rooms: &HashMap<LiveId, SelectedRoom>) {
+    pub fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope, view: &mut View, rooms: &FxHashMap<LiveId, SelectedRoom>) {
         let dock = view.dock(cx, ids!(dock));
         let hover_card = view.room_tab_hover_card(cx, ids!(room_tab_hover));
         let hover_available = event.pointer_claimed_area().is_empty();
@@ -100,7 +100,7 @@ impl RoomTabs {
     }
 
     /// Draws the dock first and then places the tab buttons over the dock's drawn tabs. 
-    pub fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk, view: &mut View, rooms: &HashMap<LiveId, SelectedRoom>) -> DrawStep {
+    pub fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk, view: &mut View, rooms: &FxHashMap<LiveId, SelectedRoom>) -> DrawStep {
         self.dm_badge_states.clear();
         for (tab_id, room) in rooms {
             if matches!(room, SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. })
@@ -124,7 +124,7 @@ impl RoomTabs {
     }
 
     /// Returns the ID of the tab whose expand/collapse button was clicked, if any.
-    pub fn expansion_clicked(&self, actions: &Actions, rooms: &HashMap<LiveId, SelectedRoom>) -> Option<LiveId> {
+    pub fn expansion_clicked(&self, actions: &Actions, rooms: &FxHashMap<LiveId, SelectedRoom>) -> Option<LiveId> {
         let mut clicked = None;
         for tab_id in &self.visible_tabs {
             if !rooms.contains_key(tab_id) { continue; }
@@ -142,7 +142,7 @@ impl RoomTabs {
     /// and requests a redraw for any tabs that actually changed.
     ///
     /// Returns `true` if any tab's width or padding changed, or `false` otherwise.
-    fn update_room_tab_sizes(&mut self, cx: &mut Cx2d, dock: &DockRef, rooms: &HashMap<LiveId, SelectedRoom>) -> bool {
+    fn update_room_tab_sizes(&mut self, cx: &mut Cx2d, dock: &DockRef, rooms: &FxHashMap<LiveId, SelectedRoom>) -> bool {
         let mut changed = false;
         for (tab_id, room) in rooms {
             let tab = dock.tab_widget(*tab_id);
@@ -184,12 +184,12 @@ impl RoomTabs {
         cx: &mut Cx2d,
         scope: &mut Scope,
         dock: &DockRef,
-        rooms: &HashMap<LiveId, SelectedRoom>,
+        rooms: &FxHashMap<LiveId, SelectedRoom>,
     ) {
         self.visible_tabs.clear();
         self.controls.retain(|tab_id, _| rooms.contains_key(tab_id));
         let Some(geometry) = dock.borrow().map(|dock| dock.compact_dump(cx)) else { return };
-        let tab_bar_rects: HashMap<_, _> = geometry.tab_headers.iter().filter_map(|tab| {
+        let tab_bar_rects: FxHashMap<_, _> = geometry.tab_headers.iter().filter_map(|tab| {
             geometry.tabs.iter().find(|bar| bar.tabs_id == tab.tabs_id)
                 .map(|bar| (tab.tab_id, bar.rect))
         }).collect();
@@ -266,7 +266,7 @@ impl RoomTabs {
                 controls.dm_verification_badge.draw_walk_all(cx, scope, Walk::abs_rect(badge_rect));
             }
             cx.pop_clip_rect();
-            self.visible_tabs.insert(*tab_id);
+            self.visible_tabs.push(*tab_id);
         }
     }
 

@@ -1,5 +1,6 @@
 use makepad_widgets::*;
 use ruma::{OwnedEventId, OwnedRoomId};
+use rustc_hash::FxHashMap;
 use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
@@ -90,7 +91,7 @@ pub struct MainDesktopUI {
     #[rust] default_layout: SavedDockState,
 
     /// The rooms that are currently open, keyed by the LiveId of their tab.
-    #[rust] open_rooms: HashMap<LiveId, SelectedRoom>,
+    #[rust] open_rooms: FxHashMap<LiveId, SelectedRoom>,
 
     /// The order in which room/thread tabs were last viewed,
     /// from oldest at the front to most recent at the end.
@@ -641,7 +642,7 @@ impl MainDesktopUI {
     /// (for the selected tab only) and lazily when the user clicks on an uninitialized tab.
     fn init_tab_widget(
         cx: &mut Cx,
-        open_rooms: &HashMap<LiveId, SelectedRoom>,
+        open_rooms: &FxHashMap<LiveId, SelectedRoom>,
         tab_live_id: &LiveId,
         widget: &WidgetRef,
     ) {

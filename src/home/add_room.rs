@@ -1,11 +1,12 @@
 //! A top-level view for adding (joining) or exploring new rooms and spaces, and for finding users.
 
 
-use std::{cmp::Reverse, collections::HashSet};
+use std::cmp::Reverse;
 
 use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomId, ServerName, room::{JoinRuleSummary, RoomType}};
+use rustc_hash::FxHashSet;
 
 use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult, get_room_directory_servers}, home::{invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::NavigationBarAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, settings::app_preferences::AppPreferencesAction, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, page_header::PAGE_SIDE_PADDING, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils::{self, MatchQuality}};
 
@@ -1885,7 +1886,7 @@ struct ResultRows {
     /// The row that the user moved to with the arrow keys, and the search box whose results it's in.
     focused: Option<(SearchBox, LiveId)>,
     /// The keys of the rows whose content is up to date, which needn't be set again when drawn.
-    populated: HashSet<LiveId>,
+    populated: FxHashSet<LiveId>,
 }
 impl ResultRows {
     /// Clears the arrow keys' focus if it's on one of the given search box's results, returning whether it was.
