@@ -43,6 +43,30 @@ impl Drop for VerificationInProgress {
     }
 }
 
+/// A guard that posts [`UserVerificationRequestAction::Done`] when dropped,
+/// so the UI always hears about it, even if sending the request failed.
+struct SendingVerificationRequest(OwnedUserId);
+impl Drop for SendingVerificationRequest {
+    fn drop(&mut self) {
+        Cx::post_action(UserVerificationRequestAction::Done(self.0.clone()));
+    }
+}
+
+/// Actions about sending a verification request to another user.
+///
+/// These are NOT widget actions.
+#[derive(Debug)]
+pub enum UserVerificationRequestAction {
+    /// We need a DM room with this user to send them the request, but we don't have one,
+    /// so we're waiting for the user to tell us whether we should create one.
+    ConfirmDmRoomCreation {
+        user_id: OwnedUserId,
+        response_sender: UnboundedSender<VerificationUserResponse>,
+    },
+    /// We've either sent a verification request to this user or failed to.
+    Done(OwnedUserId),
+}
+
 #[derive(Clone, Debug)]
 pub enum VerificationStateAction {
     Update(VerificationState),
@@ -478,13 +502,15 @@ pub async fn request_self_verification_handler(client: Client) {
         Err(e) => error!("Couldn't list our own devices before self-verification: {e:?}"),
     }
 
-    outgoing_verification_request_handler(client, identity).await;
+    outgoing_verification_request_handler(client, identity, None).await;
 }
 
 
 /// Sends a verification request to another user in our DM room with them,
 /// which the SDK creates (or re-invites them to) if needed.
 pub async fn request_user_verification_handler(client: Client, user_id: OwnedUserId) {
+    let sending = SendingVerificationRequest(user_id.clone());
+
     // Only a device with our user-signing key can sign (verify) another user's identity.
     if !client.encryption().cross_signing_status().await.is_some_and(|status| status.has_user_signing) {
         enqueue_popup_notification(
@@ -514,12 +540,25 @@ pub async fn request_user_verification_handler(client: Client, user_id: OwnedUse
         }
     };
 
-    outgoing_verification_request_handler(client, identity).await;
+    // The SDK would create a new DM room with them on its own, so we ask the user first.
+    if client.get_dm_room(&user_id).is_none() {
+        let (response_sender, mut response_receiver) = tokio::sync::mpsc::unbounded_channel::<VerificationUserResponse>();
+        Cx::post_action(UserVerificationRequestAction::ConfirmDmRoomCreation { user_id, response_sender });
+        if !matches!(response_receiver.recv().await, Some(VerificationUserResponse::Accept)) {
+            return;
+        }
+    }
+
+    outgoing_verification_request_handler(client, identity, Some(sending)).await;
 }
 
 
 /// Sends a verification request to the given identity, then runs that verification flow.
-async fn outgoing_verification_request_handler(client: Client, identity: UserIdentity) {
+async fn outgoing_verification_request_handler(
+    client: Client,
+    identity: UserIdentity,
+    sending: Option<SendingVerificationRequest>,
+) {
     // Now we try to start the verification flow.
     let Some(in_progress) = VerificationInProgress::start() else {
         enqueue_popup_notification(
@@ -548,6 +587,7 @@ async fn outgoing_verification_request_handler(client: Client, identity: UserIde
             response_sender: sender,
         }
     ));
+    drop(sending);
 
     // Wait for another session to respond, then start SAS verification.
     let mut stream = request.changes();
