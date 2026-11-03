@@ -62,6 +62,8 @@ jobs:
           cache-all-crates: "true"
           cache-on-failure: "true"
       - run: cargo clippy --workspace --all-features --all-targets
+      - name: Run unit tests
+        run: cargo test --workspace --all-features --lib --locked
 
   typos:
     if: github.event.pull_request.draft == false
