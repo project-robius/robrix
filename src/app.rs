@@ -386,6 +386,11 @@ impl MatchEvent for App {
             // so we keep the latest sync status for it to show once it's created.
             if let Some(RoomsListHeaderAction::SetSyncStatus(status)) = action.downcast_ref() {
                 cx.global::<RoomListSyncStatusGlobal>().0 = Some(status.clone());
+                // When shaders get built in the background, we create the Settings page once we're synced,
+                // so its shaders are ready before it's first opened.
+                if status.is_fully_synced && cx.is_building_shaders_in_background() {
+                    cx.action(NavigationBarAction::PrepareSettings);
+                }
                 continue;
             }
 

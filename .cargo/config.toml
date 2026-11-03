@@ -16,3 +16,6 @@ runner = "packaging/run-macos.sh"
 MAKEPAD_BUNDLE_IDENTIFIER = { value = "rs.robius.robrix", force = true }
 ## The minimum version that Robrix & Makepad support (for speech-to-text and other features).
 MACOSX_DEPLOYMENT_TARGET = "11.0"
+## cargo ignores the `rustflags` above whenever `RUSTFLAGS` is set, which cargo-makepad's
+## Android builds and our CI both do, so we also pass this to ruma's build scripts here.
+RUMA_IDENTIFIERS_STORAGE = "Arc"
