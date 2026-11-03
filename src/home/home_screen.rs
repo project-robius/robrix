@@ -15,6 +15,7 @@ use crate::{
         rooms_list_header::RoomsListHeaderAction,
         space_lobby::SpaceLobbyScreenWidgetRefExt,
         spaces_bar::{SpacesBarAction, SpacesListUpdate, enqueue_spaces_list_update},
+        sync_indicator_bar::SyncIndicatorBarWidgetRefExt,
     },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     logout::logout_confirm_modal::LogoutAction,
@@ -356,11 +357,17 @@ script_mod! {
                         RoomScreenStackNavigationView := mod.widgets.RobrixStackNavigationView {
                             header +: {
                                 height: Fit
+                                flow: Down
                                 content := mod.widgets.RoomActionBarHeader {
                                     padding: Inset{
                                         left: (mod.widgets.SAFE_INSET_PAD_LEFT),
                                         right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
                                     }
+                                }
+                                // The sync indicator bar overlaps the header's bottom edge, so only its taller
+                                // offline bar makes the header grow, and `set_mobile_stack_sync_bar_height()` moves the room down for it.
+                                sync_indicator_bar := mod.widgets.SyncIndicatorBar {
+                                    margin: Inset{top: -3}
                                 }
                             }
                             body +: {
@@ -888,6 +895,15 @@ impl Widget for HomeScreen {
                     }
                 }
 
+                // A sync status change can show or hide the offline bar in each room's header.
+                if action.downcast_ref::<RoomsListHeaderAction>().is_some() {
+                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                    for view_id in stack_navigation.dynamic_stack_view_ids() {
+                        let stack_view = stack_navigation.view_by_id(cx, view_id);
+                        Self::set_mobile_stack_sync_bar_height(cx, &stack_view);
+                    }
+                }
+
                 // When a stack navigation pop is requested (back button pressed),
                 // reveal the previous screen from the nav history.
                 if let StackNavigationAction::Pop = action.as_widget_action().cast() {
@@ -1183,6 +1199,17 @@ impl HomeScreen {
         stack_view.redraw(cx);
     }
 
+    /// Moves a room down to below its header's sync indicator bar, which makes the header taller while we're offline.
+    fn set_mobile_stack_sync_bar_height(cx: &mut Cx, stack_view: &WidgetRef) {
+        let height = stack_view.sync_indicator_bar(cx, ids!(header.sync_indicator_bar)).extra_height(cx);
+        if let Some(mut body) = stack_view.view(cx, ids!(body)).borrow_mut()
+            && body.layout.padding.top != height
+        {
+            body.layout.padding.top = height;
+            body.redraw(cx);
+        }
+    }
+
     /// Populates a `StackNavigationView` with the given room/screen's info.
     ///
     /// Returns the LiveId of the view that should be pushed onto or revealed by
@@ -1208,6 +1235,7 @@ impl HomeScreen {
                 room_action_bar.set_expanded(cx, false, false);
                 room_action_bar.set_room_id(cx, Some(room_name_id.room_id().clone()));
                 Self::set_mobile_stack_header_height(cx, &stack_navigation_view, 45.0);
+                Self::set_mobile_stack_sync_bar_height(cx, &stack_navigation_view);
                 let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = selected_screen {
                     Some(thread_root_event_id.clone())
                 } else {
