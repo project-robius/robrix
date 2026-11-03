@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedEventId;
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId}};
 
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
@@ -7,16 +7,18 @@ use crate::{
         nav_history::{GoBackAction, GoForwardAction, can_show, is_same_place},
         nav_history_menu::{LongPressWatcher, NavHistoryDirection, request_nav_history_menu},
         add_room::AddRoomScreenWidgetRefExt,
-        invite_screen::InviteScreenWidgetRefExt,
+        invite_screen::{InviteScreenWidgetRefExt, JoinRoomResultAction},
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
         room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt},
         room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt},
-        rooms_list::{AcceptedInviteKind, RoomsListAction, RoomsListRef},
+        rooms_list::{AcceptedInviteKind, RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update},
+        rooms_list_header::RoomsListHeaderAction,
         space_lobby::SpaceLobbyScreenWidgetRefExt,
-        spaces_bar::SpacesBarAction,
+        spaces_bar::{SpacesBarAction, SpacesListUpdate, enqueue_spaces_list_update},
     },
+    join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     logout::logout_confirm_modal::LogoutAction,
-    room::{pane_dock::{RoomPaneDockAction, SavedPaneContent}, pinned_messages_list::PinnedMessagesListAction, room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt}, room_pane::{self, RoomPaneKind}},
+    room::{BasicRoomDetails, pane_dock::{RoomPaneDockAction, SavedPaneContent}, pinned_messages_list::PinnedMessagesListAction, room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt}, room_pane::{self, RoomPaneKind}},
     settings::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
@@ -24,6 +26,7 @@ use crate::{
     shared::mention_popup::MentionablePopupRef,
     shared::speech_text_input::cancel_all_dictation,
     sliding_sync::TimelineKind,
+    space_service_sync::{SpaceRequest, SpaceRoomListAction},
     utils::{self, RoomNameId},
 };
 
@@ -582,6 +585,11 @@ pub struct HomeScreen {
     ///
     /// `Some(None)` means the root view (the rooms list).
     #[rust] interactive_pop_place: Option<Option<SelectedRoom>>,
+
+    /// The details of a room we're waiting on to be loaded so that we can navigate to it.
+    /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
+    /// Also includes an optional room ID to be closed once the awaited room has been loaded.
+    #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
 }
 
 impl ScriptHook for HomeScreen {
@@ -942,6 +950,43 @@ impl Widget for HomeScreen {
                     // The login screen hides this view, so stop any in-progress backwards swipes.
                     self.view.stack_navigation(cx, ids!(view_stack)).end_interactive_pop_without_animation(cx);
                     self.interactive_pop_place = None;
+                }
+
+                match action.downcast_ref() {
+                    Some(AppStateAction::NavigateToRoom { room_to_close, destination_room }) => {
+                        self.navigate_to_room(cx, app_state, room_to_close.as_ref(), destination_room);
+                    }
+                    Some(AppStateAction::NavigateToSpace { space_name_id }) => {
+                        self.navigate_to_space(cx, app_state, BasicRoomDetails::Name(space_name_id.clone()), None);
+                    }
+                    // If we successfully loaded a room that we were waiting on,
+                    // we can now navigate to it and optionally close a previous room.
+                    Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) if
+                        self.waiting_to_navigate_to_room.as_ref()
+                            .is_some_and(|(dr, _)| dr.room_id() == room_name_id.room_id()) =>
+                    {
+                        log!("Loaded awaited room {room_name_id:?}, navigating to it now...");
+                        if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_room.take() {
+                            self.navigate_to_room(cx, app_state, room_to_close.as_ref(), &dest_room);
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Unlike a room, a space never gets loaded into the rooms list,
+                // so we navigate to a space as soon as we've joined it.
+                if let Some(JoinRoomResultAction::Joined { room_id }) = action.downcast_ref()
+                    && let Some((space, room_to_close)) = self.waiting_to_navigate_to_room
+                        .take_if(|(dr, _)| dr.room_id() == room_id && dr.is_space())
+                {
+                    self.navigate_to_space(cx, app_state, space, room_to_close);
+                }
+                // We now know where to show the joined space that we're navigating to.
+                if let Some(SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space, .. }) = action.downcast_ref()
+                    && let Some((_, room_to_close)) = self.waiting_to_navigate_to_room
+                        .take_if(|(dr, _)| dr.room_id() == space_name_id.room_id())
+                {
+                    self.show_joined_space(cx, app_state, space_name_id, dock_space.as_ref(), room_to_close.as_ref());
                 }
 
             }
@@ -1405,6 +1450,140 @@ impl HomeScreen {
             }
         }
         is_pushed
+    }
+
+    /// Selects the given screen, which `MainDesktopUI` shows in desktop view mode.
+    /// In mobile view mode, we push it right away so we don't restore the screen that was behind AddRoom instead.
+    fn select_screen(&mut self, cx: &mut Cx, app_state: &mut AppState, screen: SelectedRoom) {
+        if effective_is_desktop(cx) {
+            cx.widget_action(self.widget_uid(), RoomsListAction::Selected(screen));
+        } else {
+            self.navigate_to_screen(cx, app_state, screen);
+        }
+    }
+
+    /// Navigates to the given `destination_room`, optionally closing the `room_to_close`.
+    fn navigate_to_room(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+        room_to_close: Option<&OwnedRoomId>,
+        destination_room: &BasicRoomDetails,
+    ) {
+        let destination_room_id = destination_room.room_id();
+        let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id);
+        let new_selected_room = match room_state {
+            Some(RoomState::Joined) => SelectedRoom::JoinedRoom {
+                room_name_id: destination_room.room_name_id().clone(),
+            },
+            Some(RoomState::Invited) => SelectedRoom::InvitedRoom {
+                room_name_id: destination_room.room_name_id().clone(),
+            },
+            // Joined spaces aren't in the rooms list.
+            _ if destination_room.is_joined_space() => {
+                self.navigate_to_space(cx, app_state, destination_room.clone(), room_to_close.cloned());
+                return;
+            }
+            // If the destination room is not yet loaded, show a join modal.
+            _ => {
+                log!("Destination room {:?} not loaded, showing join modal...", destination_room.room_name_id());
+                self.waiting_to_navigate_to_room = Some((
+                    destination_room.clone(),
+                    room_to_close.cloned(),
+                ));
+                cx.action(JoinLeaveRoomModalAction::Open {
+                    kind: JoinLeaveModalKind::JoinRoom {
+                        details: destination_room.clone(),
+                        is_space: destination_room.is_space(),
+                        via: destination_room.via().to_vec(),
+                    },
+                    show_tip: false,
+                });
+                return;
+            }
+        };
+
+
+        log!("Navigating to destination room {:?}, closing room {:?}",
+            destination_room.room_name_id(),
+            room_to_close,
+        );
+
+        // Before we navigate to the room, if the AddRoom tab is currently shown,
+        // then we programmatically navigate to the Home tab to show the actual room.
+        // The Settings tab would hide that room too.
+        if matches!(app_state.selected_tab, SelectedTab::AddRoom | SelectedTab::Settings) {
+            self.switch_to_tab(cx, app_state, SelectedTab::Home);
+        }
+        self.select_screen(cx, app_state, new_selected_room);
+        // Select and scroll to the destination room in the rooms list.
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
+
+        // Close a previously/currently-open room if specified.
+        if let Some(room_to_close) = room_to_close {
+            self.close_room(cx, room_to_close);
+        }
+    }
+
+    /// Navigates to the given joined space, optionally closing the `room_to_close`.
+    ///
+    /// We first have to find out which top-level space it's in, since we show it there.
+    fn navigate_to_space(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+        space: BasicRoomDetails,
+        room_to_close: Option<OwnedRoomId>,
+    ) {
+        let space_name_id = space.room_name_id().clone();
+        let was_sent = cx.get_global::<RoomsListRef>().get_space_request_sender().is_some_and(|sender|
+            sender.send(SpaceRequest::ResolveJoinedSpaceAncestor {
+                space_name_id: space_name_id.clone(),
+                was_invite: false,
+            }).is_ok()
+        );
+        if was_sent {
+            self.waiting_to_navigate_to_room = Some((space, room_to_close));
+        } else {
+            error!("Couldn't determine where joined space {space_name_id} should be shown; opening it here.");
+            self.show_joined_space(cx, app_state, &space_name_id, None, room_to_close.as_ref());
+        }
+    }
+
+    /// Shows the given joined space's lobby within its top-level space, `dock_space`,
+    /// or within the current dock if that's unknown.
+    fn show_joined_space(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+        space_name_id: &RoomNameId,
+        dock_space: Option<&RoomNameId>,
+        room_to_close: Option<&OwnedRoomId>,
+    ) {
+        log!("Navigating to joined space {space_name_id:?} within space {dock_space:?}");
+        match dock_space {
+            Some(dock_space) => {
+                self.switch_to_tab(cx, app_state, SelectedTab::Space { space_name_id: dock_space.clone() });
+                enqueue_spaces_list_update(SpacesListUpdate::ScrollToSpace(dock_space.room_id().clone()));
+            }
+            None if matches!(app_state.selected_tab, SelectedTab::AddRoom | SelectedTab::Settings) => {
+                self.switch_to_tab(cx, app_state, SelectedTab::Home);
+            }
+            None => {}
+        }
+        self.select_screen(cx, app_state, SelectedRoom::Space { space_name_id: space_name_id.clone() });
+        if let Some(room_to_close) = room_to_close {
+            self.close_room(cx, room_to_close);
+        }
+    }
+
+    /// Closes the given room's tab, if it's open, and hides it from the rooms list.
+    fn close_room(&self, cx: &mut Cx, room_id: &OwnedRoomId) {
+        cx.widget_action(
+            self.widget_uid(),
+            DockAction::TabCloseWasPressed(LiveId::from_str(room_id.as_str())),
+        );
+        enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: room_id.clone() });
     }
 
     /// Returns the screens that keep their resources when in mobile view mode,
