@@ -1139,6 +1139,7 @@ impl RoomsList {
                             let was_sent = self.space_request_sender.as_ref().is_some_and(|sender|
                                 sender.send(SpaceRequest::ResolveJoinedSpaceAncestor {
                                     space_name_id: removed.room_name_id.clone(),
+                                    was_invite: true,
                                 }).is_ok()
                             );
                             if !was_sent {
@@ -1753,7 +1754,7 @@ impl RoomsList {
                 }
             },
             // we now know the ancestor space (`dock_space`) of a newly-joined space.
-            SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space } => {
+            SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space, was_invite: true } => {
                 cx.widget_action(
                     self.widget_uid(),
                     RoomsListAction::InviteAccepted {
@@ -1762,6 +1763,8 @@ impl RoomsList {
                     },
                 );
             }
+            // The App asks about spaces that it's navigating to, so it handles those.
+            SpaceRoomListAction::JoinedSpaceAncestor { was_invite: false, .. } => { }
             // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
             SpaceRoomListAction::DetailedChildren { .. }
             | SpaceRoomListAction::SpaceDetails(_) => { }

@@ -1630,6 +1630,8 @@ async fn matrix_worker_task(
                     match client.create_dm(&user_profile.user_id).await {
                         Ok(room) => {
                             log!("Successfully created DM room: {}", room.room_id());
+                            // The rooms list only gets a new room once its state arrives, so we wait for that too.
+                            wait_for_create_event(&room).await;
                             Cx::post_action(DirectMessageRoomAction::NewlyCreated {
                                 user_profile,
                                 room_name_id: RoomNameId::from_room(&room).await,
@@ -3918,6 +3920,7 @@ struct RoomListServiceRoomInfo {
     /// The other user in this room, if it's a direct room with just one other user.
     dm_user_id: Option<OwnedUserId>,
     is_space: bool,
+    has_create_event: bool,
     is_marked_unread: bool,
     is_tombstoned: bool,
     is_encrypted: bool,
@@ -3986,6 +3989,7 @@ impl RoomListServiceRoomInfo {
             is_direct,
             dm_user_id,
             is_space: room.is_space(),
+            has_create_event: room.create_content().is_some(),
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
             is_encrypted: room.encryption_state().is_encrypted(),
@@ -4787,6 +4791,11 @@ async fn update_room(
             }
         }
 
+        // We haven't added this joined room yet, since we didn't know whether it was a space.
+        if new_room.state == RoomState::Joined && !old_room.has_create_event {
+            return add_new_room(new_room, room_list_service).await;
+        }
+
         // First, we check for changes to room data that is relevant to any room,
         // including joined, invited, and other rooms.
         // This includes the room name and room avatar.
@@ -5061,6 +5070,9 @@ async fn add_new_room(
         }
         // Joined spaces are handled by the SpaceService, so don't handle them here.
         RoomState::Joined if new_room.is_space => return Ok(()),
+        // Right after we join a room, we can't tell if it's a space until its state arrives,
+        // so we wait to add it until then (in `update_room()`).
+        RoomState::Joined if !new_room.has_create_event => return Ok(()),
         RoomState::Joined => { } // Fall through to adding the joined room below.
     }
 
@@ -5720,6 +5732,16 @@ async fn fetch_room_preview_with_avatar(
     Ok(FetchedRoomPreview::from(client, room_preview, room_avatar, via, alias))
 }
 
+/// Waits until we have the creation event of the given joined room, which says whether it's a space.
+///
+/// We don't have it right after we join a room, only once that room's state arrives.
+pub async fn wait_for_create_event(room: &Room) {
+    let mut room_info_updates = room.subscribe_info();
+    while room.create_content().is_none() && room.state() == RoomState::Joined {
+        if room_info_updates.next().await.is_none() { break }
+    }
+}
+
 /// Resolves a room link to determine whether we should show it as a room, space, or event.
 async fn resolve_room_link(
     client: &Client,
@@ -5751,6 +5773,8 @@ async fn resolve_room_link(
     let Some(mut room) = client.get_room(&room_id) else {
         return Ok(RoomLinkDestination::NotJoined);
     };
+    // We can't tell whether a room that we just joined is a space until its state arrives.
+    wait_for_create_event(&room).await;
     // Like the rooms list, we skip over old versions of upgraded rooms (unless one is already loaded),
     // and show the newest version instead.
     //

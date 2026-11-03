@@ -914,9 +914,15 @@ impl WidgetMatchEvent for MainDesktopUI {
                 RoomsListAction::Selected(selected_room) => {
                     // If we just navigated to Home from a space (e.g., after joining a room from the AddRoom screen),
                     // we need to switch to the main home dock first before showing the selected room.
+                    // Likewise, if we just navigated to a space (e.g., to show a joined space), we switch to its dock.
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    if self.selected_space.is_some() && matches!(app_state.selected_tab, SelectedTab::Home) {
-                        self.switch_dock_to_space(cx, app_state, None);
+                    let tab_space_id = match &app_state.selected_tab {
+                        SelectedTab::Home => None,
+                        SelectedTab::Space { space_name_id } => Some(space_name_id.room_id().clone()),
+                        SelectedTab::AddRoom | SelectedTab::Settings => self.selected_space.clone(),
+                    };
+                    if tab_space_id != self.selected_space {
+                        self.switch_dock_to_space(cx, app_state, tab_space_id);
                     }
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)

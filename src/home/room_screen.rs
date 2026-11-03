@@ -2494,10 +2494,10 @@ impl RoomScreen {
                 }
                 None => (room_name_id, NavigateToLinkAction::Screen(room_pane::timeline_screen(room_name_id, timeline_kind))),
             },
-            RoomLinkDestination::Space(space_name_id) => (
-                space_name_id,
-                NavigateToLinkAction::Screen(SelectedRoom::Space { space_name_id: space_name_id.clone() }),
-            ),
+            RoomLinkDestination::Space(space_name_id) => {
+                cx.action(AppStateAction::NavigateToSpace { space_name_id: space_name_id.clone() });
+                return;
+            }
             RoomLinkDestination::Invite(room_name_id) => (
                 room_name_id,
                 NavigateToLinkAction::Screen(SelectedRoom::InvitedRoom { room_name_id: room_name_id.clone() }),
