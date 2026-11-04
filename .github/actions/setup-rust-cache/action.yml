@@ -1,0 +1,30 @@
+name: Setup Rust cache
+description: Restore the Rust cache and keep it valid across fresh checkouts and Makepad repins.
+inputs:
+  key:
+    description: Extra cache key, for matrix jobs that would otherwise share one.
+    required: false
+runs:
+  using: composite
+  steps:
+    ## Makepad's build script watches `resources/`, so a fresh checkout would rebuild all of Makepad.
+    - name: Reset resource mtimes
+      shell: bash
+      run: find resources -exec touch -t 202001010000 {} +
+
+    ## One set of these caches nearly fills the repo's 10 GB limit, so only `main` saves them.
+    - name: Restore Rust cache
+      id: rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ inputs.key }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    ## A repin rebuilds all of Makepad anyway, so this keeps its old copies out of the next cache.
+    - name: Remove old Makepad builds
+      if: steps.rust-cache.outputs.cache-hit == 'false'
+      shell: bash
+      run: |
+        if [ -d target ]; then
+          find target -name '*makepad*' -prune -exec rm -rf {} +
+        fi
