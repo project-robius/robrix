@@ -40,9 +40,25 @@ pub(super) fn populate_group_summary_item(
     first_event_content: &SmallStateContent,
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
+    let (item, existed) = list.item_with_existed(cx, item_id, id!(GroupSummaryItem));
+    populate_group_summary(cx, item, existed, timeline, group, first_event_tl_item, first_event_content, item_drawn_status)
+}
+
+/// Populates the group `header` and `first_event` within the given item, see [`populate_group_summary_item()`].
+///
+/// `existed` is whether this item was already showing this group.
+pub(super) fn populate_group_summary(
+    cx: &mut Cx,
+    item: WidgetRef,
+    existed: bool,
+    timeline: TimelineInfo,
+    group: &StateEventGroup,
+    first_event_tl_item: &EventTimelineItem,
+    first_event_content: &SmallStateContent,
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
     let TimelineInfo { items, kind: timeline_kind, .. } = timeline;
     let room_id = timeline_kind.room_id();
-    let (item, existed) = list.item_with_existed(cx, item_id, id!(GroupSummaryItem));
     let content_already_drawn = existed && item_drawn_status.content_drawn;
     if content_already_drawn && item_drawn_status.profile_drawn {
         return (item, item_drawn_status);
@@ -285,7 +301,7 @@ pub(super) fn populate_small_state_event(
 /// * `existed`: whether this widget was already showing this event.
 /// * `show_collapse_line`: true for the last event of an expanded group, so it can collapse the group.
 /// * `show_invite_button`: true for a knock that's still waiting on an answer.
-fn populate_small_state_event_widget(
+pub(super) fn populate_small_state_event_widget(
     cx: &mut Cx,
     item: WidgetRef,
     existed: bool,

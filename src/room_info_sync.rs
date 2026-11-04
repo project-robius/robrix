@@ -10,7 +10,7 @@ use matrix_sdk::{
 use tokio::{runtime::Handle, sync::{broadcast::error::RecvError, mpsc::UnboundedReceiver, Notify}};
 
 use crate::{
-    room::room_info::{NOTIFICATION_MODES, RoomInfoAction, RoomInfoDetails, RoomNotificationModes},
+    room::{PredecessorRoomDetails, room_info::{NOTIFICATION_MODES, RoomInfoAction, RoomInfoDetails, RoomNotificationModes}},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
     utils::RoomNameId,
 };
@@ -121,6 +121,12 @@ fn get_room_info_details(room: &Room) -> RoomInfoDetails {
         avatar_url: room.avatar_url(),
         is_encrypted: (!encryption_state.is_unknown()).then(|| encryption_state.is_encrypted()),
         num_joined_members: room.joined_members_count(),
+        predecessor_room: room.predecessor_room()
+            .map(|predecessor| PredecessorRoomDetails::new(
+                predecessor.room_id,
+                room.cached_display_name(),
+                room.creators().as_deref().and_then(<[_]>::first).map(|creator| &**creator),
+            )),
     }
 }
 

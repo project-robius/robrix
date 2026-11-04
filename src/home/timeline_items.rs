@@ -54,6 +54,9 @@ pub(super) enum ItemDraw<'a> {
     /// A group's summary item (its first item), which draws the group's header when collapsed
     /// or its first event when expanded.
     SummaryItem { group: &'a StateEventGroup, event: &'a EventTimelineItem, content: SmallStateContent<'a> },
+    /// The room's creation event, which shows that this is the beginning of the room.
+    /// If `group` is `Some`, this also sums up the rest of the room's setup like a group's summary item does.
+    RoomCreation { group: Option<&'a StateEventGroup>, event: &'a EventTimelineItem, content: SmallStateContent<'a> },
     /// A small state event shown on its own.
     ///
     /// The last one of an expanded group also shows a line with a button to collapse that group,
@@ -76,6 +79,13 @@ pub(super) fn item_draw<'a>(
     let display_kind = item_display_kind(item, timeline.kind).with_history(timeline.items, index);
     let group = groups.containing(index);
     Some(match (group, display_kind) {
+        // The room's creation event gets its own special item, which sums up the room's setup if that's grouped with it.
+        (group, ItemDisplayKind::SmallState(event, content))
+            if matches!(content, SmallStateContent::OtherState(other) if is_room_create(other))
+                && group.is_none_or(|g| g.range.start == index) =>
+        {
+            ItemDraw::RoomCreation { group, event, content }
+        }
         // A group's first item is its summary item, whether the group is collapsed or expanded.
         (Some(group), ItemDisplayKind::SmallState(event, content)) if group.range.start == index => {
             ItemDraw::SummaryItem { group, event, content }
@@ -386,7 +396,7 @@ impl<'a> ItemDisplayKind<'a> {
 }
 
 /// Returns whether the given state event is the room's creation event.
-fn is_room_create(other: &timeline::OtherState) -> bool {
+pub(super) fn is_room_create(other: &timeline::OtherState) -> bool {
     matches!(other.content(), timeline::AnyOtherStateEventContentChange::RoomCreate(_))
 }
 

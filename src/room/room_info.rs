@@ -5,6 +5,7 @@ use makepad_widgets::*;
 use matrix_sdk::{notification_settings::RoomNotificationMode, ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId}};
 
 use crate::{
+    app::AppStateAction,
     home::{invite_modal::InviteModalAction, rooms_list::{RoomAvatarUpdated, RoomsListRef}},
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
@@ -13,7 +14,7 @@ use crate::{
     sliding_sync::{MatrixRequest, RoomDataKind, TimelineEndpointsRecreated, submit_async_request},
     utils::RoomNameId,
 };
-use super::{BasicRoomDetails, FetchedRoomAvatar, message_list::RoomDataSubscription, room_pane::RoomPaneKind};
+use super::{BasicRoomDetails, FetchedRoomAvatar, PredecessorRoomDetails, message_list::RoomDataSubscription, room_pane::RoomPaneKind};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -58,6 +59,21 @@ script_mod! {
             color: (COLOR_TEXT_SUBTLE)
         }
         text: ""
+    }
+
+    // Opens the older room that a room replaced, from the top of its timeline or from its Room Info pane.
+    mod.widgets.OlderRoomButton = RobrixIconButton {
+        visible: false
+        width: Fit{max: FitBound.Rel{base: Base.Parent, factor: 1.0}}
+        margin: 0
+        flow: Flow.Right{wrap: true}
+        // The text wraps to fit between the paddings without counting the icon, so the icon goes in the left padding.
+        padding: Inset{top: 10, bottom: 10, left: 36, right: 15}
+        draw_icon.svg: (ICON_JUMP)
+        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -25, right: -1}}
+        // A fit-width label only wraps once it has a max number of lines.
+        draw_text +: { max_lines: 3, text_overflow: TextOverflow.Ellipsis }
+        text: "View messages in older room"
     }
 
     mod.widgets.RoomInfoView = #(RoomInfoView::register_widget(vm)) {
@@ -135,6 +151,8 @@ script_mod! {
                         }
                     }
                 }
+
+                older_room_button := mod.widgets.OlderRoomButton {}
             }
 
             LineH { margin: Inset{bottom: 6} }
@@ -234,6 +252,8 @@ pub struct RoomInfoDetails {
     pub avatar_url: Option<OwnedMxcUri>,
     pub is_encrypted: Option<bool>,
     pub num_joined_members: u64,
+    /// The older room that this room replaced, if this room is the newer version of an upgraded room.
+    pub predecessor_room: Option<PredecessorRoomDetails>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -352,6 +372,14 @@ impl Widget for RoomInfoView {
                 mode: *mode,
             });
         }
+        if scroll.child(id!(room_header)).child(id!(older_room_button)).as_button().clicked(actions)
+            && let Some(predecessor_room) = self.details.as_ref().and_then(|details| details.predecessor_room.clone())
+        {
+            cx.action(AppStateAction::NavigateToRoom {
+                room_to_close: None,
+                destination_room: predecessor_room.into(),
+            });
+        }
         let room_actions = scroll.child(id!(room_actions));
         if room_actions.child(id!(copy_link_button)).as_button().clicked(actions) {
             submit_async_request(MatrixRequest::GenerateMatrixLink {
@@ -424,6 +452,7 @@ impl RoomInfoView {
         let room_topic = self.view.widget(cx, ids!(room_topic));
         room_topic.set_text(cx, topic);
         room_topic.set_visible(cx, !topic.is_empty());
+        self.view.button(cx, ids!(older_room_button)).set_visible(cx, details.predecessor_room.is_some());
         if let Some(room_name_id) = self.room_name_id.as_ref()
             && details.avatar_url.is_some()
             && self.details.as_ref().is_none_or(|old| old.avatar_url != details.avatar_url)
@@ -488,6 +517,7 @@ impl RoomInfoView {
         let room_topic = self.view.widget(cx, ids!(room_topic));
         room_topic.set_text(cx, "");
         room_topic.set_visible(cx, false);
+        self.view.button(cx, ids!(older_room_button)).set_visible(cx, false);
         self.show_notification_modes(cx);
         self.view.view(cx, ids!(room_info_scroll)).set_scroll_pos(cx, Vec2d::default());
         self.redraw(cx);
@@ -533,7 +563,7 @@ impl RoomInfoViewRef {
     }
 }
 
-fn get_rooms_list_avatar(cx: &mut Cx, room_name_id: &RoomNameId) -> Option<FetchedRoomAvatar> {
+pub(crate) fn get_rooms_list_avatar(cx: &mut Cx, room_name_id: &RoomNameId) -> Option<FetchedRoomAvatar> {
     cx.has_global::<RoomsListRef>()
         .then(|| cx.get_global::<RoomsListRef>().get_room_avatar(room_name_id.room_id()))
         .flatten()
