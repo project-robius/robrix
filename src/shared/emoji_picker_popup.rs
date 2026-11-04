@@ -236,7 +236,7 @@ impl EmojiPickerPopup {
         self.view.view(cx, ids!(backdrop)).set_visible(cx, has_backdrop);
         // A focused search would bring up a soft keyboard.
         let picker = self.child_refs(cx).picker.clone();
-        picker.reset(cx, mode, !is_sheet && !has_only_soft_keyboard(cx), !is_sheet);
+        picker.reset(cx, mode, !has_only_soft_keyboard(cx), !is_sheet);
         self.redraw(cx);
     }
 

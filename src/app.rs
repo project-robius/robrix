@@ -1419,6 +1419,7 @@ impl Eq for SelectedRoom {}
 ///
 /// These are *NOT* widget actions.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum AppStateAction {
     /// The given room was focused (selected).
     RoomFocused(SelectedRoom),

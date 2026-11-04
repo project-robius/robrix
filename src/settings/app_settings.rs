@@ -34,6 +34,10 @@ const DOUBLE_TAP_TO_REACT_DESC: (&str, &str) = (
     "<ul><li>Currently: double tapping/clicking a message toggles this reaction.</li><li>Type an emoji, a :shortcode:, or any text.</li></ul>",
     "<ul><li>Currently: double-tapping a message does nothing.</li></ul>",
 );
+const SYNC_RECENT_EMOJIS_DESC: (&str, &str) = (
+    "<ul><li>Currently: your recent emoji are synced across your other Matrix clients.</li></ul>",
+    "<ul><li>Currently: your recent emoji are not synced and stay local to this device.</li></ul>",
+);
 const MOUSE_DRAG_SCROLLING_DESC: (&str, &str) = (
     "<ul><li>Currently: scroll via mouse wheel, trackpad, or clicking and dragging.</li></ul>",
     "<ul><li>Currently: scroll via mouse wheel or trackpad swipes.</li></ul>",
@@ -514,6 +518,25 @@ script_mod! {
             }
         }
 
+        SubsectionLabel {
+            margin: Inset{top: 10}
+            text: "Recent Emoji"
+        }
+
+        View {
+            width: Fill, height: Fit
+            flow: Down,
+            margin: Inset{left: 6},
+
+            sync_recent_emojis_toggle := mod.widgets.RobrixSettingsToggle {
+                active: true,
+                text: "Sync recent emoji"
+            }
+            sync_recent_emojis_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `SYNC_RECENT_EMOJIS_DESC`
+            }
+        }
+
         mouse_drag_scrolling_section := View {
             width: Fill, height: Fit
             flow: Down,
@@ -879,6 +902,20 @@ impl AppSettings {
             );
         }
 
+        if is_shown
+            && let Some(enabled) = self.view.check_box(cx, ids!(sync_recent_emojis_toggle)).changed(actions)
+            && enabled != app_state.app_prefs.sync_recent_emojis
+        {
+            app_state.app_prefs.sync_recent_emojis = enabled;
+            Self::update_toggle_description(cx, &self.view, ids!(sync_recent_emojis_description), enabled, SYNC_RECENT_EMOJIS_DESC);
+            app_state.app_prefs.on_sync_recent_emojis_changed(cx);
+            enqueue_popup_notification(
+                "Updated syncing of recent emoji.",
+                PopupKind::Success,
+                Some(3.0),
+            );
+        }
+
         let quick_reaction_input = self.view.text_input(cx, ids!(quick_reaction_input));
         if quick_reaction_input.returned(actions).is_some() || quick_reaction_input.key_focus_lost(actions) {
             // A blank input goes back to the default reaction.
@@ -1092,6 +1129,8 @@ impl AppSettings {
         send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
         self.view.check_box(cx, ids!(double_tap_to_react_toggle))
             .set_active(cx, prefs.double_tap_to_react, Animate::No);
+        self.view.check_box(cx, ids!(sync_recent_emojis_toggle))
+            .set_active(cx, prefs.sync_recent_emojis, Animate::No);
 
         self.view.check_box(cx, ids!(mouse_drag_scrolling_toggle))
             .set_active(cx, prefs.mouse_drag_scrolling, Animate::No);
@@ -1146,6 +1185,7 @@ impl AppSettings {
         Self::update_mark_as_read_description(cx, view, prefs.mark_as_read_behavior);
         Self::update_toggle_description(cx, view, ids!(double_tap_to_react_description), prefs.double_tap_to_react, DOUBLE_TAP_TO_REACT_DESC);
         Self::set_input_enabled(cx, view, ids!(quick_reaction_input), prefs.double_tap_to_react, Animate::No);
+        Self::update_toggle_description(cx, view, ids!(sync_recent_emojis_description), prefs.sync_recent_emojis, SYNC_RECENT_EMOJIS_DESC);
         Self::update_toggle_description(cx, view, ids!(mouse_drag_scrolling_description), prefs.mouse_drag_scrolling, MOUSE_DRAG_SCROLLING_DESC);
         Self::update_toggle_description(cx, view, ids!(show_read_receipts_description), prefs.show_read_receipts, SHOW_READ_RECEIPTS_DESC);
         Self::update_toggle_description(cx, view, ids!(show_typing_notices_description), prefs.show_typing_notices, SHOW_TYPING_NOTICES_DESC);
