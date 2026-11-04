@@ -6,7 +6,7 @@ Nearly all icons used in Robrix are obtained from [SVG Repo](https://www.svgrepo
 Other icons are individually attributed below, as required.
 
 * Add Wallet by Creative Stall from <a href="https://thenounproject.com/browse/icons/term/add-wallet/" target="_blank" title="Add Wallet Icons">Noun Project</a> (CC BY 3.0)
-* The emoji picker's icons (`emoji`, `history`, `hand_wave`, `animal_cat`, `food_pizza`, `vehicle_car`, `sport_soccer`, `lightbulb`, `symbols`, and `flag`) are from Microsoft's [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) (MIT)
+* The emoji picker's icons (`emoji`, `history`, `hand_wave`, `animal_cat`, `food_pizza`, `vehicle_car`, `sport_soccer`, `lightbulb`, `symbols`, and `flag`) and the text reaction icon (`add_text_reaction`) are from Microsoft's [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) (MIT)
 
 
 ## Data

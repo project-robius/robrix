@@ -37,6 +37,7 @@ pub mod nav_history_menu;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
+pub mod reaction_strip;
 pub mod room_context_menu;
 pub mod link_preview;
 pub mod room_image_viewer;
@@ -66,6 +67,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     edited_indicator::script_mod(vm);
     message_shield::script_mod(vm);
     editing_pane::script_mod(vm);
+    reaction_strip::script_mod(vm);
     new_message_context_menu::script_mod(vm);
     event_source_modal::script_mod(vm);
     room_context_menu::script_mod(vm);
