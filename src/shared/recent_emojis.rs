@@ -4,28 +4,34 @@
 //! We combine two lists of picks:
 //! 1. our own record of the emoji that the user picked in Robrix, which we save in the `AppState`.
 //! 2. the account's `m.recent_emoji` (and Element's older `io.element.recent_emoji`) account data,
-//!    which other clients also update.
+//!    which other clients also update. Users can turn this off with the `sync_recent_emojis` preference.
 
 use std::time::Duration;
 use emojis::{Emoji, SkinTone};
 use futures_util::StreamExt;
 use makepad_widgets::{Cx, error};
 use matrix_sdk::{
-    Client, HttpError,
-    ruma::{OwnedUserId, UInt, api::error::ErrorKind, events::{GlobalAccountDataEvent, recent_emoji::RecentEmojiEventContent}},
+    Account, Client, HttpError,
+    ruma::{
+        OwnedUserId, UInt,
+        events::{False, GlobalAccountDataEvent, GlobalAccountDataEventContent, StaticEventContent, recent_emoji::RecentEmojiEventContent},
+    },
 };
 use matrix_sdk_base::recent_emojis::RecentEmojisContent;
 use matrix_sdk_ui::sync_service::State;
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::{runtime::Handle, sync::mpsc::UnboundedSender, task::JoinHandle};
 use crate::{
+    settings::app_preferences::AppPreferencesGlobal,
     shared::emoji_catalog::{can_draw, without_skin_tone},
     sliding_sync::{MatrixRequest, get_client, get_sync_service, submit_async_request},
 };
 
-/// How long we wait to try adding a pick to the account data again, if it failed while syncing still seemed to work.
+/// How long we wait to try adding picks to the account data again, if it failed while syncing still seemed to work.
 const RETRY_DELAY: Duration = Duration::from_secs(5);
+/// How long we wait after a pick for any more picks, so a burst of them only updates the account data once.
+const WRITE_DELAY: Duration = Duration::from_secs(30);
 
 /// Our own record of the user's emoji picks, which we save as part of the `AppState`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -76,11 +82,15 @@ pub enum RecentEmojisAction {
 
 /// Records that the user just picked the given emoji, both in our own record and in their account data.
 pub fn record_emoji_pick(cx: &mut Cx, emoji: &str) {
+    let is_synced = cx.global::<AppPreferencesGlobal>().0.sync_recent_emojis;
     let global = cx.global::<RecentEmojisGlobal>();
     let picked_count = global.saved.picked.iter()
         .position(|(recent, _)| recent == emoji)
         .map_or(0, |index| global.saved.picked.remove(index).1);
     global.saved.picked.insert(0, (emoji.to_owned(), picked_count + 1));
+    if !is_synced {
+        return;
+    }
     let account_count = global.pending_picks.iter()
         .chain(&global.from_account_data)
         .find_map(|(recent, count)| (recent == emoji).then_some(*count))
@@ -93,6 +103,7 @@ pub fn record_emoji_pick(cx: &mut Cx, emoji: &str) {
 /// Returns the user's recently picked emoji that we can draw, from most to least recently picked,
 /// along with how many times they picked each one.
 pub fn get_recent_emojis(cx: &mut Cx) -> Vec<(&'static Emoji, u64)> {
+    let is_synced = cx.global::<AppPreferencesGlobal>().0.sync_recent_emojis;
     let global = cx.global::<RecentEmojisGlobal>();
     let picked_counts: FxHashMap<&str, u64> = global.saved.picked.iter()
         .map(|(emoji, count)| (emoji.as_str(), *count))
@@ -101,6 +112,7 @@ pub fn get_recent_emojis(cx: &mut Cx) -> Vec<(&'static Emoji, u64)> {
     // that the account doesn't have (e.g., ones it no longer lists) come after all of its emoji.
     let account_emojis = global.pending_picks.iter()
         .chain(&global.from_account_data)
+        .filter(|_| is_synced)
         .map(|(emoji, count)| (emoji, (*count).max(picked_counts.get(emoji.as_str()).copied().unwrap_or(0))));
     let mut seen = FxHashSet::default();
     account_emojis
@@ -225,36 +237,64 @@ fn get_recent_emoji_of(content: &RecentEmojiEventContent) -> Vec<(String, UInt)>
     content.recent_emoji.iter().map(|recent| (recent.emoji.clone(), recent.total)).collect()
 }
 
-/// Spawns the task that adds each emoji the user picks to their account data, one at a time and in order,
+/// Returns the given account data from the copy that syncing keeps up to date, which saves a request.
+/// We only ask the homeserver if we don't have a copy yet, so we can't replace a list that we've never seen.
+async fn get_account_data<C>(account: &Account) -> matrix_sdk::Result<Option<C>>
+where
+    C: GlobalAccountDataEventContent + StaticEventContent<IsPrefix = False> + DeserializeOwned,
+{
+    let raw = match account.account_data::<C>().await? {
+        Some(raw) => Some(raw),
+        None => account.fetch_account_data_static::<C>().await?,
+    };
+    Ok(raw.and_then(|raw| raw.deserialize().ok()))
+}
+
+/// Spawns the task that adds the emoji the user picks to their account data, a burst at a time and in order,
 /// and returns the sender for the user ID and emoji of each pick.
 pub fn spawn_recent_emoji_writer() -> UnboundedSender<(OwnedUserId, String)> {
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<(OwnedUserId, String)>();
     Handle::current().spawn(async move {
-        while let Some((user_id, emoji)) = receiver.recv().await {
-            // Each list counts this pick only once, even if we have to try again.
+        while let Some(first_pick) = receiver.recv().await {
+            tokio::time::sleep(WRITE_DELAY).await;
+            let mut picks = vec![first_pick];
+            while let Ok(pick) = receiver.try_recv() {
+                picks.push(pick);
+            }
+            // Each list counts these picks only once, even if we have to try again.
             let (mut is_in_recent_emoji, mut is_in_legacy_recent_emoji) = (false, false);
             loop {
+                let Some(client) = get_client() else { break };
                 // Skip picks that a previous account made before it logged out.
-                let Some(client) = get_client().filter(|client| client.user_id() == Some(&user_id)) else { break };
+                picks.retain(|(user_id, _)| client.user_id() == Some(user_id));
+                if picks.is_empty() {
+                    break;
+                }
                 let account = client.account();
                 let result: matrix_sdk::Result<()> = async {
                     if !is_in_recent_emoji {
-                        let mut content = account.fetch_account_data_static::<RecentEmojiEventContent>().await?
-                            .and_then(|raw| raw.deserialize().ok())
+                        let mut content = get_account_data::<RecentEmojiEventContent>(&account).await?
                             .unwrap_or_else(|| RecentEmojiEventContent::new(Vec::new()));
-                        content.increment_emoji_total(&emoji);
+                        for (_, emoji) in &picks {
+                            content.increment_emoji_total(emoji);
+                        }
                         account.set_account_data(content).await?;
                         is_in_recent_emoji = true;
                     }
                     if !is_in_legacy_recent_emoji {
-                        // Element X and other clients that use the SDK only read the older list.
-                        match account.add_recent_emoji(&emoji).await {
-                            // The SDK can only add to an existing list, so we create the account's first one ourselves.
-                            Err(e) if matches!(e.client_api_error_kind(), Some(ErrorKind::NotFound)) => {
-                                account.set_account_data(RecentEmojisContent::new(vec![(emoji.clone(), UInt::from(1u8))])).await?;
-                            }
-                            other => other?,
+                        // Element X and other clients that use the SDK only read the older list,
+                        // whose `add_recent_emoji()` would cost us two requests for every pick.
+                        let mut recent_emoji = get_account_data::<RecentEmojisContent>(&account).await?
+                            .map(|content| content.recent_emoji)
+                            .unwrap_or_default();
+                        for (_, emoji) in &picks {
+                            let count = recent_emoji.iter()
+                                .position(|(recent, _)| recent == emoji)
+                                .map_or(UInt::MIN, |index| recent_emoji.remove(index).1);
+                            recent_emoji.insert(0, (emoji.clone(), count + UInt::from(1u8)));
                         }
+                        recent_emoji.truncate(RecentEmojiEventContent::RECOMMENDED_MAX_LEN);
+                        account.set_account_data(RecentEmojisContent::new(recent_emoji)).await?;
                         is_in_legacy_recent_emoji = true;
                     }
                     Ok(())
@@ -276,8 +316,10 @@ pub fn spawn_recent_emoji_writer() -> UnboundedSender<(OwnedUserId, String)> {
                         }
                     }
                     Err(e) => {
-                        error!("Failed to add {emoji} to the account's recent emoji: {e}");
-                        Cx::post_action(RecentEmojisAction::PickNotSaved { user_id, emoji });
+                        error!("Failed to add {} emoji to the account's recent emoji: {e}", picks.len());
+                        for (user_id, emoji) in picks.drain(..) {
+                            Cx::post_action(RecentEmojisAction::PickNotSaved { user_id, emoji });
+                        }
                         break;
                     }
                 }

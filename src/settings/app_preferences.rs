@@ -26,6 +26,9 @@ pub struct AppPreferences {
     pub double_tap_to_react: bool,
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub quick_reaction: QuickReaction,
+    /// Whether the user's recent emoji are shared with their other Matrix clients through their account data.
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    pub sync_recent_emojis: bool,
     /// Whether a mouse or trackpad can scroll views by clicking and dragging them.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub mouse_drag_scrolling: bool,
@@ -75,6 +78,7 @@ impl Default for AppPreferences {
             send_on_enter: true,
             double_tap_to_react: true,
             quick_reaction: QuickReaction::default(),
+            sync_recent_emojis: true,
             mouse_drag_scrolling: true,
             hide_header_on_scroll: true,
             hide_bottom_bars_on_scroll: false,
@@ -116,6 +120,11 @@ impl AppPreferences {
     /// Applies the current `quick_reaction` value.
     pub fn on_quick_reaction_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.quick_reaction = self.quick_reaction.clone();
+    }
+
+    /// Applies the current `sync_recent_emojis` value.
+    pub fn on_sync_recent_emojis_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.sync_recent_emojis = self.sync_recent_emojis;
     }
 
     /// Applies the current `mouse_drag_scrolling` value.
@@ -253,6 +262,7 @@ impl AppPreferences {
         self.on_send_on_enter_changed(cx);
         self.on_double_tap_to_react_changed(cx);
         self.on_quick_reaction_changed(cx);
+        self.on_sync_recent_emojis_changed(cx);
         self.on_mouse_drag_scrolling_changed(cx);
         self.on_hide_header_on_scroll_changed(cx);
         self.on_hide_bottom_bars_on_scroll_changed(cx);
