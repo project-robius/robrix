@@ -11,4 +11,6 @@ extend-ignore-re = ['(?i)#x?[0-9a-f]{1,8}\b']
 extend-exclude = [
     "licenses/THIRD-PARTY-NOTICES.html",
     "licenses/THIRD-PARTY-LICENSES.md",
+    # Unicode's and Discord's words for each emoji, like "claus" for Santa.
+    "src/shared/emoji_keywords.tsv",
 ]
