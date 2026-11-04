@@ -44,7 +44,7 @@ use crate::{
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
         user_verification_cache::{UserVerificationState, UserVerificationUpdate, enqueue_user_verification_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
-        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
+        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{handle_recent_emojis_subscriber, spawn_recent_emoji_writer}
     }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber}
 };
 
@@ -925,6 +925,13 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reaction: String,
     },
+    /// Request to add the given emoji to the front of the account's recently used emoji.
+    ///
+    /// The updated list arrives via a [`RecentEmojisAction::Updated`](crate::shared::recent_emojis::RecentEmojisAction)
+    /// action once the homeserver syncs it back to us, or a `RecentEmojisAction::PickNotSaved` if adding it failed.
+    AddRecentEmoji {
+        emoji: String,
+    },
     /// Redacts (deletes) the given event in the given room.
     #[doc(alias("delete"))]
     RedactMessage {
@@ -1101,6 +1108,7 @@ async fn matrix_worker_task(
     // The async tasks spawned to handle media downloads, keyed by MxcUri.
     // Here we intentionally use a `std` Mutex, not async, since it's cheaper under no contention.
     let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, ActiveDownload>>> = Arc::new(Mutex::new(HashMap::new()));
+    let recent_emoji_writer = spawn_recent_emoji_writer();
 
     while let Some(request) = request_receiver.recv().await {
         match request {
@@ -3173,6 +3181,11 @@ async fn matrix_worker_task(
                 });
             },
 
+            MatrixRequest::AddRecentEmoji { emoji } => {
+                let Some(user_id) = current_user_id() else { continue };
+                let _ = recent_emoji_writer.send((user_id, emoji));
+            },
+
             MatrixRequest::RedactMessage { timeline_kind, timeline_event_id, reason } => {
                 let Some(timeline) = get_timeline(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found for redact message request");
@@ -4245,6 +4258,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             handle_recovery_state_subscriber(client.clone(), e2ee_ready_sender.clone()),
             // Listen for updates to the blocked user list.
             handle_blocked_user_list_subscriber(client.clone()),
+            handle_recent_emojis_subscriber(client.clone()),
             // Listen for session changes, e.g., when the access token becomes invalid.
             handle_session_changes(client.clone()),
         ];

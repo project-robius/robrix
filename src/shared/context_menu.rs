@@ -2,7 +2,10 @@
 
 use makepad_widgets::*;
 
-use crate::home::{nav_history_menu::NavHistoryMenuWidgetRefExt, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt};
+use crate::{
+    home::{nav_history_menu::NavHistoryMenuWidgetRefExt, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt},
+    shared::emoji_picker_popup::EmojiPickerPopupWidgetRefExt,
+};
 
 pub const BUTTON_HEIGHT: f64 = 38.0;
 pub const MENU_WIDTH: f64 = 235.0;
@@ -91,6 +94,25 @@ script_mod! {
             border_color: (COLOR_CONTEXT_MENU_BORDER)
         }
     }
+
+    // The panel of a popup that floats beside what opened it, like the mention popup or the emoji picker.
+    // Like `ContextMenuContent`, each popup declares its own children.
+    mod.widgets.FloatingPopupContent = RoundedShadowView {
+        width: Fill, height: Fill
+        flow: Down
+        show_bg: true
+        cursor: MouseCursor.Default
+        grab_key_focus: false
+        draw_bg +: {
+            color: (COLOR_BG_FLOATING)
+            border_radius: 5.0
+            border_size: 1.0
+            border_color: (COLOR_MENTION_POPUP_BORDER)
+            shadow_color: (COLOR_SHADOW_STRONG)
+            shadow_radius: 12.0
+            shadow_offset: vec2(0.0, 3.0)
+        }
+    }
 }
 
 /// An action broadcast when a context menu was closed.
@@ -122,18 +144,20 @@ pub fn is_tap_outside(cx: &mut Cx, hit: &Hit, content_area: Area) -> bool {
     fue.is_over && !content_rect.contains(fue.abs_start) && !content_rect.contains(fue.abs)
 }
 
-/// Returns whether any of the app's context menus is shown.
+/// Returns whether any of the app's context menus (or its emoji picker popup) is shown.
 pub fn is_context_menu_shown(cx: &mut Cx, ui: &WidgetRef) -> bool {
     ui.new_message_context_menu(cx, ids!(new_message_context_menu)).is_currently_shown(cx)
         || ui.room_context_menu(cx, ids!(room_context_menu)).is_currently_shown(cx)
         || ui.nav_history_menu(cx, ids!(nav_history_menu)).is_currently_shown()
+        || ui.emoji_picker_popup(cx, ids!(emoji_picker_popup)).is_currently_shown()
 }
 
-/// Closes any of the app's context menus that are shown.
+/// Closes any of the app's context menus (or its emoji picker popup) that are shown.
 pub fn close_context_menus(cx: &mut Cx, ui: &WidgetRef) {
     ui.new_message_context_menu(cx, ids!(new_message_context_menu)).close(cx);
     ui.room_context_menu(cx, ids!(room_context_menu)).close(cx);
     ui.nav_history_menu(cx, ids!(nav_history_menu)).close(cx);
+    ui.emoji_picker_popup(cx, ids!(emoji_picker_popup)).close(cx);
 }
 
 /// Returns a margin that positions the context menu at `anchor_pos`,

@@ -19,7 +19,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, clear_all_invited_rooms}, rooms_list_header::{RoomsListHeaderAction, SyncStatusGlobal, get_last_synced_at}
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::{UserVerificationRequestAction, VerificationAction}, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{RecentEmojis, RecentEmojisAction, clear_recent_emojis, handle_recent_emojis_action, restore_recent_emojis, save_recent_emojis}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::{UserVerificationRequestAction, VerificationAction}, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
         show_dm_room_creation_confirmation,
@@ -113,6 +113,7 @@ script_mod! {
                         new_message_context_menu := NewMessageContextMenu { }
                         room_context_menu := RoomContextMenu { }
                         nav_history_menu := NavHistoryMenu { }
+                        emoji_picker_popup := EmojiPickerPopup { }
 
                         // A modal to confirm sending out an invite to a room.
                         invite_confirmation_modal := Modal {
@@ -220,6 +221,7 @@ impl ScriptHook for App {
         vm.with_cx_mut(|cx| {
             crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
             crate::shared::mention_popup::set_global_mention_popup(cx, &self.ui);
+            crate::shared::emoji_picker_popup::set_global_emoji_picker_popup(cx, &self.ui);
         });
     }
 }
@@ -440,6 +442,11 @@ impl MatchEvent for App {
                 continue;
             }
 
+            if let Some(recent_emojis_action) = action.downcast_ref::<RecentEmojisAction>() {
+                handle_recent_emojis_action(cx, recent_emojis_action);
+                continue;
+            }
+
             if let Some(action) = action.downcast_ref::<ShowNavHistoryMenuAction>() {
                 show_nav_history_menu(cx, &self.ui, &self.app_state, action);
                 continue;
@@ -538,6 +545,9 @@ impl MatchEvent for App {
                     self.app_state.logged_in = logged_in_actual;
                     self.app_state.recovery_state = recovery_state;
                     room_pane::restore_saved_layout(self.app_state.room_pane_layout);
+                    if let Some(user_id) = current_user_id() {
+                        restore_recent_emojis(cx, &user_id, self.app_state.recent_emojis.clone());
+                    }
                     // Broadcast the restored preferences first so listeners
                     // (e.g. the Dock's captured `room_screen` template) are
                     // refreshed before `LoadDockFromAppState` instantiates
@@ -771,6 +781,7 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_timeline_states(cx);
     clear_avatar_cache(cx);
     clear_room_preview_cache(cx);
+    clear_recent_emojis(cx);
 }
 
 #[derive(Debug)]
@@ -855,7 +866,7 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        // The mentionable popup needs special top-level handling to close it if needed.
+        // The mentionable and emoji picker popups need special top-level handling to close them if needed.
         if matches!(event, Event::Draw(_) | Event::BackPressed { .. })
             || matches!(event, Event::KeyDown(key) if key.key_code == KeyCode::Escape)
         {
@@ -863,6 +874,7 @@ impl AppMain for App {
             if cx.has_global::<MentionablePopupRef>() {
                 cx.get_global::<MentionablePopupRef>().clone().close_if_input_inactive(cx);
             }
+            crate::shared::emoji_picker_popup::get_emoji_picker_popup(cx).close_if_owner_inactive(cx);
         }
 
         if let Event::LiveEdit = event {
@@ -1064,6 +1076,7 @@ impl App {
 
         self.app_state.room_pane_layout = room_pane::saved_layout();
         self.app_state.last_synced_at = get_last_synced_at(cx).or(self.app_state.last_synced_at);
+        self.app_state.recent_emojis = save_recent_emojis(cx, &user_id);
         // The rooms list isn't created until it's first shown.
         if cx.has_global::<RoomsListRef>() {
             cx.get_global::<RoomsListRef>().clone().save_space_graph(cx, &user_id);
@@ -1185,6 +1198,9 @@ pub struct AppState {
     /// When we last got a sync response, as of the last time this app state was saved.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub last_synced_at: Option<MilliSecondsSinceUnixEpoch>,
+    /// The emoji that the user picked in Robrix, as of the last time this app state was saved.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub recent_emojis: RecentEmojis,
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.

@@ -67,6 +67,17 @@ script_mod! {
     mod.widgets.ICON_ZOOM_TO_FIT      = crate_resource("self://resources/icons/zoom_to_fit.svg")
     mod.widgets.ICON_ADD_ATTACHMENT   = crate_resource("self://resources/icons/add_attachment.svg")
     mod.widgets.ICON_FILE             = crate_resource("self://resources/icons/file.svg")
+    mod.widgets.ICON_EMOJI            = crate_resource("self://resources/icons/emoji.svg")
+    // The emoji picker's category icons.
+    mod.widgets.ICON_HISTORY          = crate_resource("self://resources/icons/history.svg")
+    mod.widgets.ICON_HAND_WAVE        = crate_resource("self://resources/icons/hand_wave.svg")
+    mod.widgets.ICON_ANIMAL_CAT       = crate_resource("self://resources/icons/animal_cat.svg")
+    mod.widgets.ICON_FOOD_PIZZA       = crate_resource("self://resources/icons/food_pizza.svg")
+    mod.widgets.ICON_VEHICLE_CAR      = crate_resource("self://resources/icons/vehicle_car.svg")
+    mod.widgets.ICON_SPORT_SOCCER     = crate_resource("self://resources/icons/sport_soccer.svg")
+    mod.widgets.ICON_LIGHTBULB        = crate_resource("self://resources/icons/lightbulb.svg")
+    mod.widgets.ICON_SYMBOLS          = crate_resource("self://resources/icons/symbols.svg")
+    mod.widgets.ICON_FLAG             = crate_resource("self://resources/icons/flag.svg")
 
     mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
 
@@ -80,6 +91,17 @@ script_mod! {
 
     mod.widgets.TEXT_SUB = theme.font_regular {
         font_size: (10),
+    }
+
+    // Draws emoji from the color emoji font first, since the regular fonts draw a few of them (like ☀️) in plain black.
+    // Its members match makepad's own, so no font gets loaded twice. Set `ink_centered: false` wherever you use it.
+    mod.widgets.EMOJI_TEXT = TextStyle {
+        font_size: 17
+        line_spacing: 1.0
+        font_family: FontFamily {
+            noto_color_emoji := FontMember{res: crate_resource("makepad_widgets:resources/NotoColorEmoji.ttf") asc: 0.0 desc: 0.0}
+            ibm_plex_text := FontMember{res: crate_resource("makepad_widgets:resources/IBMPlexSans-Text.ttf") asc: -0.1 desc: 0.0}
+        }
     }
 
     mod.widgets.USERNAME_FONT_SIZE = 11

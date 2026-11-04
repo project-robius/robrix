@@ -35,7 +35,7 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-emojis = "0.9.0" # same as matrix-sdk-ui
+emojis = { version = "0.9.0", features = ["serde"] } # same as matrix-sdk-ui
 eyeball = { version = "0.8.8", features = ["tracing"] } # same as matrix-sdk-ui
 eyeball-im = { version = "0.9.1", features = [ "tracing" ] } # same as matrix-sdk-ui
 futures = "0.3"
@@ -58,6 +58,8 @@ matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-fe
     "sso-login",
     ## The SDK no longer registers a rustls crypto provider unless we ask for one.
     "rustls-aws-lc-rs",
+    ## For the account's recently used emoji, which Element and other clients share.
+    "experimental-element-recent-emojis",
 ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false }
 ## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.

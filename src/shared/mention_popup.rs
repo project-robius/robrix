@@ -3,13 +3,15 @@
 //! See MentionableTextInput for more info for how it works with that.
 //! The main widget is an overlay so it can display anywhere within the app window.
 //!
-//! Currently it can show 3 kinds of content in the popup, each rendered by an `AvatarListRow`:
+//! Currently it can show 4 kinds of content in the popup, each rendered by an `AvatarListRow`:
 //! 1. Users to mention within a given room.
 //! 2. Rooms or spaces to insert a link to.
 //! 3. Slash commands.
+//! 4. Emoji whose shortcode or name matches what was typed after a ':'.
 //!
 
 use std::sync::Arc;
+use emojis::Emoji;
 use makepad_widgets::*;
 use crate::{
     shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
@@ -47,22 +49,7 @@ script_mod! {
             clip_x: false, clip_y: false
             width: Fit, height: Fit
 
-            main_content := RoundedShadowView {
-                width: Fill, height: Fill
-                flow: Down
-                show_bg: true
-                cursor: MouseCursor.Default
-                grab_key_focus: false
-                draw_bg +: {
-                    color: (COLOR_BG_FLOATING)
-                    border_radius: 5.0
-                    border_size: 1.0
-                    border_color: (COLOR_MENTION_POPUP_BORDER)
-                    shadow_color: (COLOR_SHADOW_STRONG)
-                    shadow_radius: 12.0
-                    shadow_offset: vec2(0.0, 3.0)
-                }
-
+            main_content := mod.widgets.FloatingPopupContent {
                 header_view := RoundedView {
                     width: Fill, height: #(HEADER_HEIGHT)
                     flow: Right
@@ -94,6 +81,18 @@ script_mod! {
                         command_row := mod.widgets.AvatarListRow {
                             avatar := View { width: 0, height: 0 }
                         }
+                        emoji_row := mod.widgets.AvatarListRow {
+                            avatar_box +: {
+                                align: Align{x: 0.5, y: 0.5}
+                                avatar := Label {
+                                    width: Fit, height: Fit, padding: 0
+                                    draw_text +: {
+                                        ink_centered: false
+                                        text_style: EMOJI_TEXT {}
+                                    }
+                                }
+                            }
+                        }
                         loading_row := mod.widgets.ListLoadingRow {}
                         empty_row := mod.widgets.ListEmptyRow {}
                     }
@@ -123,6 +122,11 @@ pub enum MentionItem {
     NotifyRoom { room_name: String },
     Room(RoomMentionCandidate),
     Command(&'static SlashCommand),
+    Emoji {
+        emoji: &'static Emoji,
+        /// Like ":smile:", if the emoji has a shortcode.
+        shortcode: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -582,6 +586,13 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             let new_widget = list.item(cx, index, id!(command_row));
             new_widget.label(cx, ids!(info.title)).set_text(cx, cmd.usage);
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, cmd.description);
+            new_widget
+        }
+        MentionItem::Emoji { emoji, shortcode } => {
+            let new_widget = list.item(cx, index, id!(emoji_row));
+            new_widget.label(cx, ids!(avatar)).set_text(cx, emoji.as_str());
+            new_widget.label(cx, ids!(info.title)).set_text(cx, shortcode.as_deref().unwrap_or(emoji.name()));
+            new_widget.label(cx, ids!(info.subtitle)).set_text(cx, if shortcode.is_some() { emoji.name() } else { "" });
             new_widget
         }
     }
