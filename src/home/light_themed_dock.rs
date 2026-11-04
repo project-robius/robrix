@@ -318,6 +318,8 @@ script_mod! {
     mod.widgets.RoomTabs = mod.widgets.RoomTabsBase {
         room_tab_actions: mod.widgets.RoomTabActions {}
         dm_verification_badge: mod.widgets.UserVerificationBadge {}
+        tombstone_icon: mod.widgets.TombstoneIcon { visible: true }
+        tooltip_bg_color_tombstoned: (COLOR_BG_DANGER_RED_SOLID)
         tab_title_measure: mod.widgets.RobrixTab.draw_text
     }
 

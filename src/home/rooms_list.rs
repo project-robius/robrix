@@ -368,6 +368,14 @@ pub struct RoomAvatarUpdated {
     pub room_id: OwnedRoomId,
 }
 
+/// The given room was just tombstoned (replaced by a newer room).
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub struct RoomTombstoned {
+    pub room_id: OwnedRoomId,
+}
+
 
 /// A preview of a room's latest event, as shown in its entry in the rooms list.
 #[derive(Debug)]
@@ -1222,6 +1230,7 @@ impl RoomsList {
                 RoomsListUpdate::TombstonedRoom { room_id } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.is_tombstoned = true;
+                        cx.action(RoomTombstoned { room_id: room_id.clone() });
                         let is_direct = room.is_direct;
                         let num_unread_mentions = room.num_unread_mentions;
                         let num_unread_messages = room.num_unread_messages;
@@ -2359,6 +2368,11 @@ impl RoomsListRef {
     /// Returns `true` if this room is loaded and known to our client.
     pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
         self.get_room_state(room_id).is_some()
+    }
+
+    /// Returns `true` if the given joined room has been tombstoned (replaced by a newer room).
+    pub fn is_room_tombstoned(&self, room_id: &OwnedRoomId) -> bool {
+        self.borrow().is_some_and(|inner| inner.all_joined_rooms.get(room_id).is_some_and(|room| room.is_tombstoned))
     }
 
     /// See [`RoomsList::get_room_state()`].

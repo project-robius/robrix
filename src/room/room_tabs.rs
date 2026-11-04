@@ -2,14 +2,15 @@
 
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::{ScrollPhase, finger::TAP_COUNT_DISTANCE};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     app::SelectedRoom,
+    home::rooms_list::{RoomTombstoned, RoomsListRef},
     profile::user_verification_cache::{UserVerificationState, UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
     shared::verification_badge::UserVerificationBadgeWidgetRefExt,
     utils,
 };
-use super::{room_action_bar::{RoomActionBarRef, RoomActionBarWidgetRefExt}, room_tab_hover_card::RoomTabHoverCardWidgetExt};
+use super::{room_action_bar::{RoomActionBarRef, RoomActionBarWidgetRefExt, RoomActionTooltip}, room_tab_hover_card::RoomTabHoverCardWidgetExt};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -25,11 +26,16 @@ pub struct RoomTabs {
     #[live] room_tab_actions: ScriptObjectRef,
     /// The template for the badge shown after a direct room's name, for its other user's verification state.
     #[live] dm_verification_badge: ScriptObjectRef,
+    /// The template for the icon shown before a tombstoned room's name.
+    #[live] tombstone_icon: ScriptObjectRef,
+    #[live] tooltip_bg_color_tombstoned: Vec4f,
     /// Used to measure the room name so we know how wide to make its tab.
     #[live] tab_title_measure: DrawText,
     /// The badge that each tab of a direct room shows after its name.
     /// The key is a tab's ID, and the value is the verification state of that room's other user.
     #[rust] dm_badge_states: FxHashMap<LiveId, UserVerificationState>,
+    #[rust] tombstoned_tabs: FxHashSet<LiveId>,
+    #[rust] tombstone_tooltip: RoomActionTooltip,
     /// The set of each tab's buttons, so we don't recreate them on every draw,
     /// and whether they were last drawn for an active tab and for the focused tab (`None` if not yet drawn).
     #[rust] controls: FxHashMap<LiveId, TabControls>,
@@ -63,6 +69,11 @@ impl RoomTabs {
         let dock = view.dock(cx, ids!(dock));
         let hover_card = view.room_tab_hover_card(cx, ids!(room_tab_hover));
         let hover_available = event.pointer_claimed_area().is_empty();
+        let tombstone_icons = self.visible_tabs.iter()
+            .filter(|tab_id| self.tombstoned_tabs.contains(*tab_id))
+            .filter_map(|tab_id| self.controls.get(tab_id))
+            .map(|controls| controls.tombstone_icon.clone());
+        let is_tombstone_tooltip_shown = self.tombstone_tooltip.handle_tombstone_icons_event(cx, event, tombstone_icons, self.tooltip_bg_color_tombstoned);
         // Just touching the trackpad shouldn't cancel a button press or hide its hover card.
         if !matches!(event, Event::Scroll(scroll) if scroll.phase == ScrollPhase::Touched) {
             self.interaction.update_pending_button_press(cx, event);
@@ -74,7 +85,8 @@ impl RoomTabs {
             view.redraw(cx);
         }
         if let Event::Actions(actions) = event
-            && actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some())
+            && actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some()
+                || a.downcast_ref::<RoomTombstoned>().is_some())
         {
             view.redraw(cx);
         }
@@ -96,7 +108,12 @@ impl RoomTabs {
             view.handle_event(cx, event, scope);
         });
         self.interaction.process_tab_button_actions(cx, event, &dock, &tab_buttons, actions);
-        hover_card.update_hover(cx, event, hover_available, &dock, rooms);
+        // The tombstone icon's tooltip would overlap the hover card, so we only show one of them.
+        if is_tombstone_tooltip_shown {
+            hover_card.hide_for_tooltip(cx);
+        } else {
+            hover_card.update_hover(cx, event, hover_available, &dock, rooms);
+        }
     }
 
     /// Draws the dock first and then places the tab buttons over the dock's drawn tabs. 
@@ -109,6 +126,16 @@ impl RoomTabs {
             {
                 self.dm_badge_states.insert(*tab_id, state);
             }
+        }
+        self.tombstoned_tabs.clear();
+        if cx.has_global::<RoomsListRef>() {
+            let rooms_list = cx.get_global::<RoomsListRef>();
+            self.tombstoned_tabs.extend(rooms.iter()
+                .filter(|(_, room)| matches!(room, SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. })
+                    && rooms_list.is_room_tombstoned(room.room_id())
+                )
+                .map(|(tab_id, _)| *tab_id)
+            );
         }
         let dock = view.dock(cx, ids!(dock));
         let tab_sizes_changed = self.update_room_tab_sizes(cx, &dock, rooms);
@@ -156,15 +183,20 @@ impl RoomTabs {
                 } else {
                     9.0
                 };
+                // A tombstoned room's icon goes between the close button and the name, so the spacing moves the name over.
+                // The name gets cut off to fit between the paddings, ignoring that spacing, so the right padding adds it too.
+                let name_offset = if self.tombstoned_tabs.contains(tab_id) { TOMBSTONE_NAME_OFFSET } else { 0.0 };
                 let title_width = utils::unwrapped_text_width(cx, &self.tab_title_measure, &room.display_name());
-                let width = (38.0 + title_width.ceil() + right).min(275.0);
+                let width = (38.0 + name_offset + title_width.ceil() + right).min(275.0);
                 if !matches!(tab.walk.width, Size::Fixed(value) if value == width)
                     || tab.layout.padding.left != 38.0
-                    || tab.layout.padding.right != right
+                    || tab.layout.padding.right != right + name_offset
+                    || tab.layout.spacing != name_offset
                 {
                     tab.walk.width = Size::Fixed(width);
                     tab.layout.padding.left = 38.0;
-                    tab.layout.padding.right = right;
+                    tab.layout.padding.right = right + name_offset;
+                    tab.layout.spacing = name_offset;
                     tab.redraw(cx);
                     changed = true;
                 }
@@ -217,6 +249,7 @@ impl RoomTabs {
                     drawn_as: None,
                     dm_verification_badge: cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.dm_verification_badge.as_object().into())),
                     dm_badge_drawn_as: None,
+                    tombstone_icon: cx.with_vm(|vm| WidgetRef::script_from_value(vm, self.tombstone_icon.as_object().into())),
                 }
             });
             let body = dock.item(*tab_id);
@@ -247,6 +280,13 @@ impl RoomTabs {
                         });
                     }
                 }
+                // Red doesn't stand out against the focused tab's blue, so there it takes the tab's text color instead.
+                let mut tombstone_icon = controls.tombstone_icon.widget(cx, ids!(icon));
+                if is_focused {
+                    script_apply_eval!(cx, tombstone_icon, { draw_icon +: {color: mod.widgets.COLOR_TEXT_ON_ACCENT} });
+                } else {
+                    script_apply_eval!(cx, tombstone_icon, { draw_icon +: {color: mod.widgets.COLOR_FG_DANGER_RED} });
+                }
             }
             let controls_rect = Rect {
                 pos: dvec2(rect.pos.x + rect.size.x - 33.0, rect.pos.y),
@@ -264,6 +304,15 @@ impl RoomTabs {
                     size: dvec2(DM_BADGE_SIZE, DM_BADGE_SIZE),
                 };
                 controls.dm_verification_badge.draw_walk_all(cx, scope, Walk::abs_rect(badge_rect));
+            }
+            // A new tab's first frame doesn't have room for the icon yet.
+            if self.tombstoned_tabs.contains(tab_id) && tab.layout.spacing == TOMBSTONE_NAME_OFFSET {
+                let icon_rect = Rect {
+                    // The close button ends 4px before the left padding does.
+                    pos: dvec2(rect.pos.x + tab.layout.padding.left - 4.0, rect.pos.y + (rect.size.y - TOMBSTONE_ICON_SIZE) * 0.5),
+                    size: dvec2(TOMBSTONE_ICON_SIZE, TOMBSTONE_ICON_SIZE),
+                };
+                controls.tombstone_icon.draw_walk_all(cx, scope, Walk::abs_rect(icon_rect));
             }
             cx.pop_clip_rect();
             self.visible_tabs.push(*tab_id);
@@ -283,11 +332,16 @@ struct TabControls {
     drawn_as: Option<(bool, bool)>,
     dm_verification_badge: WidgetRef,
     dm_badge_drawn_as: Option<UserVerificationState>,
+    tombstone_icon: WidgetRef,
 }
 
 /// The size of a direct room tab's verification badge, and the gap between it and the room name.
 const DM_BADGE_SIZE: f64 = 15.0;
 const DM_BADGE_GAP: f64 = 5.0;
+/// The size of a tombstoned room tab's icon, which goes right after the close button,
+/// and how far it moves the room name over, which gives the icon the same space on both sides.
+const TOMBSTONE_ICON_SIZE: f64 = 15.0;
+const TOMBSTONE_NAME_OFFSET: f64 = 20.5;
 
 /// State that allows dock tabs to "own" FingerDown drag hits that start on their buttons,
 /// while still only activating those buttons upon FingerUp.
