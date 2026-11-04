@@ -19,22 +19,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    // A cancel icon to be displayed in the RoomsListEntry when the room is tombstoned.
-    mod.widgets.TombstoneIcon = View {
-        width: Fit, height: Fit,
-        visible: false,
-
-        Icon {
-            width: 19, height: 19,
-            align: Align{x: 0.5, y: 0.5}
-            draw_icon +: {
-                svg: (ICON_TOMBSTONE)
-                color: (COLOR_FG_DANGER_RED)
-            }
-            icon_walk: Walk{ width: 15, height: 15 }
-        }
-    }
-
     mod.widgets.RoomName = Label {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: false},

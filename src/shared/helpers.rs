@@ -217,6 +217,22 @@ script_mod! {
     mod.widgets.FillerX = View { width: Fill, height: Fit }
     mod.widgets.FillerY = View { width: Fit,  height: Fill }
 
+    // A cancel icon to be displayed next to a room's name when the room is tombstoned.
+    mod.widgets.TombstoneIcon = View {
+        width: 19, height: 19,
+        visible: false,
+
+        icon := Icon {
+            width: Fill, height: Fill,
+            align: Align{x: 0.5, y: 0.5}
+            draw_icon +: {
+                svg: (ICON_TOMBSTONE)
+                color: (COLOR_FG_DANGER_RED)
+            }
+            icon_walk: Walk{ width: 15, height: 15 }
+        }
+    }
+
 
     // The margin around every modal, which also keeps it out of the device's unsafe areas.
     mod.widgets.MODAL_MARGIN = Inset {

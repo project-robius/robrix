@@ -58,25 +58,35 @@ script_mod! {
             icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
         }
 
-        successor_room_avatar := Avatar {
-            width: 30, height: 30,
-            cursor: MouseCursor.Default,
-            text_view +: {
-                text +: {
-                    draw_text +: {
-                        text_style: TITLE_TEXT { font_size: 13.0 }
+        successor_room := View {
+            width: Fill, height: Fit,
+            flow: Right,
+            align: Align{x: 0.5, y: 0.5}
+
+            successor_room_avatar := Avatar {
+                width: 30, height: 30,
+                // The gap before the name is a margin, since the name's max width doesn't count the row's spacing.
+                margin: Inset{right: 8}
+                cursor: MouseCursor.Default,
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: TITLE_TEXT { font_size: 13.0 }
+                        }
                     }
                 }
             }
-        }
 
-        successor_room_name := Label {
-            width: Fill, height: Fit,
-            flow: Flow.Right{wrap: true},
-            align: Align{x: 0.5}
-            draw_text +: {
-                text_style: TITLE_TEXT { font_size: 12 }
-                color: (COLOR_TEXT)
+            // A long name wraps within the space left after the avatar, but only once it has a max number of lines.
+            successor_room_name := Label {
+                width: Fit{max: FitBound.Rel{base: Base.Unused, factor: 1.0}}, height: Fit,
+                flow: Flow.Right{wrap: true},
+                max_lines: 3
+                text_overflow: TextOverflow.Ellipsis
+                draw_text +: {
+                    text_style: TITLE_TEXT { font_size: 12 }
+                    color: (COLOR_TEXT)
+                }
             }
         }
     }

@@ -4,6 +4,7 @@ use makepad_widgets::{makepad_platform::event::finger::TouchState, *};
 
 use matrix_sdk::ruma::OwnedRoomId;
 use crate::{
+    home::rooms_list::{RoomTombstoned, RoomsListRef},
     profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
     shared::{popup_list::{enqueue_popup_notification, PopupKind}, verification_badge::UserVerificationBadgeWidgetExt},
     utils,
@@ -149,6 +150,7 @@ script_mod! {
             color: (COLOR_TRANSPARENT)
         }
         shadow_color: (COLOR_HEADER_SHADOW)
+        tooltip_bg_color_tombstoned: (COLOR_BG_DANGER_RED_SOLID)
 
         // A long press on one of these shows its tooltip.
         room_info_button            := mod.widgets.RoomActionButton {enable_long_press: true, draw_icon.svg: ICON_INFO}
@@ -242,6 +244,7 @@ script_mod! {
             cursor: MouseCursor.Hand
             grab_key_focus: false
             dm_verification_badge := UserVerificationBadge { margin: Inset{left: 4} }
+            tombstone_icon := mod.widgets.TombstoneIcon { margin: Inset{left: 2} }
             title := Label {
                 width: Fill, height: Fit
                 margin: Inset{left: 4, right: 4}
@@ -304,6 +307,7 @@ pub struct RoomActionBar {
     #[apply_default] animator: Animator,
     #[live] draw_shadow: DrawQuad,
     #[live] shadow_color: Vec4f,
+    #[live] tooltip_bg_color_tombstoned: Vec4f,
     /// Whether we're in desktop view mode (`true`) or mobile view mode (`false`).
     #[live(true)] is_desktop_mode: bool,
     /// Whether the full list of buttons is expanded (or is sliding into view).
@@ -322,6 +326,7 @@ pub struct RoomActionBar {
     #[rust] latest_header_height: Option<f64>,
     #[rust] redraw_next_frame: NextFrame,
     #[rust] icon_tooltip: RoomActionTooltip,
+    #[rust] tombstone_tooltip: RoomActionTooltip,
     /// The kinds of room panes that are shown, whose buttons are highlighted.
     #[rust] shown_panes: Vec<RoomPaneKind>,
     /// The shown panes whose buttons were last highlighted, or `None` if they must be highlighted again.
@@ -354,7 +359,8 @@ impl Widget for RoomActionBar {
         }
         if !self.is_desktop_mode
             && let Event::Actions(actions) = event
-            && actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some())
+            && actions.iter().any(|a| a.downcast_ref::<UserVerificationStatesUpdated>().is_some()
+                || a.downcast_ref::<RoomTombstoned>().is_some())
         {
             self.redraw(cx);
         }
@@ -380,6 +386,8 @@ impl Widget for RoomActionBar {
                     .filter(|_| !is_actions)
                 );
             self.icon_tooltip.handle_event(cx, event, buttons, TooltipPosition::Bottom);
+            let tombstone_icon = std::iter::once_with(|| self.view.child(id!(title_container)).child(id!(tombstone_icon)));
+            self.tombstone_tooltip.handle_tombstone_icons_event(cx, event, tombstone_icon, self.tooltip_bg_color_tombstoned);
         }
         self.view.handle_event(cx, event, scope);
         if let Event::Actions(actions) = event {
@@ -388,11 +396,24 @@ impl Widget for RoomActionBar {
             {
                 self.set_expanded(cx, !self.is_expanded, true);
             }
-            if !self.is_desktop_mode
-                && let Some(fe) = self.view.child(id!(title_container)).as_view().finger_up(actions)
-                && fe.is_over && fe.is_primary_hit() && fe.was_tap()
-            {
-                cx.widget_action(self.widget_uid(), RoomActionBarAction::TogglePane(RoomPaneKind::RoomInfo));
+            if !self.is_desktop_mode {
+                let title_container = self.view.child(id!(title_container));
+                let tombstone_icon = title_container.child(id!(tombstone_icon));
+                // A touchscreen can't hover over the tombstone icon, so a tap or long press on it shows its tooltip.
+                let is_on_tombstone_icon = |abs| tombstone_icon.visible() && tombstone_icon.area().clipped_rect(cx).contains(abs);
+                match actions.find_widget_action(title_container.widget_uid()).map(|action| action.cast::<ViewAction>()) {
+                    Some(ViewAction::FingerUp(fe)) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                        if is_on_tombstone_icon(fe.abs) {
+                            self.tombstone_tooltip.show_tombstone_icon_tooltip(cx, &tombstone_icon, self.tooltip_bg_color_tombstoned);
+                        } else {
+                            cx.widget_action(self.widget_uid(), RoomActionBarAction::TogglePane(RoomPaneKind::RoomInfo));
+                        }
+                    }
+                    Some(ViewAction::FingerLongPress(fe)) if is_on_tombstone_icon(fe.abs) => {
+                        self.tombstone_tooltip.show_tombstone_icon_tooltip(cx, &tombstone_icon, self.tooltip_bg_color_tombstoned);
+                    }
+                    _ => {}
+                }
             }
             for (id, label, action) in ACTIONS {
                 if self.view.button(cx, &[id]).clicked(actions)
@@ -413,18 +434,23 @@ impl Widget for RoomActionBar {
         }
         let width = (cx.peek_walk_turtle(walk).size.x - self.view.layout.padding.left - self.view.layout.padding.right).max(0.0);
         let inline = if !self.is_desktop_mode {
+            let shown_width = |view: &View| if view.visible { view.walk.width.to_fixed().unwrap_or(0.0) + view.walk.margin.width() } else { 0.0 };
             let dm_verification_state = self.room_id.as_ref()
                 .and_then(|room_id| get_or_fetch_dm_user_verification_state(cx, room_id));
             let badge = self.view.user_verification_badge(cx, ids!(title_container.dm_verification_badge));
             badge.show_state(cx, dm_verification_state);
-            let badge_width = badge.borrow()
-                .filter(|badge| badge.visible)
-                .map_or(0.0, |badge| badge.walk.width.to_fixed().unwrap_or(0.0) + badge.walk.margin.width());
+            let badge_width = badge.borrow().map_or(0.0, |badge| shown_width(&badge));
+            let is_tombstoned = self.room_id.as_ref().is_some_and(|room_id|
+                cx.has_global::<RoomsListRef>() && cx.get_global::<RoomsListRef>().is_room_tombstoned(room_id)
+            );
+            let tombstone_icon = self.view.child(id!(title_container)).child(id!(tombstone_icon));
+            tombstone_icon.set_visible(cx, is_tombstoned);
+            let tombstone_width = tombstone_icon.as_view().borrow().map_or(0.0, |icon| shown_width(&icon));
             let title = self.view.label(cx, ids!(title_container.title));
             let title_width = title.borrow().map(|title| {
                 utils::unwrapped_text_width(cx, &title.draw_text, &title.text()) + title.walk.margin.width()
             }).unwrap_or(width);
-            inline_count(width, badge_width + title_width)
+            inline_count(width, badge_width + tombstone_width + title_width)
         } else {
             // in desktop view mode, the dock tabs only show the expand/collapse button.
             0
@@ -565,6 +591,7 @@ impl RoomActionBar {
 
     fn update_layout(&mut self, cx: &mut Cx, width: f64, inline: usize, show_overflow: bool) {
         self.icon_tooltip.hide(cx);
+        self.tombstone_tooltip.hide(cx);
         self.view.show_bg = self.is_desktop_mode && show_overflow;
         self.view.walk.height = if show_overflow {
             Size::Fit { min: None, max: None }
@@ -677,6 +704,10 @@ impl RoomActionBarRef {
     }
 }
 
+const TOMBSTONED_ROOM_TOOLTIP: &str = "This room has been replaced by a newer one.";
+/// The icons that mark tombstoned rooms are small, so their tooltip's callout stays a few pixels away from them.
+const TOMBSTONED_ROOM_TOOLTIP_GAP: f64 = 4.0;
+
 /// This uses the main top-level app's tooltip but doesn't consume hits.
 #[derive(Default)]
 pub(crate) struct RoomActionTooltip {
@@ -696,6 +727,40 @@ impl RoomActionTooltip {
         event: &Event,
         buttons: impl IntoIterator<Item = (WidgetRef, &'static str)>,
         position: TooltipPosition,
+    ) -> bool {
+        self.handle_event_with_options(cx, event, buttons, CalloutTooltipOptions { position, ..Default::default() }, 0.0)
+    }
+
+    /// Like [`Self::handle_event()`], but for the icons that mark tombstoned rooms, with the given tooltip background.
+    pub fn handle_tombstone_icons_event(
+        &mut self,
+        cx: &mut Cx,
+        event: &Event,
+        icons: impl IntoIterator<Item = WidgetRef>,
+        bg_color: Vec4,
+    ) -> bool {
+        // An icon can't be long-pressed like a button, so its owner shows this for a tap or long press instead.
+        if let Event::Actions(_) = event {
+            return self.hovered.is_some();
+        }
+        let icons = icons.into_iter().map(|icon| (icon, TOMBSTONED_ROOM_TOOLTIP));
+        self.handle_event_with_options(cx, event, icons, tombstone_tooltip_options(bg_color), TOMBSTONED_ROOM_TOOLTIP_GAP)
+    }
+
+    /// Shows the tooltip of the given icon that marks a tombstoned room, e.g., when it's tapped or long-pressed.
+    pub fn show_tombstone_icon_tooltip(&mut self, cx: &mut Cx, icon: &WidgetRef, bg_color: Vec4) {
+        let rect = icon.area().clipped_rect(cx);
+        self.show(cx, icon.widget_uid(), TOMBSTONED_ROOM_TOOLTIP, rect, tombstone_tooltip_options(bg_color), TOMBSTONED_ROOM_TOOLTIP_GAP);
+    }
+
+    /// Like [`Self::handle_event()`], but shows the tooltip with the given options, `gap` pixels away from its target.
+    fn handle_event_with_options(
+        &mut self,
+        cx: &mut Cx,
+        event: &Event,
+        buttons: impl IntoIterator<Item = (WidgetRef, &'static str)>,
+        options: CalloutTooltipOptions,
+        gap: f64,
     ) -> bool {
         // determine which tab is being hovered over, and get its target info:
         // `(tab widget uid, tab text, tab area's rect)`.
@@ -733,17 +798,28 @@ impl RoomActionTooltip {
             | Event::WindowLostFocus(_) | Event::WindowGeomChange(_) | Event::ClearHover => None,
             _ => return self.hovered.is_some(),
         };
-        if target.as_ref().map(|(uid, _, _)| *uid) != self.hovered {
-            self.hide(cx);
-            if let Some((uid, text, rect)) = target {
-                self.hovered = Some(uid);
-                cx.widget_action(uid, TooltipAction::HoverIn {
-                    text: text.into(),
-                    widget_rect: rect,
-                    options: CalloutTooltipOptions { position, ..Default::default() },
-                });
-            }
+        match target {
+            Some((uid, text, rect)) => self.show(cx, uid, text, rect, options, gap),
+            None => self.hide(cx),
         }
         self.hovered.is_some()
     }
+
+    /// Shows the tooltip for the widget with the given uid, `gap` pixels away from its `rect`, unless it's already shown.
+    fn show(&mut self, cx: &mut Cx, uid: WidgetUid, text: &str, rect: Rect, options: CalloutTooltipOptions, gap: f64) {
+        if self.hovered == Some(uid) {
+            return;
+        }
+        self.hide(cx);
+        self.hovered = Some(uid);
+        cx.widget_action(uid, TooltipAction::HoverIn {
+            text: text.into(),
+            widget_rect: rect.add_margin(dvec2(gap, gap)),
+            options,
+        });
+    }
+}
+
+fn tombstone_tooltip_options(bg_color: Vec4) -> CalloutTooltipOptions {
+    CalloutTooltipOptions { bg_color: Some(bg_color), position: TooltipPosition::Bottom, ..Default::default() }
 }
