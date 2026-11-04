@@ -5325,7 +5325,7 @@ fn handle_load_app_state(user_id: OwnedUserId) {
         match load_app_state(&user_id).await {
             Ok(Some(app_state)) => {
                 log!("Loaded app state from persistent storage. Restoring now...");
-                Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
+                Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(Box::new(app_state)));
             }
             Ok(None) => {
                 // No saved file (fresh install) or file was unreadable; nothing to restore.

@@ -541,7 +541,7 @@ impl MatchEvent for App {
                     let logged_in_actual = self.app_state.logged_in;
                     // The recovery state isn't persisted, so keep what we already know.
                     let recovery_state = self.app_state.recovery_state;
-                    self.app_state = app_state.clone();
+                    self.app_state = (**app_state).clone();
                     self.app_state.logged_in = logged_in_actual;
                     self.app_state.recovery_state = recovery_state;
                     room_pane::restore_saved_layout(self.app_state.room_pane_layout);
@@ -1436,7 +1436,7 @@ pub enum AppStateAction {
     RoomNameUpdated(RoomNameId),
     /// The given app state was loaded from persistent storage
     /// and is ready to be restored.
-    RestoreAppStateFromPersistentState(AppState),
+    RestoreAppStateFromPersistentState(Box<AppState>),
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.
     ///
