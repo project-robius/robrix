@@ -593,6 +593,9 @@ pub struct HomeScreen {
     /// `Some(None)` means the root view (the rooms list).
     #[rust] interactive_pop_place: Option<Option<SelectedRoom>>,
 
+    /// The screen that a trackpad swipe is pushing in over the current screen (or the rooms list).
+    #[rust] interactive_push_place: Option<SelectedRoom>,
+
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
@@ -805,6 +808,49 @@ impl Widget for HomeScreen {
                             Self::drop_resources_left_behind(cx, app_state, [revealed_place, None]);
                         }
                     }
+                    // A trackpad swipe started dragging a screen in over the current one,
+                    // so we show the place that going forwards one step would show.
+                    StackNavigationTransitionAction::InteractivePushStarted => {
+                        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                        let current_screen = app_state.selected_room.as_ref().filter(|_| stack_navigation.current_view().is_some());
+                        // Going forwards to the rooms list pops the current screen, so a swipe can't do that.
+                        if matches!(app_state.selected_tab, SelectedTab::Home | SelectedTab::Space { .. })
+                            && let Some(Some(next_screen)) = app_state.nav_history.next_place(current_screen, 1, can_show(cx))
+                            && let Some(view_id) = self.populate_mobile_stack_view(cx, &stack_navigation, &next_screen, true)
+                        {
+                            stack_navigation.set_interactive_push_view(cx, view_id);
+                            self.interactive_push_place = Some(next_screen);
+                        } else {
+                            stack_navigation.cancel_interactive_push(cx);
+                        }
+                    }
+                    StackNavigationTransitionAction::InteractivePushCommitted => {
+                        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                        let current_screen = app_state.selected_room.clone().filter(|_| stack_navigation.current_view().is_some());
+                        let next_place = app_state.nav_history.next_place(current_screen.as_ref(), 1, can_show(cx));
+                        // Going forwards may lead elsewhere at this point. For ex, if the pushed room was left.
+                        if let Some(Some(next_screen)) = next_place
+                            && self.interactive_push_place.take_if(
+                                |pushed_screen| is_same_place(Some(pushed_screen), Some(&next_screen))
+                            ).is_some()
+                        {
+                            cancel_all_dictation();
+                            let old_screens = Self::screens_with_resources(app_state);
+                            app_state.selected_room = Some(next_screen);
+                            app_state.nav_history.record_going_forward_from(current_screen, 1, can_show(cx));
+                            Self::drop_resources_left_behind(cx, app_state, old_screens);
+                            if let Some(view_id) = stack_navigation.destination_view() {
+                                stack_navigation.view_by_id(cx, view_id).room_screen(cx, ids!(room_screen)).mark_as_opened(cx);
+                            }
+                        } else {
+                            stack_navigation.cancel_interactive_push(cx);
+                        }
+                    }
+                    StackNavigationTransitionAction::InteractivePushCancelled => {
+                        if let Some(pushed_screen) = self.interactive_push_place.take() {
+                            Self::drop_resources_left_behind(cx, app_state, [Some(pushed_screen), None]);
+                        }
+                    }
                     _ => {}
                 }
 
@@ -964,8 +1010,9 @@ impl Widget for HomeScreen {
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                     self.tab_to_restore_on_mobile = None;
                     // The login screen hides this view, so stop any in-progress backwards swipes.
-                    self.view.stack_navigation(cx, ids!(view_stack)).end_interactive_pop_without_animation(cx);
+                    self.view.stack_navigation(cx, ids!(view_stack)).end_interactive_transition_without_animation(cx);
                     self.interactive_pop_place = None;
+                    self.interactive_push_place = None;
                 }
 
                 match action.downcast_ref() {
@@ -1309,7 +1356,7 @@ impl HomeScreen {
 
     fn clear_mobile_navigation_state(&mut self, cx: &mut Cx) {
         let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
-        stack_navigation.end_interactive_pop_without_animation(cx);
+        stack_navigation.end_interactive_transition_without_animation(cx);
         for view_id in stack_navigation.dynamic_stack_view_ids() {
             let stack_navigation_view = stack_navigation.view_by_id(cx, view_id);
             Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
@@ -1407,7 +1454,7 @@ impl HomeScreen {
             if let AcceptedInviteKind::Space { dock_space: Some(dock_space) } = &kind {
                 self.switch_to_tab(cx, app_state, SelectedTab::Space { space_name_id: dock_space.clone() });
             }
-            self.view.stack_navigation(cx, ids!(view_stack)).end_interactive_pop_without_animation(cx);
+            self.view.stack_navigation(cx, ids!(view_stack)).end_interactive_transition_without_animation(cx);
             // The joined screen takes the invite screen's place, so going back won't show the invite.
             self.push_selected_screen_view(
                 cx,
