@@ -3197,6 +3197,11 @@ impl RoomScreen {
             }
             timeline_state_store::TakeResult::Missing => {
                 let Some(timeline_endpoints) = take_timeline_endpoints(&kind) else {
+                    // The rooms list never loads an outdated room (one that a newer room replaced),
+                    // so if this room isn't loaded yet, we ask for it to be loaded in case it's one of those.
+                    if !cx.has_global::<RoomsListRef>() || !cx.get_global::<RoomsListRef>().is_room_loaded(&room_id) {
+                        submit_async_request(MatrixRequest::LoadOutdatedRoom { room_id: room_id.clone() });
+                    }
                     if let Some(thread_root_event_id) = kind.thread_root_event_id() {
                         submit_async_request(MatrixRequest::CreateThreadTimeline {
                             room_id: room_id.clone(),
