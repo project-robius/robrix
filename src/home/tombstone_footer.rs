@@ -182,7 +182,7 @@ impl TombstoneFooter {
                 replacement_reason.set_text(cx, DEFAULT_TOMBSTONE_REASON);
                 join_successor_button.set_text(cx, DEFAULT_JOIN_BUTTON_TEXT);
                 successor_room_avatar.show_text(cx, None, None, "?");
-                successor_room_name.set_text(cx, "(Unknown successor room");
+                successor_room_name.set_text(cx, "(Unknown successor room)");
                 self.successor_info = None;
             }
             SuccessorRoomDetails::Basic { successor_room: sr, via } => {
@@ -192,7 +192,7 @@ impl TombstoneFooter {
                 );
                 join_successor_button.set_text(cx, DEFAULT_JOIN_BUTTON_TEXT);
                 successor_room_avatar.show_text(cx, None, None, "#");
-                successor_room_name.set_text(cx, &format!("Room ID {}", sr.room_id));
+                successor_room_name.set_text(cx, "(Unknown room name)");
                 self.successor_info = Some(BasicRoomDetails::NameAndVia {
                     room_name_id: utils::RoomNameId::empty(sr.room_id.clone()),
                     via: via.clone(),
@@ -229,10 +229,7 @@ impl TombstoneFooter {
                         }
                     }
                 }
-                match room_preview.room_name_id.name_for_avatar() {
-                    Some(n) => successor_room_name.set_text(cx, n),
-                    _ => successor_room_name.set_text(cx, &format!("Unnamed Room, ID: {}", room_preview.room_name_id.room_id())),
-                }
+                successor_room_name.set_text(cx, room_preview.room_name_id.name_for_avatar().unwrap_or("Unnamed Room"));
                 self.successor_info = Some(room_preview.clone().into());
             }
         }
