@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use serde::{Deserialize, Serialize};
 
-use crate::{directory_search::RoomDirectories, persistence};
+use crate::{directory_search::RoomDirectories, home::quick_reaction::QuickReaction, persistence};
 
 /// App-wide user preferences controlled by the App Settings UI.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -21,6 +21,11 @@ pub struct AppPreferences {
     ///   virtual/soft keyboards always insert a newline upon Enter.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub send_on_enter: bool,
+    /// Whether double-tapping (or double-clicking) a message toggles our `quick_reaction` on it.
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    pub double_tap_to_react: bool,
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub quick_reaction: QuickReaction,
     /// Whether a mouse or trackpad can scroll views by clicking and dragging them.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub mouse_drag_scrolling: bool,
@@ -68,6 +73,8 @@ impl Default for AppPreferences {
         Self {
             view_mode: ViewModeOverride::default(),
             send_on_enter: true,
+            double_tap_to_react: true,
+            quick_reaction: QuickReaction::default(),
             mouse_drag_scrolling: true,
             hide_header_on_scroll: true,
             hide_bottom_bars_on_scroll: false,
@@ -99,6 +106,16 @@ impl AppPreferences {
     pub fn on_send_on_enter_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.send_on_enter = self.send_on_enter;
         cx.action(AppPreferencesAction::SendOnEnterChanged(self.send_on_enter));
+    }
+
+    /// Applies the current `double_tap_to_react` value.
+    pub fn on_double_tap_to_react_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.double_tap_to_react = self.double_tap_to_react;
+    }
+
+    /// Applies the current `quick_reaction` value.
+    pub fn on_quick_reaction_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.quick_reaction = self.quick_reaction.clone();
     }
 
     /// Applies the current `mouse_drag_scrolling` value.
@@ -234,6 +251,8 @@ impl AppPreferences {
     pub fn broadcast_all(&self, cx: &mut Cx) {
         self.on_view_mode_changed(cx);
         self.on_send_on_enter_changed(cx);
+        self.on_double_tap_to_react_changed(cx);
+        self.on_quick_reaction_changed(cx);
         self.on_mouse_drag_scrolling_changed(cx);
         self.on_hide_header_on_scroll_changed(cx);
         self.on_hide_bottom_bars_on_scroll_changed(cx);

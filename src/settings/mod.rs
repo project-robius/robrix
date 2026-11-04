@@ -24,8 +24,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
 
 /// How a settings sub-widget should be (re)populated. Both modes re-apply
 /// animator-driven controls, `script_apply_eval` outputs, and code-derived text.
-/// They only differ on *user-mutable* text inputs (currently `display_name_input`
-/// and `thumb_custom_input`).
+/// They only differ on *user-mutable* text inputs (currently `display_name_input`,
+/// `thumb_custom_input` and `quick_reaction_input`).
 #[derive(Clone, Copy)]
 pub(crate) enum PopulateMode {
     /// Full populate. Writes user-mutable inputs from the cached source

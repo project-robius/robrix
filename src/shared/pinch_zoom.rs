@@ -21,21 +21,12 @@ use makepad_widgets::{
     scroll_motion::{estimate_release_velocity, push_sample, stretch_displayed, stretch_raw, FrameClock, ScrollSample, FLING_MIN_TOTAL_DELTA, RUBBER_BAND_TOUCH_RANGE},
     *,
 };
+use crate::shared::double_tap::{DOUBLE_TAP_TIMEOUT, Tap};
 
 /// How far a pointer can move and still be tapping, in points.
 const TOUCH_SLOP: f64 = 8.0;
 /// A press that is held for this long is no longer a tap, in seconds.
 const LONG_PRESS_TIMEOUT: f64 = 0.4;
-/// The second tap of a double tap has to go down within
-/// this many seconds of the first one going down.
-const DOUBLE_TAP_TIMEOUT: f64 = 0.3;
-/// The second tap also has to go down at least
-/// this many seconds after the first one came back up.
-const DOUBLE_TAP_MIN_GAP: f64 = 0.04;
-/// How close together both taps of a double tap have to be, in points.
-const DOUBLE_TAP_SLOP: f64 = 100.0;
-/// The same as [`DOUBLE_TAP_SLOP`], but for both clicks of a mouse's double click.
-const DOUBLE_CLICK_SLOP: f64 = 5.0;
 
 /// The zoom level at which the content is fitted to the viewport.
 const FIT_ZOOM: f64 = 1.0;
@@ -101,13 +92,6 @@ pub enum ReleasedPress {
 struct Pointer {
     uid: u64,
     abs: DVec2,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Tap {
-    down_abs: DVec2,
-    down_time: f64,
-    up_time: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -418,15 +402,10 @@ impl PinchZoom {
                 // A press that catches a flinging content stops it, and isn't a tap.
                 let is_flinging = matches!(self.animation, Animation::Fling { .. });
                 self.gesture = if has_new_press && !is_flinging {
-                    let slop = if pointer.uid == MOUSE_UID { DOUBLE_CLICK_SLOP } else { DOUBLE_TAP_SLOP };
                     Gesture::PossibleTap {
                         down_abs: pointer.abs,
                         down_time: time,
-                        is_second_tap: self.last_tap.is_some_and(|tap| {
-                            time - tap.down_time < DOUBLE_TAP_TIMEOUT
-                                && time - tap.up_time >= DOUBLE_TAP_MIN_GAP
-                                && (pointer.abs - tap.down_abs).length() < slop
-                        }),
+                        is_second_tap: self.last_tap.is_some_and(|tap| tap.is_followed_by(pointer.abs, time, pointer.uid == MOUSE_UID)),
                     }
                 } else {
                     Gesture::Drag

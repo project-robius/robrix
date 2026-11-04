@@ -4,6 +4,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
+    home::quick_reaction::QuickReaction,
     settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride, set_appearance}, text_rendering::{is_simpler_text_rendering_enabled, set_simpler_text_rendering}},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
@@ -29,6 +30,10 @@ const READ_RECEIPTS_PRIVACY_DESC_OWN_DEVICES: &str =
     "<ul><li>Currently: only your own devices can see how far you've read.</li></ul>";
 
 // The descriptions beneath each on/off toggle, as `(on, off)` pairs.
+const DOUBLE_TAP_TO_REACT_DESC: (&str, &str) = (
+    "<ul><li>Currently: double tapping/clicking a message toggles this reaction.</li><li>Type an emoji, a :shortcode:, or any text.</li></ul>",
+    "<ul><li>Currently: double-tapping a message does nothing.</li></ul>",
+);
 const MOUSE_DRAG_SCROLLING_DESC: (&str, &str) = (
     "<ul><li>Currently: scroll via mouse wheel, trackpad, or clicking and dragging.</li></ul>",
     "<ul><li>Currently: scroll via mouse wheel or trackpad swipes.</li></ul>",
@@ -474,6 +479,41 @@ script_mod! {
             body: "<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>"
         }
 
+        SubsectionLabel {
+            margin: Inset{top: 10}
+            text: "Quick Reaction"
+        }
+
+        View {
+            width: Fill, height: Fit
+            flow: Down,
+            margin: Inset{left: 6},
+
+            View {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+                spacing: 6,
+
+                double_tap_to_react_toggle := mod.widgets.RobrixSettingsToggle {
+                    active: true,
+                    text: "Double-tap a message to react with:"
+                }
+                // Read-only while `double_tap_to_react_toggle` is off.
+                quick_reaction_input := RobrixTextInput {
+                    width: 40, height: Fit
+                    // The toggle has more margin above it than below it.
+                    margin: Inset{top: 5}
+                    padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
+                    empty_text: "👍"
+                    autocapitalize: None,
+                    autocorrect: Disabled,
+                }
+            }
+            double_tap_to_react_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `DOUBLE_TAP_TO_REACT_DESC`
+            }
+        }
+
         mouse_drag_scrolling_section := View {
             width: Fill, height: Fit
             flow: Down,
@@ -825,6 +865,37 @@ impl AppSettings {
         }
 
         if is_shown
+            && let Some(enabled) = self.view.check_box(cx, ids!(double_tap_to_react_toggle)).changed(actions)
+            && enabled != app_state.app_prefs.double_tap_to_react
+        {
+            app_state.app_prefs.double_tap_to_react = enabled;
+            Self::update_toggle_description(cx, &self.view, ids!(double_tap_to_react_description), enabled, DOUBLE_TAP_TO_REACT_DESC);
+            Self::set_input_enabled(cx, &self.view, ids!(quick_reaction_input), enabled, Animate::Yes);
+            app_state.app_prefs.on_double_tap_to_react_changed(cx);
+            enqueue_popup_notification(
+                "Updated double-tap to react.",
+                PopupKind::Success,
+                Some(3.0),
+            );
+        }
+
+        let quick_reaction_input = self.view.text_input(cx, ids!(quick_reaction_input));
+        if quick_reaction_input.returned(actions).is_some() || quick_reaction_input.key_focus_lost(actions) {
+            // A blank input goes back to the default reaction.
+            let new_reaction = QuickReaction::from_typed_text(&quick_reaction_input.text()).unwrap_or_default();
+            quick_reaction_input.set_text(cx, new_reaction.as_str());
+            if new_reaction != app_state.app_prefs.quick_reaction {
+                app_state.app_prefs.quick_reaction = new_reaction;
+                app_state.app_prefs.on_quick_reaction_changed(cx);
+                enqueue_popup_notification(
+                    "Updated quick reaction.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
+            }
+        }
+
+        if is_shown
             && let Some(enabled) = self.view.check_box(cx, ids!(mouse_drag_scrolling_toggle)).changed(actions)
             && enabled != app_state.app_prefs.mouse_drag_scrolling
         {
@@ -885,8 +956,7 @@ impl AppSettings {
                 _ => ThumbnailMaxHeight::default(),
             };
             let custom_now = matches!(new_thumb, ThumbnailMaxHeight::Custom(_));
-            Self::set_thumb_custom_input_read_only(cx, &self.view, custom_now);
-            Self::set_thumb_custom_input_disabled(cx, &self.view, custom_now, Animate::Yes);
+            Self::set_input_enabled(cx, &self.view, ids!(thumb_custom_input), custom_now, Animate::Yes);
             if new_thumb != app_state.app_prefs.thumbnail_max_height {
                 app_state.app_prefs.thumbnail_max_height = new_thumb;
                 app_state.app_prefs.on_thumbnail_max_height_changed(cx);
@@ -1020,6 +1090,8 @@ impl AppSettings {
         // `on_after_apply`. Fine here cuz we're outside any apply walk.
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
         send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
+        self.view.check_box(cx, ids!(double_tap_to_react_toggle))
+            .set_active(cx, prefs.double_tap_to_react, Animate::No);
 
         self.view.check_box(cx, ids!(mouse_drag_scrolling_toggle))
             .set_active(cx, prefs.mouse_drag_scrolling, Animate::No);
@@ -1051,6 +1123,7 @@ impl AppSettings {
         // Only write `thumb_custom_input`'s text on initial populate.
         // `on_after_apply` leaves it alone so in-progress edits survive.
         self.view.text_input(cx, ids!(thumb_custom_input)).set_text(cx, &custom_text);
+        self.view.text_input(cx, ids!(quick_reaction_input)).set_text(cx, prefs.quick_reaction.as_str());
     }
 
     /// Re-populated fields set by code, for use after an apply action reset things to DSL defaults.
@@ -1071,6 +1144,8 @@ impl AppSettings {
         view.drop_down2(cx, ids!(mark_as_read_dropdown))
             .set_selected_item(cx, prefs.mark_as_read_behavior.to_index());
         Self::update_mark_as_read_description(cx, view, prefs.mark_as_read_behavior);
+        Self::update_toggle_description(cx, view, ids!(double_tap_to_react_description), prefs.double_tap_to_react, DOUBLE_TAP_TO_REACT_DESC);
+        Self::set_input_enabled(cx, view, ids!(quick_reaction_input), prefs.double_tap_to_react, Animate::No);
         Self::update_toggle_description(cx, view, ids!(mouse_drag_scrolling_description), prefs.mouse_drag_scrolling, MOUSE_DRAG_SCROLLING_DESC);
         Self::update_toggle_description(cx, view, ids!(show_read_receipts_description), prefs.show_read_receipts, SHOW_READ_RECEIPTS_DESC);
         Self::update_toggle_description(cx, view, ids!(show_typing_notices_description), prefs.show_typing_notices, SHOW_TYPING_NOTICES_DESC);
@@ -1097,8 +1172,7 @@ impl AppSettings {
             .set_visible(cx, !cfg!(any(target_os = "linux", target_os = "windows")));
 
         let custom_active = matches!(prefs.thumbnail_max_height, ThumbnailMaxHeight::Custom(_));
-        Self::set_thumb_custom_input_read_only(cx, view, custom_active);
-        Self::set_thumb_custom_input_disabled(cx, view, custom_active, Animate::No);
+        Self::set_input_enabled(cx, view, ids!(thumb_custom_input), custom_active, Animate::No);
     }
 
     fn update_toggle_description(cx: &mut Cx, view: &View, description: &[LiveId], is_on: bool, (on_text, off_text): (&str, &str)) {
@@ -1130,19 +1204,13 @@ impl AppSettings {
         view.html(cx, ids!(send_shortcut_description)).set_text(cx, text);
     }
 
-    /// Sets `is_read_only` based on whether the custom radio is selected.
-    /// Safe anywhere, since it's just a field write plus a redraw.
-    fn set_thumb_custom_input_read_only(cx: &mut Cx, view: &View, enabled: bool) {
-        view.text_input(cx, ids!(thumb_custom_input))
-            .set_is_read_only(cx, !enabled);
-    }
-
-    /// Sets the disabled animator state.
+    /// Makes the given text input editable or read-only, with the matching enabled or disabled look.
     ///
     /// A reload resets the input's disabled look but not its animator state,
     /// so restoring it needs `Animate::No`, since an animated toggle would see nothing to do.
-    fn set_thumb_custom_input_disabled(cx: &mut Cx, view: &View, enabled: bool, animate: Animate) {
-        let input_ref = view.text_input(cx, ids!(thumb_custom_input));
+    fn set_input_enabled(cx: &mut Cx, view: &View, input: &[LiveId], enabled: bool, animate: Animate) {
+        let input_ref = view.text_input(cx, input);
+        input_ref.set_is_read_only(cx, !enabled);
         let Some(mut input) = input_ref.borrow_mut() else { return };
         input.animator_toggle(cx, !enabled, animate, ids!(disabled.on), ids!(disabled.off));
     }

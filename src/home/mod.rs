@@ -37,6 +37,7 @@ pub mod nav_history_menu;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
+pub mod quick_reaction;
 pub mod reaction_strip;
 pub mod room_context_menu;
 pub mod link_preview;

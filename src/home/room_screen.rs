@@ -61,7 +61,7 @@ use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGloba
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::{ReactionData, toggle_reaction}, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts}};
+use super::{event_reaction_list::{ReactionData, toggle_reaction}, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, quick_reaction::QuickReactionTaps, room_read_receipt::{self, populate_read_receipts}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -6355,6 +6355,7 @@ pub struct Message {
     /// The UID of the touch that was claimed by this message or one of its children.
     /// This is used to determine if a future long press was on this message.
     #[rust] pressed_touch_uid: Option<u64>,
+    #[rust] quick_reaction_taps: QuickReactionTaps,
 
     // Belowhere: cached references to child widgets, for efficiency.
     #[rust] replied_to_message_view: Option<LazyViewRef>,
@@ -6529,6 +6530,9 @@ impl Widget for Message {
         match body_hit {
             Hit::FingerDown(_) => {
                 cx.set_key_focus(message_view_area);
+            }
+            Hit::FingerUp(fe) => if let Some(details) = &self.details {
+                self.quick_reaction_taps.handle_finger_up(cx, &fe, details);
             }
             Hit::FingerHoverIn(..) => {
                 // TODO: here, show the "action bar" buttons upon hover-in
@@ -6729,6 +6733,7 @@ impl Message {
         if self.details.as_ref().is_none_or(|d| d.timeline_event_id != details.timeline_event_id) {
             self.is_context_menu_open = false;
             self.pressed_touch_uid = None;
+            self.quick_reaction_taps = QuickReactionTaps::default();
             self.animator_cut(cx, ids!(bg_hover.off));
             self.animator_cut(cx, ids!(highlight.off));
         }

@@ -6,6 +6,7 @@ pub mod avatar;
 pub mod collapsible_header;
 pub mod collapsible_label;
 pub mod context_menu;
+pub mod double_tap;
 pub mod emoji_catalog;
 pub mod emoji_picker;
 pub mod emoji_picker_popup;
