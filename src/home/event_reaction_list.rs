@@ -1,5 +1,6 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache;
+use crate::shared::emoji_catalog::get_shortcode;
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest, TimelineKind};
 use indexmap::IndexMap;
 use makepad_widgets::*;
@@ -117,11 +118,8 @@ impl ReactionData {
             text.push_str(grapheme);
             let Some(emoji) = emojis::get(grapheme) else { continue };
             let next_emoji = graphemes.peek().and_then(|next| emojis::get(next));
-            // Skin tone variants don't have their own shortcode, so we use the default one's.
-            let shortcode = emoji.shortcode()
-                .or_else(|| emoji.with_skin_tone(emojis::SkinTone::Default)?.shortcode());
             if next_emoji != Some(emoji)
-                && let Some(shortcode) = shortcode
+                && let Some(shortcode) = get_shortcode(emoji)
             {
                 text.push_str(&format!(" ({shortcode})"));
                 if next_emoji.is_some() {

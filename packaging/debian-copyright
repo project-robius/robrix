@@ -73,7 +73,9 @@ License: MIT
 Comment: Robrix's own code is MIT. This binary also statically links Rust crates
  under their own licences, predominantly MIT and Apache-2.0. Their copyright
  notices and full licence texts are installed alongside this file as
- THIRD-PARTY-NOTICES.html.
+ THIRD-PARTY-NOTICES.html. It also embeds emoji search keywords from the Unicode
+ CLDR project (Copyright 1991-2026 Unicode, Inc.), under the Unicode License v3,
+ whose full text is also in THIRD-PARTY-NOTICES.html.
 
 License: MIT
  Permission is hereby granted, free of charge, to any person obtaining a copy

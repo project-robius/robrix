@@ -5,9 +5,12 @@
 //! 1. Showing members in a room (upon pressing '@')
 //! 2. Showing known rooms and spaces (upon pressing '#')
 //! 3. Showing slash commands (upon pressing '/')
+//! 4. Showing emoji (upon typing a ':' and the start of a shortcode)
+//!
+//! It also has a button that shows the emoji picker, which inserts emoji into its text.
 
 use std::{collections::{BTreeSet, HashMap}, sync::Arc};
-use makepad_widgets::{text::selection::Cursor, *};
+use makepad_widgets::{text::selection::Cursor, text_input::UndoGroup, *};
 use makepad_widgets::makepad_platform::event::finger::TouchState;
 use matrix_sdk::{
     room::RoomMember,
@@ -19,9 +22,17 @@ use matrix_sdk::{
 use crate::{
     home::rooms_list::RoomsListRef,
     profile::user_profile::member_display_name,
-    shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}, speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt}},
+    shared::{
+        emoji_catalog::{can_draw, get_emoji_catalog, get_shortcode, with_skin_tone, without_skin_tone},
+        emoji_picker::{EmojiPickerAction, get_picked_emoji},
+        emoji_picker_popup::get_emoji_picker_popup,
+        mention_popup::{MentionItem, MentionablePopupRef},
+        recent_emojis::{get_pick_counts, get_skin_tone, record_emoji_pick},
+        slash_commands::{self, SlashCommandOutcome},
+        speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt},
+    },
     sliding_sync::{submit_async_request, MatrixLinkAction, MatrixRequest},
-    utils::{self, MatchQuality},
+    utils::{self, MatchQuality, has_only_soft_keyboard},
 };
 
 script_mod! {
@@ -31,12 +42,33 @@ script_mod! {
     mod.widgets.MentionableTextInput = #(MentionableTextInput::register_widget(vm)) {
         width: Fill,
         height: Fit
-        flow: Down
+        flow: Right
+        // Keep the emoji button at the bottom as the message grows taller.
+        align: Align{y: 1.0}
         allow_slash_commands: true
 
         speech_text_input := SpeechTextInput {
             mic_tooltip: "Dictate a message"
             text_input +: { is_multiline: true }
+        }
+
+        emoji_button := RobrixIconButton {
+            width: 38, height: 38
+            margin: Inset{left: 2}
+            padding: 0, spacing: 0
+            align: Align{x: 0.5, y: 0.5}
+            // Clicking it shouldn't take the key focus away from the message, which hides the soft keyboard.
+            grab_key_focus: false
+            icon_walk: Walk{width: 22, height: 22}
+            draw_icon +: {
+                svg: (ICON_EMOJI)
+                color: (COLOR_SPEECH_BUTTON_ICON)
+            }
+            draw_bg +: {
+                color: (COLOR_TRANSPARENT)
+                color_hover: (COLOR_SPEECH_BUTTON_BG_HOVER)
+                color_down: (COLOR_SPEECH_BUTTON_BG_DOWN)
+            }
         }
     }
 }
@@ -67,8 +99,12 @@ pub struct MentionableTextInput {
     /// The links we generated for mentioned rooms that don't have an alias,
     /// which replace those rooms' plain links right before sending.
     #[rust] mentioned_room_links: HashMap<OwnedRoomId, String>,
-    /// Whether the current mouse press started on the mention popup.
+    /// Whether the current mouse press started on the mention popup or the emoji picker.
     #[rust] was_mouse_down_on_popup: bool,
+    /// Whether our text input had the key focus when the emoji picker was opened, so closing it gives that back.
+    #[rust] was_focused_before_emoji_picker: bool,
+    /// Whether the user's latest typing ended with a colon, which can close a `:shortcode:`.
+    #[rust] was_colon_typed: bool,
 }
 
 impl Widget for MentionableTextInput {
@@ -76,6 +112,10 @@ impl Widget for MentionableTextInput {
         let uid = self.widget_uid();
 
         let popup_ref = self.popup_ref(cx);
+
+        if let Event::TextInput(text_event) = event && cx.has_key_focus(self.text_input_ref().area()) {
+            self.was_colon_typed = text_event.input.ends_with(':');
+        }
 
         // The mentionable popup can close on its own (without us explicitly telling it to),
         // so if that happens we need to clear our state and disconnect from it.
@@ -148,11 +188,13 @@ impl Widget for MentionableTextInput {
             }
         }
 
-        // Don't send presses on the popup to the text input, otherwise it will lose key focus
+        // Don't send presses on the popup (or emoji picker) to the text input, otherwise it will lose key focus
         // and hide the soft keyboard / IME, which is super annoying on mobile.
         // The only exception is when the text input is being dragged.
         let is_on_popup = |cx: &mut Cx, loc: DVec2| {
-            popup_ref.is_open_for(uid) && popup_ref.content_rect(cx).contains(loc)
+            let emoji_picker = get_emoji_picker_popup(cx);
+            (popup_ref.is_open_for(uid) && popup_ref.content_rect(cx).contains(loc))
+                || (emoji_picker.is_open_for(uid) && emoji_picker.content_rect(cx).contains(loc))
         };
         let is_popup_press = match event {
             Event::MouseDown(e) => {
@@ -193,7 +235,47 @@ impl Widget for MentionableTextInput {
                 }
             }
 
+            let emoji_picker = get_emoji_picker_popup(cx);
+            let emoji_button = self.child_by_path(ids!(emoji_button)).as_button();
             let text_input = self.text_input_ref();
+            // We check this upon the press, since releasing it outside of the text input takes its key focus away.
+            if emoji_button.pressed(actions) && !emoji_picker.is_open_for(uid) {
+                self.was_focused_before_emoji_picker = cx.has_key_focus(text_input.area());
+            }
+            if emoji_button.clicked(actions) {
+                if emoji_picker.is_open_for(uid) {
+                    emoji_picker.close(cx);
+                    if self.was_focused_before_emoji_picker {
+                        text_input.take_key_focus(cx);
+                    }
+                } else {
+                    // Only one popup can block scrolling elsewhere at a time.
+                    self.close_popup(cx);
+                    emoji_picker.show_insert_picker(cx, uid, self.child_by_path(ids!(speech_text_input)), self.child_by_path(ids!(emoji_button)));
+                }
+            }
+            if let Some((emoji, keep_open)) = get_picked_emoji(actions, uid) {
+                let selection = text_input.selection();
+                if let Err(e) = text_input.replace_range(cx, selection.start().index .. selection.end().index, &emoji, UndoGroup::New) {
+                    error!("Failed to insert the picked emoji {emoji} into the message input: {e:?}");
+                }
+                // The emoji picker closed, so the user can keep typing right away.
+                if !keep_open {
+                    text_input.set_key_focus(cx);
+                }
+            }
+            // Giving the key focus back to a soft keyboard would also bring it back up.
+            if self.was_focused_before_emoji_picker
+                && !has_only_soft_keyboard(cx)
+                && actions.filter_widget_actions(uid).any(|action| matches!(action.cast(), EmojiPickerAction::Cancelled))
+            {
+                text_input.take_key_focus(cx);
+            }
+
+            // The emoji picker places itself beside us as it's drawn, so it needs to be drawn again as we grow.
+            if emoji_picker.is_open_for(uid) && text_input.changed(actions).is_some() {
+                emoji_picker.redraw(cx);
+            }
             if cx.has_key_focus(text_input.area()) && text_input.changed(actions).is_some() {
                 self.refresh_popup(cx);
             }
@@ -253,8 +335,22 @@ impl MentionableTextInput {
     fn refresh_popup(&mut self, cx: &mut Cx) {
         let text = self.text_input_ref().text();
         let cursor = self.text_input_ref().cursor().index;
+        let was_colon_typed = std::mem::take(&mut self.was_colon_typed);
 
         match detect_trigger(&text, cursor, self.allow_slash_commands) {
+            // Typing a `:shortcode:`'s closing colon replaces it with its emoji right away,
+            // but undoing that brings back the shortcode without replacing it again.
+            Some((TriggerKind::Emoji, start_byte, query)) if query.ends_with(':') => {
+                let shortcode = query.trim_end_matches(':').to_lowercase();
+                if was_colon_typed && let Some(emoji) = get_emoji_catalog().get_by_shortcode(&shortcode).filter(|emoji| can_draw(emoji)) {
+                    self.active_trigger = Some(ActiveTrigger { kind: TriggerKind::Emoji, start_byte });
+                    // A name like "thumbsup_tone3" already has its own skin tone.
+                    let emoji = if without_skin_tone(emoji) == emoji { with_skin_tone(emoji, get_skin_tone(cx)) } else { emoji };
+                    self.selection_made(cx, MentionItem::Emoji { emoji, shortcode: None });
+                } else {
+                    self.close_popup(cx);
+                }
+            }
             Some((kind, start_byte, query)) => {
                 self.active_trigger = Some(ActiveTrigger { kind, start_byte });
                 self.start_matching(cx, kind, &query);
@@ -278,6 +374,22 @@ impl MentionableTextInput {
                     .map(MentionItem::Command)
                     .collect();
                 popup_ref.set_results(cx, uid, Arc::new(items), false, kind.empty_message());
+            }
+            TriggerKind::Emoji => {
+                let skin_tone = get_skin_tone(cx);
+                let items: Vec<MentionItem> = get_emoji_catalog().search(query, &get_pick_counts(cx))
+                    .into_iter()
+                    .map(|entry| MentionItem::Emoji {
+                        emoji: with_skin_tone(entry.emoji, skin_tone),
+                        shortcode: get_shortcode(entry.emoji).map(|shortcode| format!(":{shortcode}:")),
+                    })
+                    .collect();
+                // A colon is also part of emoticons like ":-D", so we don't show anything unless an emoji matched.
+                if items.is_empty() {
+                    self.close_popup(cx);
+                } else {
+                    popup_ref.set_results(cx, uid, Arc::new(items), false, kind.empty_message());
+                }
             }
         }
     }
@@ -352,6 +464,18 @@ impl MentionableTextInput {
                 format!("[{label}]({uri}) ")
             }
             MentionItem::Command(cmd) => format!("/{} ", cmd.name),
+            MentionItem::Emoji { emoji, .. } => {
+                record_emoji_pick(cx, emoji.as_str());
+                // An emoji only replaces the shortcode typed so far, which also keeps the undo history.
+                let text_input = self.text_input_ref();
+                let cursor = text_input.cursor().index;
+                if let Err(e) = text_input.replace_range(cx, trigger.start_byte .. cursor, emoji.as_str(), UndoGroup::New) {
+                    error!("Failed to replace the shortcode before the cursor with {}: {e:?}", emoji.as_str());
+                }
+                self.close_popup(cx);
+                text_input.set_key_focus(cx);
+                return;
+            }
         };
 
         let text_input = self.text_input_ref();
@@ -408,12 +532,16 @@ impl MentionableTextInputRef {
         self.speech_text_input_ref().cancel_dictation(cx);
     }
 
-    /// Dismisses the mentionable popup tied to this mentionable input.
+    /// Dismisses the mentionable popup and emoji picker tied to this mentionable input.
     ///
     /// This is useful for cases where the input was hidden, so the popup also needs to be hidden.
     pub fn hide_popup(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.close_popup(cx);
+        }
+        let emoji_picker = get_emoji_picker_popup(cx);
+        if emoji_picker.is_open_for(self.widget_uid()) {
+            emoji_picker.close(cx);
         }
     }
 
@@ -584,6 +712,7 @@ enum TriggerKind {
     User,
     Room,
     Command,
+    Emoji,
 }
 
 impl TriggerKind {
@@ -592,6 +721,7 @@ impl TriggerKind {
             '@' => Some(TriggerKind::User),
             '#' => Some(TriggerKind::Room),
             '/' => Some(TriggerKind::Command),
+            ':' => Some(TriggerKind::Emoji),
             _ => None,
         }
     }
@@ -601,6 +731,7 @@ impl TriggerKind {
             TriggerKind::User => "Mention a user in this room",
             TriggerKind::Room => "Link to a room or space",
             TriggerKind::Command => "Special Commands",
+            TriggerKind::Emoji => "Insert an emoji",
         }
     }
 
@@ -609,6 +740,7 @@ impl TriggerKind {
             TriggerKind::User => "No matching users",
             TriggerKind::Room => "No matching rooms or spaces",
             TriggerKind::Command => "No matching commands",
+            TriggerKind::Emoji => "No matching emoji",
         }
     }
 
@@ -617,6 +749,7 @@ impl TriggerKind {
             TriggerKind::User => "Loading user members…",
             TriggerKind::Room => "Loading rooms…",
             TriggerKind::Command => "Loading commands…",
+            TriggerKind::Emoji => "Loading emoji…",
         }
     }
 }
@@ -718,6 +851,18 @@ fn detect_trigger(text: &str, cursor_byte: usize, allow_slash_commands: bool) ->
     }
 
     let query = text[token_start + trigger_char.len_utf8()..cursor_byte].to_string();
+    // A colon also starts emoticons like ":D" and ":/", so we wait for two characters of a shortcode
+    // (or one that's already closed with a colon, like ":+1:").
+    if kind == TriggerKind::Emoji {
+        let shortcode = query.strip_suffix(':').unwrap_or(&query);
+        let is_shortcode = !shortcode.is_empty()
+            && shortcode.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '+' | '-'))
+            // Emoticons like ":-D" have a nose, but the only shortcodes that start with one are "+1" and "-1".
+            && (shortcode.starts_with(char::is_alphanumeric) || matches!(shortcode, "+1" | "-1"));
+        if !is_shortcode || (shortcode.len() < 2 && !query.ends_with(':')) {
+            return None;
+        }
+    }
     Some((kind, token_start, query))
 }
 

@@ -1400,3 +1400,8 @@ pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     ).unwrap_or_else(|| String::from("?"));
     FetchedRoomAvatar::Text(first)
 }
+
+/// Returns whether a soft keyboard is the only keyboard, so focusing a text input brings it up.
+pub fn has_only_soft_keyboard(cx: &Cx) -> bool {
+    cfg!(any(target_os = "ios", target_os = "android")) && !cx.keyboard.has_physical_keyboard()
+}
