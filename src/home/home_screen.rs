@@ -26,7 +26,7 @@ use crate::{
     },
     shared::mention_popup::MentionablePopupRef,
     shared::speech_text_input::cancel_all_dictation,
-    sliding_sync::TimelineKind,
+    sliding_sync::{MatrixRequest, OutdatedRoomNotLoaded, TimelineKind, submit_async_request},
     space_service_sync::{SpaceRequest, SpaceRoomListAction},
     utils::{self, RoomNameId},
 };
@@ -1036,6 +1036,22 @@ impl Widget for HomeScreen {
                     _ => {}
                 }
 
+                // The room we're waiting to navigate to still isn't loaded, so we offer to join it.
+                if let Some(OutdatedRoomNotLoaded { room_id }) = action.downcast_ref()
+                    && let Some((destination_room, _)) = self.waiting_to_navigate_to_room.as_ref()
+                        .filter(|(dr, _)| dr.room_id() == room_id)
+                {
+                    log!("Destination room {:?} not loaded, showing join modal...", destination_room.room_name_id());
+                    cx.action(JoinLeaveRoomModalAction::Open {
+                        kind: JoinLeaveModalKind::JoinRoom {
+                            details: destination_room.clone(),
+                            is_space: destination_room.is_space(),
+                            via: destination_room.via().to_vec(),
+                        },
+                        show_tip: false,
+                    });
+                }
+
                 // Unlike a room, a space never gets loaded into the rooms list,
                 // so we navigate to a space as soon as we've joined it.
                 if let Some(JoinRoomResultAction::Joined { room_id }) = action.downcast_ref()
@@ -1559,21 +1575,15 @@ impl HomeScreen {
                 self.navigate_to_space(cx, app_state, destination_room.clone(), room_to_close.cloned());
                 return;
             }
-            // If the destination room is not yet loaded, show a join modal.
+            // The rooms list never loads an outdated room (one that a newer room replaced),
+            // so we ask for this room to be loaded in case it's one of those, and if not, we offer to join it.
             _ => {
-                log!("Destination room {:?} not loaded, showing join modal...", destination_room.room_name_id());
+                log!("Destination room {:?} not loaded, checking if it's an outdated room...", destination_room.room_name_id());
                 self.waiting_to_navigate_to_room = Some((
                     destination_room.clone(),
                     room_to_close.cloned(),
                 ));
-                cx.action(JoinLeaveRoomModalAction::Open {
-                    kind: JoinLeaveModalKind::JoinRoom {
-                        details: destination_room.clone(),
-                        is_space: destination_room.is_space(),
-                        via: destination_room.via().to_vec(),
-                    },
-                    show_tip: false,
-                });
+                submit_async_request(MatrixRequest::LoadOutdatedRoom { room_id: destination_room_id.clone() });
                 return;
             }
         };

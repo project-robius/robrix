@@ -624,6 +624,12 @@ pub enum MatrixRequest {
         /// The ID of the link's room, if the UI already knows it (e.g., from its alias).
         known_room_id: Option<OwnedRoomId>,
     },
+    /// Request to load the given room if it's outdated, i.e., replaced by a newer room that we've joined.
+    ///
+    /// This posts `AppStateAction::RoomLoadedSuccessfully` once it's loaded, or else an [`OutdatedRoomNotLoaded`] action.
+    LoadOutdatedRoom {
+        room_id: OwnedRoomId,
+    },
     /// Request to fetch the full details (the room preview) of a tombstoned room.
     GetSuccessorRoomDetails {
         tombstoned_room_id: OwnedRoomId,
@@ -1430,6 +1436,7 @@ async fn matrix_worker_task(
                         (_, Some(alias)) => client.join_room_by_id_or_alias((&*alias).into(), &via).await,
                         (_, None) => client.join_room_by_id_or_alias((&*room_id).into(), &via).await,
                     };
+                    let joined_room = result.as_ref().ok().cloned();
                     // Show the success/failure popup here in case the UI screen that requested the join action
                     // has been hidden or navigated away from since then.
                     let result_action = match result {
@@ -1461,6 +1468,12 @@ async fn matrix_worker_task(
                         }
                     };
                     Cx::post_action(result_action);
+                    // The rooms list won't load an old room that we just joined if we're already in the room
+                    // that replaced it, so we load it ourselves once we know whether that's the case.
+                    if let Some(room) = joined_room {
+                        wait_for_create_event(&room).await;
+                        load_outdated_room(&room).await;
+                    }
                 });
             }
 
@@ -1483,10 +1496,20 @@ async fn matrix_worker_task(
                     };
                     // Rejecting an invite is the same as leaving a room, but is phrased differently.
                     let was_invite = room.state() == RoomState::Invited;
+                    let was_outdated = is_outdated_room(&room);
                     let room_name_id = RoomNameId::from_room(&room).await;
                     let result_action = match room.leave().await {
                         Ok(()) => {
                             log!("Successfully left room {room_id}.");
+                            // The room list service doesn't track outdated rooms, so it won't remove this one for us.
+                            if was_outdated {
+                                ALL_JOINED_ROOMS.lock().unwrap().remove(&room_id);
+                                enqueue_rooms_list_update(RoomsListUpdate::RemoveRoom {
+                                    room_id: room_id.clone(),
+                                    is_space: room.is_space(),
+                                    new_state: RoomState::Left,
+                                });
+                            }
                             enqueue_popup_notification(
                                 if was_invite {
                                     format!("Successfully rejected the invite to \"{room_name_id}\".")
@@ -1587,6 +1610,19 @@ async fn matrix_worker_task(
                 let _resolve_room_link_task = Handle::current().spawn(async move {
                     let result = resolve_room_link(&client, &link, known_room_id).await;
                     Cx::post_action(RoomLinkResolved { link, result });
+                });
+            }
+
+            MatrixRequest::LoadOutdatedRoom { room_id } => {
+                let Some(client) = get_client() else { continue };
+                let _load_outdated_room_task = Handle::current().spawn(async move {
+                    let is_loaded = match client.get_room(&room_id) {
+                        Some(room) => load_outdated_room(&room).await,
+                        None => false,
+                    };
+                    if !is_loaded {
+                        Cx::post_action(OutdatedRoomNotLoaded { room_id });
+                    }
                 });
             }
 
@@ -3681,6 +3717,15 @@ pub struct TimelineEndpointsRecreated {
     pub room_id: OwnedRoomId,
 }
 
+/// A [`MatrixRequest::LoadOutdatedRoom`] request didn't load its room,
+/// e.g., because we're not in that room, or it isn't outdated.
+///
+/// This is *NOT* a widget action.
+#[derive(Debug)]
+pub struct OutdatedRoomNotLoaded {
+    pub room_id: OwnedRoomId,
+}
+
 /// Returns the timeline and timeline update sender for the given joined room/thread timeline.
 fn get_per_timeline_details<'a>(
     all_joined_rooms: &'a mut HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>,
@@ -4991,6 +5036,28 @@ async fn update_room(
 
 /// Invoked when the room list service has received an update to remove an existing room.
 fn remove_room(room: &RoomListServiceRoomInfo) {
+    // The room list service stops giving us a room once we've moved on to the newer room that replaced it,
+    // but we're still in that old room, so we keep it loaded and just hide it from the rooms list.
+    if is_outdated_room(&room.room) {
+        log!("Hiding outdated room {}, which was replaced by a newer room.", room.room_id);
+        enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: room.room_id.clone() });
+        // We might've only just learned about its tombstone, so the UI doesn't know about that yet.
+        if !room.is_tombstoned {
+            enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: room.room_id.clone() });
+            let timeline_update_senders = ALL_JOINED_ROOMS.lock().unwrap().get(&room.room_id)
+                .map(JoinedRoomDetails::all_timeline_update_senders)
+                .unwrap_or_default();
+            if !timeline_update_senders.is_empty() {
+                spawn_fetch_successor_room_preview(
+                    room.room.client(),
+                    room.room.successor_room(),
+                    room.room_id.clone(),
+                    timeline_update_senders,
+                );
+            }
+        }
+        return;
+    }
     ALL_JOINED_ROOMS.lock().unwrap().remove(&room.room_id);
     enqueue_rooms_list_update(
         RoomsListUpdate::RemoveRoom {
@@ -5156,6 +5223,33 @@ async fn add_new_room(
         is_invite: false,
     });
     Ok(())
+}
+
+/// Returns whether the given room is outdated, meaning that we're still in it
+/// even though we've joined (or since left) the newer room that replaced it.
+///
+/// The room list service hides outdated rooms (see `room_list_service_loop()`).
+fn is_outdated_room(room: &Room) -> bool {
+    room.state() == RoomState::Joined
+        && room.successor_room()
+            .and_then(|successor| room.client().get_room(&successor.room_id))
+            .is_some_and(|successor| matches!(successor.state(), RoomState::Joined | RoomState::Left | RoomState::Banned))
+}
+
+/// Loads the given room if it's an outdated room that isn't loaded yet, since the rooms list never loads those.
+///
+/// It then shows up like any other joined room, just not in the rooms list. Returns whether it got loaded.
+async fn load_outdated_room(room: &Room) -> bool {
+    if room.is_space() || !is_outdated_room(room) || get_room_timeline(room.room_id()).is_some() {
+        return false;
+    }
+    let Some(sync_service) = get_sync_service() else { return false };
+    log!("Loading outdated room {}, which the rooms list hides.", room.room_id());
+    enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: room.room_id().to_owned() });
+    let room_info = RoomListServiceRoomInfo::from_room_ref(room, &current_user_id(), true).await;
+    add_new_room(&room_info, &sync_service.room_list_service()).await
+        .inspect_err(|e| error!("Failed to load outdated room {}: {e:?}", room.room_id()))
+        .is_ok()
 }
 
 /// Reads the account-wide list of blocked users from the account data in the local store.
@@ -5778,11 +5872,12 @@ async fn resolve_room_link(
     // Like the rooms list, we skip over old versions of upgraded rooms (unless one is already loaded),
     // and show the newest version instead.
     //
-    // TODO: we can't yet show or jump to messages in an older tombstoned/upgraded room, though.
+    // A link to a message still shows that message in its own room, though, even if it's an old version.
     const UPGRADED_ROOM_ERROR: &str =
         "Couldn't open that link: it points to an older version of a room that has since been upgraded.";
     let mut upgraded_room_ids = Vec::new();
-    while (!room.is_space() || room.state() == RoomState::Invited)
+    while link.event_id.is_none()
+        && (!room.is_space() || room.state() == RoomState::Invited)
         && let Some(successor) = room.successor_room()
         && let Some(successor_room) = client.get_room(&successor.room_id)
         && (room.state() != RoomState::Joined
@@ -5790,7 +5885,7 @@ async fn resolve_room_link(
         && get_room_timeline(room.room_id()).is_none()
     {
         upgraded_room_ids.push(room.room_id().to_owned());
-        if link.event_id.is_some() || upgraded_room_ids.contains(&successor.room_id) {
+        if upgraded_room_ids.contains(&successor.room_id) {
             return Err(UPGRADED_ROOM_ERROR.into());
         }
         room = successor_room;
