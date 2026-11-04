@@ -6,7 +6,11 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeContent, MsgLikeKind, TimelineEventItemId};
 
-use crate::{home::send_status_indicator::is_send_error_retryable, shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside}, sliding_sync::UserPowerLevels};
+use crate::{
+    home::{event_reaction_list::get_typed_reaction, reaction_strip::ReactionStripWidgetExt, send_status_indicator::is_send_error_retryable},
+    shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside},
+    sliding_sync::UserPowerLevels,
+};
 
 use super::room_screen::MessageAction;
 
@@ -25,15 +29,17 @@ script_mod! {
 
             divider_after_retry := mod.widgets.ContextMenuDivider { }
 
-            // Shows either the "Add Reaction" button or a reaction text input.
-            react_view := View {
+            reaction_strip := mod.widgets.ReactionStrip {}
+
+            // Shows either the "Add Text Reaction…" button or a reaction text input.
+            text_reaction_view := View {
                 flow: Overlay
                 height: #(BUTTON_HEIGHT)
                 align: Align{y: 0.5}
 
-                react_button := mod.widgets.ContextMenuButton {
-                    draw_icon +: { svg: (ICON_ADD_REACTION) }
-                    text: "Add Reaction"
+                text_reaction_button := mod.widgets.ContextMenuButton {
+                    draw_icon +: { svg: (ICON_ADD_TEXT_REACTION) }
+                    text: "Add Text Reaction…"
                 }
 
                 reaction_input_view := View {
@@ -41,7 +47,7 @@ script_mod! {
                     height: #(BUTTON_HEIGHT)
                     align: Align{y: 0.5}
                     flow: Right,
-                    visible: false, // will be shown once the react_button is clicked
+                    visible: false, // will be shown once the text_reaction_button is clicked
 
                     reaction_text_input := RobrixTextInput {
                         width: Fill,
@@ -55,6 +61,7 @@ script_mod! {
                         // However, makepad doesn't yet support this feature,
                         // so we just make the TextInput non-wrap.
                         flow: Flow.Right{wrap: false}, // do not wrap
+                        keep_focus_on_submit: true
                         draw_bg +: {
                             border_size: 0.0
                             color: (COLOR_BG_FLOATING)
@@ -230,7 +237,8 @@ impl MessageAbilities {
         abilities.set(
             Self::CanReact,
             // don't let the user react to unsent messages, that doesn't make sense
-            user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some(),
+            user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some()
+                && !matches!(message.kind, MsgLikeKind::Redacted),
         );
         abilities.set(Self::HasHtml, has_html);
         abilities
@@ -276,6 +284,8 @@ pub struct NewMessageContextMenu {
     #[rust] details: Option<MessageDetails>,
     /// Hold a cancel scope while this context menu is shown, so it receives Escape/Back cancel events.
     #[rust] cancel_scope: Option<CancelScope>,
+    /// Whether to put the key focus in the reaction text input once it's drawn, since it can't take it before that.
+    #[rust] is_reaction_input_focus_pending: bool,
 }
 
 impl Widget for NewMessageContextMenu {
@@ -288,6 +298,9 @@ impl Widget for NewMessageContextMenu {
         if self.visible {
             let main_content_area = self.view(cx, ids!(main_content)).area();
             cx.block_scrolling_except_within(main_content_area);
+        }
+        if std::mem::take(&mut self.is_reaction_input_focus_pending) {
+            self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input)).take_key_focus(cx);
         }
         step
     }
@@ -327,26 +340,50 @@ impl WidgetMatchEvent for NewMessageContextMenu {
         let Some(details) = self.details.as_ref() else { return };
         let mut close_menu = false;
 
+        let reaction_strip = self.view.reaction_strip(cx, ids!(reaction_strip));
         let reaction_text_input = self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input));
         let reaction_send_button = self.view.button(cx, ids!(reaction_input_view.reaction_send_button));
-        if reaction_send_button.clicked(actions)
-            || reaction_text_input.returned(actions).is_some()
-        {
+        if let Some(emoji) = reaction_strip.clicked_emoji(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid, 
+                details.room_screen_widget_uid,
                 MessageAction::React {
                     details: details.clone(),
-                    reaction: reaction_text_input.text(),
+                    reaction: emoji.as_str().to_owned(),
                 },
             );
             close_menu = true;
         }
-        else if self.button(cx, ids!(react_button)).clicked(actions) {
+        else if reaction_strip.add_reaction_clicked(actions) {
+            // The emoji picker opens right where this menu is, so we get its rect before it closes.
+            cx.widget_action(
+                details.room_screen_widget_uid,
+                MessageAction::OpenReactionPicker {
+                    details: details.clone(),
+                    anchor_rect: self.view(cx, ids!(main_content)).area().rect(cx),
+                },
+            );
+            close_menu = true;
+        }
+        else if reaction_send_button.clicked(actions)
+            || reaction_text_input.returned(actions).is_some()
+        {
+            // A blank reaction does nothing, so the user can still type one.
+            if let Some(reaction) = get_typed_reaction(&reaction_text_input.text()) {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    MessageAction::React {
+                        details: details.clone(),
+                        reaction,
+                    },
+                );
+                close_menu = true;
+            }
+        }
+        else if self.button(cx, ids!(text_reaction_button)).clicked(actions) {
             // Show a box to allow the user to input the reaction.
-            // In the future, we'll show an emoji chooser.
-            self.view.button(cx, ids!(react_button)).set_visible(cx, false);
+            self.view.button(cx, ids!(text_reaction_button)).set_visible(cx, false);
             self.view.view(cx, ids!(reaction_input_view)).set_visible(cx, true);
-            self.text_input(cx, ids!(reaction_input_view.reaction_text_input)).set_key_focus(cx);
+            self.is_reaction_input_focus_pending = true;
             self.redraw(cx);
             close_menu = false;
         }
@@ -463,11 +500,15 @@ impl NewMessageContextMenu {
         self.visible
     }
 
-    /// Shows this context menu with the given message details.
+    /// Shows this context menu with the given message details,
+    /// leaving `own_reactions` (the reactions that the user already sent on it) out of its reaction strip.
     ///
     /// Returns the expected dimensions of the context menu,
     /// which can be used to proactively reposition it such that it fits on screen.
-    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails) -> DVec2 {
+    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String]) -> DVec2 {
+        if details.abilities.contains(MessageAbilities::CanReact) {
+            self.view.reaction_strip(cx, ids!(reaction_strip)).populate(cx, own_reactions);
+        }
         self.details = Some(details);
         self.visible = true;
         self.cancel_scope = Some(self.begin_cancel_scope(cx));
@@ -482,7 +523,9 @@ impl NewMessageContextMenu {
         let Some(details) = self.details.as_ref() else { return DVec2::default() };
 
         let retry_send_button = self.view.button(cx, ids!(retry_send_button));
-        let react_button = self.view.button(cx, ids!(react_button));
+        let reaction_strip = self.view.reaction_strip(cx, ids!(reaction_strip));
+        let text_reaction_button = self.view.button(cx, ids!(text_reaction_button));
+        let reaction_send_button = self.view.button(cx, ids!(reaction_input_view.reaction_send_button));
         let reply_button = self.view.button(cx, ids!(reply_button));
         let reply_in_thread_button = self.view.button(cx, ids!(reply_in_thread_button));
         let edit_button = self.view.button(cx, ids!(edit_message_button));
@@ -518,8 +561,9 @@ impl NewMessageContextMenu {
         // Actually set the buttons' visibility.
         retry_send_button.set_visible(cx, show_retry);
         self.view.view(cx, ids!(divider_after_retry)).set_visible(cx, show_divider_after_retry);
-        self.view.view(cx, ids!(react_view)).set_visible(cx, show_react);
-        react_button.set_visible(cx, show_react);
+        self.view.widget(cx, ids!(reaction_strip)).set_visible(cx, show_react);
+        self.view.view(cx, ids!(text_reaction_view)).set_visible(cx, show_react);
+        text_reaction_button.set_visible(cx, show_react);
         reply_button.set_visible(cx, show_reply_to);
         reply_in_thread_button.set_visible(cx, show_reply_in_thread);
         self.view.view(cx, ids!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
@@ -545,7 +589,9 @@ impl NewMessageContextMenu {
 
         // Reset the hover state of each button.
         retry_send_button.reset_hover(cx);
-        react_button.reset_hover(cx);
+        reaction_strip.reset_hover(cx);
+        text_reaction_button.reset_hover(cx);
+        reaction_send_button.reset_hover(cx);
         reply_button.reset_hover(cx);
         reply_in_thread_button.reset_hover(cx);
         edit_button.reset_hover(cx);
@@ -559,14 +605,15 @@ impl NewMessageContextMenu {
         delete_button.reset_hover(cx);
 
         // Reset reaction input view stuff.
-        self.view.view(cx, ids!(reaction_input_view)).set_visible(cx, false); // hide until the react_button is clicked
+        self.view.view(cx, ids!(reaction_input_view)).set_visible(cx, false); // hide until the text_reaction_button is clicked
         self.text_input(cx, ids!(reaction_input_view.reaction_text_input)).set_text(cx, "");
 
         self.redraw(cx);
 
         let num_visible_buttons =
             show_retry as usize
-            + show_react as usize
+            // The reaction strip and the text reaction button
+            + 2 * show_react as usize
             + show_reply_to as usize
             + show_reply_in_thread as usize
             + show_edit as usize
@@ -587,6 +634,10 @@ impl NewMessageContextMenu {
     }
 
     fn close(&mut self, cx: &mut Cx) {
+        // The text input won't get its focus-lost event once we're hidden, so we hide its keyboard ourselves.
+        if self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input)).key_focus(cx) {
+            cx.hide_text_ime();
+        }
         self.visible = false;
         self.details = None;
         self.cancel_scope = None;
@@ -614,8 +665,8 @@ impl NewMessageContextMenuRef {
     }
 
     /// See [`NewMessageContextMenu::show()`].
-    pub fn show(&self, cx: &mut Cx, details: MessageDetails) -> DVec2 {
+    pub fn show(&self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String]) -> DVec2 {
         let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
-        inner.show(cx, details)
+        inner.show(cx, details, own_reactions)
     }
 }

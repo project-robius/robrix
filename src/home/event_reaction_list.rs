@@ -1,6 +1,6 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache;
-use crate::shared::emoji_catalog::get_shortcode;
+use crate::shared::{emoji_catalog::{get_emoji_catalog, get_shortcode}, recent_emojis::record_emoji_pick};
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest, TimelineKind};
 use indexmap::IndexMap;
 use makepad_widgets::*;
@@ -349,6 +349,14 @@ impl ReactionListRef {
         inner.timeline_event_id = Some(timeline_event_item_id.clone());
     }
 
+    pub fn get_own_reactions(&self) -> Vec<String> {
+        self.borrow().map(|inner| inner.children.iter()
+            .filter(|(_, reaction_data)| reaction_data.includes_user)
+            .map(|(_, reaction_data)| reaction_data.reaction.clone())
+            .collect()
+        ).unwrap_or_default()
+    }
+
     /// Returns `true` if the `abs` coord is within one of the reaction buttons.
     pub fn contains_button(&self, cx: &Cx, abs: DVec2) -> bool {
         let Some(inner) = self.borrow() else { return false };
@@ -394,6 +402,56 @@ fn apply_reaction_button_colors(cx: &mut Cx, button: &mut ViewRef, includes_user
                 reaction_bg_color: mod.widgets.COLOR_REACTION_BG,
                 reaction_border_color: mod.widgets.COLOR_REACTION_BORDER,
             }
+        });
+    }
+}
+
+/// Returns the reaction that the user typed, or `None` if it's blank.
+/// An emoji or `:shortcode:` becomes its fully-qualified emoji, so it matches everyone else's reactions.
+pub fn get_typed_reaction(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let emoji = emojis::get(text).or_else(|| {
+        let shortcode = text.strip_prefix(':')?.strip_suffix(':')?;
+        get_emoji_catalog().get_by_shortcode(&shortcode.to_lowercase())
+    });
+    Some(emoji.map_or(text, |emoji| emoji.as_str()).to_owned())
+}
+
+/// Toggles `reaction` on a message: if the user already sent it or an emoji that looks the same (like ❤ for ❤️),
+/// we remove those, or else we add it, which counts as a recent pick for an emoji.
+pub fn toggle_reaction(
+    cx: &mut Cx,
+    timeline_kind: &TimelineKind,
+    timeline_event_id: &TimelineEventItemId,
+    reactions: Option<&ReactionsByKeyBySender>,
+    reaction: &str,
+) {
+    let emoji = emojis::get(reaction);
+    let own_equivalents: Vec<String> = emoji
+        .zip(reactions)
+        .zip(current_user_id())
+        .map(|((emoji, reactions), user_id)| reactions.iter()
+            .filter(|(key, senders)| senders.contains_key(&user_id) && emojis::get(key) == Some(emoji))
+            .map(|(key, _)| key.clone())
+            .collect()
+        )
+        .unwrap_or_default();
+    let toggled = if own_equivalents.is_empty() {
+        if emoji.is_some() {
+            record_emoji_pick(cx, reaction);
+        }
+        vec![reaction.to_owned()]
+    } else {
+        own_equivalents
+    };
+    for reaction in toggled {
+        submit_async_request(MatrixRequest::ToggleReaction {
+            timeline_kind: timeline_kind.clone(),
+            timeline_event_id: timeline_event_id.clone(),
+            reaction,
         });
     }
 }

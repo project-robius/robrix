@@ -34,7 +34,7 @@ use crate::{
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonRef, JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, lazy_view::{LazyViewRef, LazyViewWidgetExt, LazyViewWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, emoji_picker_popup::get_emoji_picker_popup, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonRef, JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, lazy_view::{LazyViewRef, LazyViewWidgetExt, LazyViewWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -61,7 +61,7 @@ use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGloba
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts}};
+use super::{event_reaction_list::{ReactionData, toggle_reaction}, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -2650,11 +2650,13 @@ impl RoomScreen {
             match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                 MessageAction::React { details, reaction } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    submit_async_request(MatrixRequest::ToggleReaction {
-                        timeline_kind: tl.kind.clone(),
-                        timeline_event_id: details.timeline_event_id.clone(),
-                        reaction: reaction.clone(),
-                    });
+                    let reactions = Self::find_event_in_timeline(&tl.items, details).map(|event_tl_item| event_tl_item.reactions());
+                    toggle_reaction(cx, &tl.kind, &details.timeline_event_id, reactions, reaction);
+                }
+                MessageAction::OpenReactionPicker { details, anchor_rect } => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    let reactions = Self::find_event_in_timeline(&tl.items, details).map(|event_tl_item| event_tl_item.reactions());
+                    get_emoji_picker_popup(cx).show_reaction_picker(cx, details.clone(), reactions, *anchor_rect);
                 }
                 MessageAction::Reply(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
@@ -6244,6 +6246,12 @@ pub enum MessageAction {
         details: MessageDetails,
         reaction: String,
     },
+    /// The user wants to react to a message with any emoji,
+    /// so we show the emoji picker at the given window-absolute `anchor_rect`.
+    OpenReactionPicker {
+        details: MessageDetails,
+        anchor_rect: Rect,
+    },
     /// The user clicked the "reply" button on a message.
     Reply(MessageDetails),
     /// The user clicked the "reply in thread" button on a message, indicating
@@ -6302,6 +6310,7 @@ pub enum MessageAction {
         /// The absolute position where we should show the context menu,
         /// in which the (0,0) origin coordinate is the top left corner of the app window.
         abs_pos: DVec2,
+        own_reactions: Vec<String>,
     },
     /// The user requested opening the message action bar
     ActionBarOpen {
@@ -6669,11 +6678,13 @@ impl Message {
 
     fn open_context_menu(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, details: MessageDetails, abs_pos: DVec2) {
         self.is_context_menu_open = true;
+        let own_reactions = self.view.widget(cx, ids!(reaction_list)).as_reaction_list().get_own_reactions();
         cx.widget_action(
             room_screen_widget_uid,
             MessageAction::OpenMessageContextMenu {
                 details,
                 abs_pos,
+                own_reactions,
             },
         );
     }
