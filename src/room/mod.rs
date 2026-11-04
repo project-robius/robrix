@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use makepad_widgets::ScriptVm;
 use matrix_sdk::{Client, RoomDisplayName, RoomHeroWithProfile, RoomState, room_preview::RoomPreview};
-use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, room::{JoinRuleSummary, RoomType}};
+use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, UserId, room::{JoinRuleSummary, RoomType}};
 
 use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
@@ -138,6 +138,31 @@ impl BasicRoomDetails {
         matches!(self, Self::FetchedRoomPreview(frp)
             if frp.room_type == Some(RoomType::Space) && frp.state == Some(RoomState::Joined)
         )
+    }
+}
+
+/// The older room that a room replaced, if that room is the newer version of an upgraded room.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PredecessorRoomDetails {
+    /// The older room's ID, plus the newer room's name, since upgrading a room copies its name over.
+    pub room_name_id: RoomNameId,
+    /// The servers to ask about the older room when joining it.
+    pub via: Vec<OwnedServerName>,
+}
+impl PredecessorRoomDetails {
+    /// Returns the details of the older room with the given ID, which a newer room named `newer_room_name` replaced.
+    pub fn new(room_id: OwnedRoomId, newer_room_name: Option<RoomDisplayName>, newer_room_creator: Option<&UserId>) -> Self {
+        Self {
+            // Upgrading a room copies its name over, so the older room usually has the same name as the newer one.
+            room_name_id: RoomNameId::from((newer_room_name, room_id)),
+            // Whoever upgraded the older room created the newer one, so their homeserver is in the older room.
+            via: newer_room_creator.map(|creator| creator.server_name().to_owned()).into_iter().collect(),
+        }
+    }
+}
+impl From<PredecessorRoomDetails> for BasicRoomDetails {
+    fn from(predecessor: PredecessorRoomDetails) -> Self {
+        BasicRoomDetails::NameAndVia { room_name_id: predecessor.room_name_id, via: predecessor.via }
     }
 }
 

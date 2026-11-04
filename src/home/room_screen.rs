@@ -44,6 +44,7 @@ use crate::home::scroll_anchors::ScrollAnchors;
 use crate::home::read_marker::{ReadMarkerState, is_read_marker};
 use crate::home::state_event_group::{self, StateEventGroups};
 use crate::home::small_state_event::{populate_small_state_event, populate_group_summary_item};
+use crate::home::room_creation_item::{get_creation_item_to_redraw, populate_room_creation_item};
 use crate::home::timeline_items::{ChangedItems, ItemDraw, PendingKnocks, TimelineInfo, date_divider_text, divider_span_end, index_of_event, item_draw, uses_compact_view};
 use crate::room::{
     pane_dock::{RoomPaneDockAction, RoomPaneDockWidgetExt, RoomPaneDockWidgetRefExt, SavedRoomPane},
@@ -631,6 +632,7 @@ script_mod! {
             CondensedRedactedMessage := mod.widgets.CondensedRedactedMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
             GroupSummaryItem := mod.widgets.GroupSummaryItem {}
+            RoomCreationItem := mod.widgets.RoomCreationItem {}
             ZeroHeightItem := mod.widgets.ZeroHeightItem {}
             DateDivider := mod.widgets.DateDivider {}
             ReadMarker := mod.widgets.ReadMarker {}
@@ -1591,6 +1593,17 @@ impl Widget for RoomScreen {
                             &content,
                             item_drawn_status,
                         ),
+                        ItemDraw::RoomCreation { group, event, content } => populate_room_creation_item(
+                            cx,
+                            list,
+                            item_id,
+                            timeline,
+                            group,
+                            event,
+                            &content,
+                            self.room_name_id.as_ref(),
+                            item_drawn_status,
+                        ),
                         ItemDraw::Message(event_tl_item, msg_like_content) => {
                             let is_newest_sent = tl_state.index_of_last_own_sent == Some(tl_idx);
                             let is_blocked_by_failed_send = tl_state.index_of_first_own_failed.is_some_and(|i| i < tl_idx);
@@ -1938,6 +1951,8 @@ impl RoomScreen {
                         tl.forget_drawn([changed_indices.clone()]);
                         // An answer to a knock changes whether that (earlier) knock shows an invite button.
                         tl.forget_drawn(changed_knocks.iter().map(|&index| index..index + 1));
+                        // A change to the room's settings changes what its (earlier) creation item says about them.
+                        tl.forget_drawn(get_creation_item_to_redraw(&new_items, &changes).map(|index| index..index + 1));
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
 

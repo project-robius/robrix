@@ -1218,6 +1218,13 @@ impl StateEventGroupHeader {
 }
 
 impl StateEventGroupHeaderRef {
+    /// Shows or hides this header without redrawing anything.
+    pub fn set_shown(&self, shown: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.view.visible = shown;
+        }
+    }
+
     /// Sets whether the group is expanded, which hides the summary.
     pub fn set_expanded(&self, cx: &mut Cx, expanded: bool) {
         if let Some(mut inner) = self.borrow_mut() {
