@@ -783,13 +783,16 @@ impl Widget for UserProfileSlidingPane {
             if let Some(action) = clicked_member_action
                 && let Some(room) = info.room.as_ref()
             {
-                cx.action(ModerationModalAction::Open(ModerationRequest::Member(MemberModeration {
-                    room_id: room.room_id.clone(),
-                    room_name: room.room_name.clone(),
-                    user_id: info.user_id.clone(),
-                    user_name: info.displayable_name().to_owned(),
-                    action,
-                })));
+                cx.action(ModerationModalAction::Open(ModerationRequest::Member {
+                    moderation: MemberModeration {
+                        room_id: room.room_id.clone(),
+                        room_name: room.room_name.clone(),
+                        user_id: info.user_id.clone(),
+                        user_name: info.displayable_name().to_owned(),
+                        action,
+                    },
+                    initial_reason: None,
+                }));
                 self.animate_out(cx);
             }
         }

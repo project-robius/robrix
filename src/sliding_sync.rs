@@ -7301,7 +7301,7 @@ async fn run_ios_web_auth_session(url: &str) -> Result<Option<Url>, Error> {
 
 bitflags! {
     /// The powers that a user has in a given room.
-    #[derive(Copy, Clone, PartialEq, Eq)]
+    #[derive(Copy, Clone, Default, PartialEq, Eq)]
     pub struct UserPowerLevels: u64 {
         const Ban = 1 << 0;
         const Invite = 1 << 1;

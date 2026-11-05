@@ -31,7 +31,7 @@ use crate::{
         slash_commands::{self, SlashCommandOutcome},
         speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt},
     },
-    sliding_sync::{submit_async_request, MatrixLinkAction, MatrixRequest},
+    sliding_sync::{submit_async_request, MatrixLinkAction, MatrixRequest, UserPowerLevels},
     utils::{self, MatchQuality, has_only_soft_keyboard},
 };
 
@@ -87,7 +87,7 @@ pub struct MentionableTextInput {
     #[rust] room_members: Option<Arc<Vec<RoomMember>>>,
     /// Cached room display name, refreshed on room change (avoids a per-keystroke lookup).
     #[rust] room_name: String,
-    #[rust] can_notify_room: bool,
+    #[rust] user_power_levels: UserPowerLevels,
 
     #[rust] active_trigger: Option<ActiveTrigger>,
     #[rust] request_id: u64,
@@ -371,6 +371,7 @@ impl MentionableTextInput {
             TriggerKind::Room => self.match_rooms(cx, &popup_ref, query),
             TriggerKind::Command => {
                 let items = slash_commands::matching_commands(query)
+                    .filter(|command| command.is_allowed(self.user_power_levels))
                     .map(MentionItem::Command)
                     .collect();
                 popup_ref.set_results(cx, uid, Arc::new(items), false, kind.empty_message());
@@ -406,7 +407,7 @@ impl MentionableTextInput {
         };
         let request_id = self.request_id;
         let query = query.to_string();
-        let can_notify_room = self.can_notify_room;
+        let can_notify_room = self.user_power_levels.can_notify_room();
         let room_name = self.room_name.clone();
 
         std::thread::spawn(move || {
@@ -550,13 +551,13 @@ impl MentionableTextInputRef {
         self.speech_text_input_ref().release_microphone();
     }
 
-    /// Updates whether the user can `@room`. Refreshes an open `@` popup so the
-    /// "Notify the entire room" entry appears or disappears accordingly.
-    pub fn set_can_notify_room(&self, cx: &mut Cx, can_notify: bool) {
+    /// Updates the user's power levels. Refreshes an open `@` or `/` popup so that the
+    /// "Notify the entire room" entry and any moderation commands appear or disappear accordingly.
+    pub fn set_user_power_levels(&self, cx: &mut Cx, user_power_levels: UserPowerLevels) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        if inner.can_notify_room != can_notify {
-            inner.can_notify_room = can_notify;
-            if inner.active_trigger.is_some_and(|t| t.kind == TriggerKind::User) {
+        if inner.user_power_levels != user_power_levels {
+            inner.user_power_levels = user_power_levels;
+            if inner.active_trigger.is_some_and(|t| matches!(t.kind, TriggerKind::User | TriggerKind::Command)) {
                 inner.refresh_popup(cx);
             }
         }
@@ -584,10 +585,10 @@ impl MentionableTextInputRef {
         let members_arrived = inner.room_members.is_none() && room_members.is_some();
         inner.room_members = room_members;
 
-        // The input is reused across rooms, so reset @room capability (re-fetched with
-        // the new room's power levels) and close a popup left open in the old one.
+        // The input is reused across rooms, so reset the user's power levels (re-fetched
+        // for the new room) and close a popup left open in the old one.
         if room_changed {
-            inner.can_notify_room = false;
+            inner.user_power_levels = UserPowerLevels::empty();
             if inner.popup_ref(cx).is_open_for(uid) {
                 inner.close_popup(cx);
             }
@@ -632,9 +633,11 @@ impl MentionableTextInputRef {
     /// Returns the outcome: send a message, run a command, or show an error.
     /// If it's a message, it will already contain the mentions present in `entered_text`.
     pub fn parse_input(&self, entered_text: &str) -> SlashCommandOutcome {
-        let Some(inner) = self.borrow() else { return slash_commands::parse_input(entered_text) };
+        let Some(inner) = self.borrow() else {
+            return slash_commands::parse_input(entered_text, UserPowerLevels::empty());
+        };
         let entered_text = inner.add_via_to_room_links(entered_text);
-        match slash_commands::parse_input(&entered_text) {
+        match slash_commands::parse_input(&entered_text, inner.user_power_levels) {
             SlashCommandOutcome::Message(message) => SlashCommandOutcome::Message(
                 message.add_mentions(inner.real_mentions_in_markdown(&entered_text))
             ),

@@ -25,7 +25,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
-use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneRef, EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputRef, MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::{apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneRef, EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, display_name_or_user_id, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, moderation::MemberModeration, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputRef, MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::{apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -613,6 +613,21 @@ impl RoomInputBar {
                     reject_invite_to: None,
                 }))
             }
+            SlashCommandAction::ModerateMember { user_id, action, reason } => {
+                let room_name_id = cx.get_global::<RoomsListRef>().get_room_name(room_id)
+                    .unwrap_or_else(|| utils::RoomNameId::empty(room_id.clone()));
+                let user_name = display_name_or_user_id(cx, room_id, user_id.clone());
+                cx.action(ModerationModalAction::Open(ModerationRequest::Member {
+                    moderation: MemberModeration {
+                        room_id: room_id.clone(),
+                        room_name: room_name_id.to_string(),
+                        user_id,
+                        user_name,
+                        action,
+                    },
+                    initial_reason: reason,
+                }))
+            }
             SlashCommandAction::SetDisplayName(new_display_name) => {
                 submit_async_request(MatrixRequest::SetDisplayName {
                     new_display_name: Some(new_display_name),
@@ -833,11 +848,10 @@ impl RoomInputBar {
             }
         }
 
-        let can_notify = user_power_levels.can_notify_room();
         self.mentionable_text_input(cx, ids!(mentionable_text_input))
-            .set_can_notify_room(cx, can_notify);
+            .set_user_power_levels(cx, user_power_levels);
         self.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input))
-            .set_can_notify_room(cx, can_notify);
+            .set_user_power_levels(cx, user_power_levels);
     }
 
     /// Enables or disables (grays out) the send_message_button.
