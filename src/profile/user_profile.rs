@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetExt}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils, verification::UserVerificationRequestAction
+    block_user_modal::{BlockUserModalAction, BlockUserRequest}, moderation::{MemberAbilities, MemberAbilitiesFetched, MemberAction, MemberModeration, ReportTarget}, moderation_modal::{ModerationModalAction, ModerationRequest}, room::room_members_list::RoomMembersChanged, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetExt}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils, verification::UserVerificationRequestAction
 };
 use super::{
     user_profile_cache::{self, UserProfilesUpdated},
@@ -70,6 +70,15 @@ script_mod! {
 
 
     mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self://resources/icons/double_chat.svg")
+
+    let ActionsTitle = Label {
+        width: Fill, height: Fit
+        flow: Flow.Right{wrap: true}
+        draw_text +: {
+            text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
+            color: (COLOR_TEXT_TITLE)
+        }
+    }
 
     let UserProfileView = ScrollXYView {
         width: Fill,
@@ -244,15 +253,7 @@ script_mod! {
             spacing: 10,
             padding: Inset{left: 10., right: 10, bottom: 10}
 
-            Label {
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true}
-                draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
-                    color: (COLOR_TEXT_TITLE)
-                }
-                text: "Actions"
-            }
+            ActionsTitle { text: "Actions" }
 
             direct_message_button := RobrixIconButton {
                 margin: 0,
@@ -305,6 +306,65 @@ script_mod! {
                 draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
                 text: "Block User"
+            }
+
+            report_user_button := RobrixNegativeIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (ICON_FLAG)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
+                text: "Report User"
+            }
+        }
+
+        moderation_divider := LineH { padding: 15 }
+
+        moderation_actions := View {
+            width: Fill, height: Fit
+            flow: Down,
+            spacing: 10,
+            padding: Inset{left: 10., right: 10, bottom: 10}
+
+            ActionsTitle { text: "Moderation" }
+
+            mute_user_button := RobrixNegativeIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (ICON_MUTE)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
+                text: "Mute User"
+            }
+
+            unmute_user_button := RobrixPositiveIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
+                text: "Unmute User"
+            }
+
+            kick_user_button := RobrixNegativeIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (ICON_LOGOUT)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
+                text: "Kick User"
+            }
+
+            ban_user_button := RobrixNegativeIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
+                text: "Ban User"
+            }
+
+            unban_user_button := RobrixPositiveIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
+                text: "Unban User"
             }
         }
 
@@ -490,6 +550,8 @@ pub struct UserProfileSlidingPane {
     #[rust] is_showing_current_account: bool,
     #[rust] is_animating_out: bool,
     #[rust] sending_verification_request_to: Option<OwnedUserId>,
+    /// What the current user can do to the shown user in the shown room, which is empty until it's fetched.
+    #[rust] member_abilities: MemberAbilities,
     /// Held while this pane is shown such that `Escape` closes this pane.
     /// This scope is dropped when the pane starts animating out or is reset.
     #[rust] cancel_scope: Option<CancelScope>,
@@ -617,6 +679,25 @@ impl Widget for UserProfileSlidingPane {
             self.redraw(cx);
         }
 
+        if let Event::Actions(actions) = event
+            && let Some(info) = self.info.as_ref()
+            && let Some(room) = info.room.as_ref()
+        {
+            if actions.iter().any(|a| a.downcast_ref::<RoomMembersChanged>().is_some_and(|c| c.room_id == room.room_id)) {
+                self.request_member_abilities();
+            }
+            if let Some(fetched) = actions.iter()
+                .filter_map(|a| a.downcast_ref::<MemberAbilitiesFetched>())
+                .rfind(|f| f.room_id == room.room_id && f.user_id == info.user_id)
+            {
+                self.member_abilities = fetched.abilities;
+                if let Some(room_member) = fetched.room_member.clone() {
+                    user_profile_cache::insert_room_member(cx, room.room_id.clone(), room_member);
+                }
+                self.redraw(cx);
+            }
+        }
+
         // A Signal may mean that the avatar image we're waiting for has been fetched.
         if let Event::Signal = event
             && let Some(our_info) = self.info.as_mut()
@@ -666,11 +747,7 @@ impl Widget for UserProfileSlidingPane {
                     UserProfilePaneAction::JumpToReadReceipt(info.user_id.clone()),
                 );
                 // Close the sliding pane so it doesn't cover the event we're jumping to.
-                self.cancel_scope = None;
-                self.is_animating_out = true;
-                cx.revert_key_focus();
-                self.animator_play(cx, ids!(panel.hide));
-                self.redraw(cx);
+                self.animate_out(cx);
                 return;
             }
 
@@ -681,13 +758,39 @@ impl Widget for UserProfileSlidingPane {
                     block: !is_user_blocked(&info.user_id),
                     reject_invite_to: None,
                 };
-                // Hide the pane immediately to make room for the confirmation modal
-                self.cancel_scope = None;
-                self.is_animating_out = true;
-                cx.revert_key_focus();
-                self.animator_play(cx, ids!(panel.hide));
                 cx.action(BlockUserModalAction::Open(request));
-                self.redraw(cx);
+                // Hide the pane immediately to make room for the confirmation modal
+                self.animate_out(cx);
+                return;
+            }
+
+            if self.button(cx, ids!(report_user_button)).clicked(actions) {
+                cx.action(ModerationModalAction::Open(ModerationRequest::Report(ReportTarget::User {
+                    user_id: info.user_id.clone(),
+                    user_name: info.displayable_name().to_owned(),
+                })));
+                self.animate_out(cx);
+                return;
+            }
+
+            let clicked_member_action = [
+                (ids!(mute_user_button), MemberAction::Mute),
+                (ids!(unmute_user_button), MemberAction::Unmute),
+                (ids!(kick_user_button), MemberAction::Kick),
+                (ids!(ban_user_button), MemberAction::Ban),
+                (ids!(unban_user_button), MemberAction::Unban),
+            ].into_iter().find_map(|(button, action)| self.button(cx, button).clicked(actions).then_some(action));
+            if let Some(action) = clicked_member_action
+                && let Some(room) = info.room.as_ref()
+            {
+                cx.action(ModerationModalAction::Open(ModerationRequest::Member(MemberModeration {
+                    room_id: room.room_id.clone(),
+                    room_name: room.room_name.clone(),
+                    user_id: info.user_id.clone(),
+                    user_name: info.displayable_name().to_owned(),
+                    action,
+                })));
+                self.animate_out(cx);
             }
         }
     }
@@ -754,6 +857,8 @@ impl Widget for UserProfileSlidingPane {
         // * `block_user_button` is hidden if the user is the same as the account user,
         //    since you cannot block yourself.
         //    * The button text changes to "Unblock" if the user is already blocked.
+        // * `report_user_button` is hidden if the user is the same as the account user.
+        // * The moderation buttons are only shown if the account user can perform them on this user.
         self.button(cx, ids!(direct_message_button)).set_visible(cx, !self.is_showing_current_account);
         self.view(cx, ids!(verify_this_user_view)).set_visible(cx, !self.is_showing_current_account && !is_verified);
         self.view(cx, ids!(verify_this_user_spinner)).set_visible(
@@ -773,6 +878,16 @@ impl Widget for UserProfileSlidingPane {
             cx,
             if is_blocked { "Unblock User" } else { "Block User" }
         );
+
+        self.button(cx, ids!(report_user_button)).set_visible(cx, !self.is_showing_current_account);
+        let abilities = self.member_abilities;
+        self.view(cx, ids!(moderation_divider)).set_visible(cx, !abilities.is_empty());
+        self.view(cx, ids!(moderation_actions)).set_visible(cx, !abilities.is_empty());
+        self.button(cx, ids!(mute_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanMute));
+        self.button(cx, ids!(unmute_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanUnmute));
+        self.button(cx, ids!(kick_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanKick));
+        self.button(cx, ids!(ban_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanBan));
+        self.button(cx, ids!(unban_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanUnban));
 
         self.view.draw_walk(cx, scope, walk)
     }
@@ -848,6 +963,30 @@ impl UserProfileSlidingPane {
 
         self.is_showing_current_account = current_user_id().is_some_and(|uid| uid == info.user_id);
         self.info = Some(info);
+        self.member_abilities = MemberAbilities::empty();
+        self.request_member_abilities();
+    }
+
+    /// Requests what the current user can do to the shown user in the shown room, if there is one.
+    fn request_member_abilities(&self) {
+        if self.is_showing_current_account { return }
+        if let Some(info) = self.info.as_ref()
+            && let Some(room) = info.room.as_ref()
+        {
+            submit_async_request(MatrixRequest::GetMemberAbilities {
+                room_id: room.room_id.clone(),
+                user_id: info.user_id.clone(),
+            });
+        }
+    }
+
+    /// Starts sliding this pane out right away, e.g., to make room for a modal.
+    fn animate_out(&mut self, cx: &mut Cx) {
+        self.cancel_scope = None;
+        self.is_animating_out = true;
+        cx.revert_key_focus();
+        self.animator_play(cx, ids!(panel.hide));
+        self.redraw(cx);
     }
 
     pub fn show(&mut self, cx: &mut Cx) {
@@ -865,6 +1004,12 @@ impl UserProfileSlidingPane {
         self.view.button(cx, ids!(copy_link_to_user_button)).reset_hover(cx);
         self.view.button(cx, ids!(jump_to_read_receipt_button)).reset_hover(cx);
         self.view.button(cx, ids!(block_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(report_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(mute_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(unmute_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(kick_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(ban_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(unban_user_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }

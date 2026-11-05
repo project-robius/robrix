@@ -57,6 +57,10 @@ mod verification_modal;
 mod join_leave_room_modal;
 /// A modal/dialog popup for confirming that a user should be blocked or unblocked.
 pub mod block_user_modal;
+/// Moderating a room's members, and reporting messages, rooms, and users.
+pub mod moderation;
+/// A modal/dialog popup for confirming a moderation action, with an optional reason.
+pub mod moderation_modal;
 /// Shared UI components.
 pub mod shared;
 /// Generating text previews of timeline events/messages.

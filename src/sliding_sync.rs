@@ -39,11 +39,11 @@ use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::{stringify_send_error, upload_percent}, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
-    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
+    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, moderation::{self, MemberModeration, ReportTarget}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
         user_verification_cache::{UserVerificationState, UserVerificationUpdate, enqueue_user_verification_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{LISTED_MEMBERSHIPS, RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{handle_recent_emojis_subscriber, spawn_recent_emoji_writer}
     }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber}
 };
@@ -597,7 +597,7 @@ pub enum MatrixRequest {
         ///   all members are fetched from the server and sent again.
         local_only: bool,
     },
-    /// Request to get a room's joined and invited members for a popped-out room members pane,
+    /// Request to get the members to list in a popped-out room members pane,
     /// which has no timeline to get them via [`MatrixRequest::GetRoomMembers`].
     ///
     /// The result is posted as a [`RoomMembersFetchAction`].
@@ -938,6 +938,28 @@ pub enum MatrixRequest {
         timeline_kind: TimelineKind,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+    /// Reports the given message, room, or user to the homeserver's admins.
+    ///
+    /// The result is shown to the user as a popup notification.
+    Report {
+        target: ReportTarget,
+        reason: Option<String>,
+    },
+    /// Kicks, bans, unbans, mutes, or unmutes a member of a room.
+    ///
+    /// The result is shown to the user as a popup notification.
+    #[doc(alias("kick", "ban", "unban", "mute", "unmute"))]
+    ModerateMember {
+        moderation: MemberModeration,
+        reason: Option<String>,
+    },
+    /// Requests what the current user can do to the given user in the given room.
+    ///
+    /// The result is posted as a [`MemberAbilitiesFetched`](moderation::MemberAbilitiesFetched) action.
+    GetMemberAbilities {
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
     },
     /// Retries sending the given local echo of a message,
     /// typically one that previously failed to send.
@@ -1580,7 +1602,7 @@ async fn matrix_worker_task(
                         });
                         return;
                     };
-                    fetch_room_members(&room, RoomMemberships::ACTIVE, local_only, |result| {
+                    fetch_room_members(&room, LISTED_MEMBERSHIPS, local_only, |result| {
                         let room_id = room_id.clone();
                         Cx::post_action(match result {
                             Ok(members) => RoomMembersFetchAction::Fetched { room_id, members: Arc::new(members) },
@@ -3207,6 +3229,21 @@ async fn matrix_worker_task(
                         }
                     }
                 });
+            },
+
+            MatrixRequest::Report { target, reason } => {
+                let Some(client) = get_client() else { continue };
+                let _report_task = Handle::current().spawn(moderation::report(client, target, reason));
+            },
+
+            MatrixRequest::ModerateMember { moderation, reason } => {
+                let Some(client) = get_client() else { continue };
+                let _moderate_task = Handle::current().spawn(moderation::moderate_member(client, moderation, reason));
+            },
+
+            MatrixRequest::GetMemberAbilities { room_id, user_id } => {
+                let Some(client) = get_client() else { continue };
+                let _abilities_task = Handle::current().spawn(moderation::fetch_member_abilities(client, room_id, user_id));
             },
 
             MatrixRequest::RetrySend { timeline_kind, timeline_event_id } => {
@@ -7348,6 +7385,14 @@ impl UserPowerLevels {
         retval.set(UserPowerLevels::Sticker, user_power >= power_levels.for_message(MessageLikeEventType::Sticker));
         retval.set(UserPowerLevels::RoomPinnedEvents, user_power >= power_levels.for_state(StateEventType::RoomPinnedEvents));
         retval
+    }
+
+    /// Returns the powers to assume that a user has until their real power levels arrive.
+    ///
+    /// This avoids unexpectedly hiding any regular UI elements,
+    /// but moderation actions must only be offered to users who really can perform them.
+    pub fn assumed_until_fetched() -> Self {
+        Self::all() - (Self::Ban | Self::Kick | Self::Redact)
     }
 
     pub async fn from_room(room: &Room, user_id: &UserId) -> Option<Self> {

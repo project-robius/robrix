@@ -20,7 +20,7 @@ use crate::{
 use super::{
     room_action_bar::RoomActionTooltip,
     pinned_messages_list::{PinnedMessagesListWidgetRefExt, SavedPinnedMessagesList},
-    room_members_list::{RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList},
+    room_members_list::{LISTED_MEMBERSHIPS, RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList},
     room_info::{RoomInfoViewAction, RoomInfoViewWidgetRefExt, SavedRoomInfoView},
     room_pane::{self, PaneLayout, PaneSide, RoomPaneKind, RoomPanesPending},
     threads_list::{SavedThreadsList, ThreadsListWidgetRefExt},
@@ -1006,7 +1006,7 @@ impl RoomPaneDock {
         {
             submit_async_request(MatrixRequest::GetRoomMembers {
                 timeline_kind,
-                memberships: matrix_sdk::RoomMemberships::ACTIVE,
+                memberships: LISTED_MEMBERSHIPS,
                 local_only: false,
             });
         }

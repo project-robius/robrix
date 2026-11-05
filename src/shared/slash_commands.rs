@@ -135,7 +135,7 @@ pub static SLASH_COMMANDS: &[SlashCommand] = &[
     //
     // * /knock <room-address> [reason]: `MatrixRequest::Knock` already takes an alias,
     //   so this mostly needs `add_room::parse_address` made public.
-    // * /kick, /ban, /unban <user-id> [reason]: one new membership-change `MatrixRequest`.
+    // * /kick, /ban, /unban <user-id> [reason]: these just need to submit `MatrixRequest::ModerateMember`.
     // * /topic [<topic>], /roomname <name>: one new state-event `MatrixRequest`.
     // * /react <emoji>, /redact [reason]: need to find the latest matching timeline item,
     //   like `MessageAction::EditLatest` does.

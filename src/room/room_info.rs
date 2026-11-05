@@ -8,6 +8,8 @@ use crate::{
     app::AppStateAction,
     home::{invite_modal::InviteModalAction, rooms_list::{RoomAvatarUpdated, RoomsListRef}},
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
+    moderation::ReportTarget,
+    moderation_modal::{ModerationModalAction, ModerationRequest},
     profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
     room::pane_dock::FRAME_PADDING,
     shared::{avatar::AvatarWidgetExt, verification_badge::UserVerificationBadgeWidgetExt},
@@ -225,6 +227,13 @@ script_mod! {
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
                     text: "Invite"
                 }
+                report_button := RobrixNegativeIconButton {
+                    padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                    margin: 0
+                    draw_icon.svg: (ICON_FLAG)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1}}
+                    text: "Report Room"
+                }
                 leave_button := RobrixNegativeIconButton {
                     padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                     margin: 0
@@ -392,6 +401,9 @@ impl Widget for RoomInfoView {
         }
         if room_actions.child(id!(invite_button)).as_button().clicked(actions) {
             cx.action(InviteModalAction::Open(room_name_id.clone()));
+        }
+        if room_actions.child(id!(report_button)).as_button().clicked(actions) {
+            cx.action(ModerationModalAction::Open(ModerationRequest::Report(ReportTarget::Room(room_name_id.clone()))));
         }
         if room_actions.child(id!(leave_button)).as_button().clicked(actions) {
             cx.action(JoinLeaveRoomModalAction::Open {
