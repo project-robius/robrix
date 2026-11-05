@@ -160,14 +160,17 @@ pub fn close_context_menus(cx: &mut Cx, ui: &WidgetRef) {
     ui.emoji_picker_popup(cx, ids!(emoji_picker_popup)).close(cx);
 }
 
-/// Returns a margin that positions the context menu at `anchor_pos`,
+/// Returns a margin that positions the context menu at `anchor_pos`, opening towards the container's middle,
 /// but ensuring that it stays within the given `container_rect` and below the status bar.
 pub fn menu_position_margin(cx: &Cx, container_rect: Rect, anchor_pos: DVec2, menu_size: DVec2) -> Inset {
+    let center = container_rect.center();
+    let x = if anchor_pos.x > center.x { anchor_pos.x - menu_size.x } else { anchor_pos.x };
+    let y = if anchor_pos.y > center.y { anchor_pos.y - menu_size.y } else { anchor_pos.y };
     Inset {
-        left: (anchor_pos.x - container_rect.pos.x)
+        left: (x - container_rect.pos.x)
             .min(container_rect.size.x - menu_size.x)
             .max(0.0),
-        top: (anchor_pos.y - container_rect.pos.y)
+        top: (y - container_rect.pos.y)
             .min(container_rect.size.y - menu_size.y)
             .max(cx.display_context.safe_area_insets.top),
         right: 0.0,
