@@ -468,9 +468,11 @@ impl MentionableTextInput {
             MentionItem::Emoji { emoji, .. } => {
                 record_emoji_pick(cx, emoji.as_str());
                 // An emoji only replaces the shortcode typed so far, which also keeps the undo history.
+                // `replace_range` refuses text that a soft keyboard is still composing, and setting the cursor ends that.
                 let text_input = self.text_input_ref();
-                let cursor = text_input.cursor().index;
-                if let Err(e) = text_input.replace_range(cx, trigger.start_byte .. cursor, emoji.as_str(), UndoGroup::New) {
+                let cursor = text_input.cursor();
+                text_input.set_cursor(cx, cursor, false);
+                if let Err(e) = text_input.replace_range(cx, trigger.start_byte .. cursor.index, emoji.as_str(), UndoGroup::New) {
                     error!("Failed to replace the shortcode before the cursor with {}: {e:?}", emoji.as_str());
                 }
                 self.close_popup(cx);

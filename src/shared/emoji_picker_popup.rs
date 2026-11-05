@@ -9,7 +9,7 @@ use matrix_sdk_ui::timeline::ReactionsByKeyBySender;
 use crate::{
     home::{home_screen::effective_is_desktop, new_message_context_menu::MessageDetails, room_screen::MessageAction},
     shared::{
-        context_menu::{is_context_menu_cancelled, is_tap_outside},
+        context_menu::{get_keyboard_height, get_popup_bounds, is_context_menu_cancelled, is_tap_outside},
         emoji_picker::{EmojiPickerAction, EmojiPickerMode, EmojiPickerRef, EmojiPickerWidgetExt, get_picked_emoji},
         recent_emojis::record_emoji_pick,
     },
@@ -127,11 +127,8 @@ impl ScriptHook for EmojiPickerPopup {
 impl Widget for EmojiPickerPopup {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // The keyboard often hides right after we close, so we keep track of it even while closed.
-        if let Event::VirtualKeyboard(keyboard_event) = event {
-            self.keyboard_height = match keyboard_event {
-                VirtualKeyboardEvent::WillShow { height, .. } | VirtualKeyboardEvent::DidShow { height, .. } => *height,
-                VirtualKeyboardEvent::WillHide { .. } | VirtualKeyboardEvent::DidHide { .. } => 0.0,
-            };
+        if let Some(height) = get_keyboard_height(event) {
+            self.keyboard_height = height;
             if self.purpose.is_some() {
                 self.redraw(cx);
             }
@@ -244,13 +241,10 @@ impl EmojiPickerPopup {
     fn place_popup_frame(&mut self, cx: &mut Cx2d) {
         let origin = self.overlay_origin;
         let window_size = cx.current_pass_size();
-        let insets = cx.display_context.safe_area_insets;
-        // The soft keyboard can pan the overlay container up, past the top of the window.
-        let left = origin.x.max(0.0) + insets.left + EDGE_GAP;
-        let right = window_size.x - insets.right - EDGE_GAP;
-        let top = origin.y.max(0.0) + insets.top + EDGE_GAP;
-        let bottom = window_size.y - self.keyboard_height.max(insets.bottom) - EDGE_GAP;
-        let available = dvec2((right - left).max(0.0), (bottom - top).max(0.0));
+        let bounds = get_popup_bounds(cx, origin, self.keyboard_height, EDGE_GAP);
+        let (left, top) = (bounds.pos.x, bounds.pos.y);
+        let (right, bottom) = (left + bounds.size.x, top + bounds.size.y);
+        let available = bounds.size;
 
         let anchor = match &self.anchor {
             Anchor::InOverlay(rect) => rect.translate(origin),

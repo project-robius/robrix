@@ -174,3 +174,25 @@ pub fn menu_position_margin(cx: &Cx, container_rect: Rect, anchor_pos: DVec2, me
         bottom: 0.0,
     }
 }
+
+/// Returns how much of the window the soft keyboard covers, if the given event changed that.
+pub fn get_keyboard_height(event: &Event) -> Option<f64> {
+    let Event::VirtualKeyboard(keyboard_event) = event else { return None };
+    Some(match keyboard_event {
+        VirtualKeyboardEvent::WillShow { height, .. } | VirtualKeyboardEvent::DidShow { height, .. } => *height,
+        VirtualKeyboardEvent::WillHide { .. } | VirtualKeyboardEvent::DidHide { .. } => 0.0,
+    })
+}
+
+/// Returns the part of the window a popup can draw in, `edge_gap` away from the safe area and the soft keyboard.
+///
+/// The soft keyboard can pan `overlay_origin` up, past the top of the window.
+pub fn get_popup_bounds(cx: &mut Cx2d, overlay_origin: DVec2, keyboard_height: f64, edge_gap: f64) -> Rect {
+    let window_size = cx.current_pass_size();
+    let insets = cx.display_context.safe_area_insets;
+    let left = overlay_origin.x.max(0.0) + insets.left + edge_gap;
+    let right = window_size.x - insets.right - edge_gap;
+    let top = overlay_origin.y.max(0.0) + insets.top + edge_gap;
+    let bottom = window_size.y - keyboard_height.max(insets.bottom) - edge_gap;
+    Rect { pos: dvec2(left, top), size: dvec2((right - left).max(0.0), (bottom - top).max(0.0)) }
+}
