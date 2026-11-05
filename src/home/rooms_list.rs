@@ -44,7 +44,7 @@ use crate::{
         room_filter_input_bar::MainFilterAction,
     },
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, RoomDiagnosticsReady, TimelineKind, submit_async_request},
-    space_service_sync::{JoinedRoomInSpace, ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{RoomNameId, VecDiff},
+    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{RoomNameId, VecDiff},
 };
 
 /// Whether to pre-paginate visible rooms at least once in order to
@@ -2464,24 +2464,9 @@ impl RoomsListRef {
         inner.request_missing_space_children(space_name_id, parent_chain);
     }
 
-    /// Returns the joined rooms that we know of anywhere within the given space, sorted by name,
-    /// and whether we might not know of all of them yet.
-    pub fn get_joined_rooms_in_space(&self, space_id: &OwnedRoomId) -> (Vec<JoinedRoomInSpace>, bool) {
-        let Some(inner) = self.borrow() else { return (Vec::new(), false) };
-        let (room_sets, is_loading) = inner.get_rooms_within_space(space_id);
-        let mut rooms: Vec<_> = room_sets.iter()
-            .flat_map(|rooms| rooms.iter())
-            .filter_map(|room_id| inner.all_joined_rooms.get(room_id))
-            .map(|room| JoinedRoomInSpace {
-                room_name_id: room.room_name_id.clone(),
-                canonical_alias: room.canonical_alias.clone(),
-                avatar_url: None,
-                is_space: false,
-                other_spaces: Vec::new(),
-            })
-            .collect();
-        rooms.sort_by_cached_key(|room| room.room_name_id.display().to_lowercase());
-        (rooms, is_loading)
+    /// Returns whether we might not know of all of the rooms within the given space yet.
+    pub fn is_space_loading(&self, space_id: &OwnedRoomId) -> bool {
+        self.borrow().is_some_and(|inner| inner.get_rooms_within_space(space_id).1)
     }
 
     /// Returns the parent chain of the given space, if known.

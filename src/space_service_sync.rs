@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, media::MediaRequestParameters, ruma::api::error::ErrorKind};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
-use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, RoomId, events::room::MediaSource, room::RoomType};
+use ruma::{OwnedMxcUri, OwnedRoomId, RoomId, events::room::MediaSource, room::RoomType};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
 use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, sliding_sync::wait_for_create_event, utils::{self, RoomNameId, stringify_matrix_error}};
@@ -273,25 +273,29 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     Handle::current().spawn(async move {
                         // A subspace's rooms are always inside of its ancestors, so those aren't "other" spaces.
                         let own_ancestors = space_service.top_level_ancestors_of(&space_id).await;
-                        let mut rooms = Vec::new();
+                        let mut children = FxHashMap::<OwnedRoomId, Vector<SpaceRoom>>::default();
+                        let mut other_spaces = FxHashMap::default();
                         for room in client.joined_rooms() {
-                            if room.room_id() == space_id || !is_room_in_space(&space_service, room.room_id(), &space_id).await {
+                            let room_id = room.room_id();
+                            if room_id == space_id || !is_room_in_space(&space_service, room_id, &space_id).await {
                                 continue;
                             }
-                            let ancestors = space_service.top_level_ancestors_of(room.room_id()).await;
-                            rooms.push(JoinedRoomInSpace {
-                                room_name_id: RoomNameId::from_room(&room).await,
-                                canonical_alias: room.canonical_alias(),
-                                avatar_url: room.avatar_url(),
-                                is_space: room.is_space(),
-                                other_spaces: top_level_spaces.iter()
-                                    .filter(|s| ancestors.contains(&s.room_id) && !own_ancestors.contains(&s.room_id))
-                                    .map(|s| s.display_name.clone())
-                                    .collect(),
-                            });
+                            let Some(space_room) = space_service.get_space_room(room_id).await else { continue };
+                            for parent_id in space_service.joined_parent_ids_of_child(room_id).await {
+                                if parent_id == space_id || is_room_in_space(&space_service, &parent_id, &space_id).await {
+                                    children.entry(parent_id).or_default().push_back(space_room.clone());
+                                }
+                            }
+                            let ancestors = space_service.top_level_ancestors_of(room_id).await;
+                            let names: Vec<_> = top_level_spaces.iter()
+                                .filter(|s| ancestors.contains(&s.room_id) && !own_ancestors.contains(&s.room_id))
+                                .map(|s| s.display_name.clone())
+                                .collect();
+                            if !names.is_empty() {
+                                other_spaces.insert(room_id.to_owned(), names);
+                            }
                         }
-                        rooms.sort_by_cached_key(|r| (!r.is_space, r.room_name_id.display().to_lowercase()));
-                        Cx::post_action(SpaceRoomListAction::JoinedRoomsInSpace { space_id, rooms });
+                        Cx::post_action(SpaceRoomListAction::JoinedRoomsInSpace { space_id, children, other_spaces });
                     });
                 }
                 SpaceRequest::LeaveSpace { space_name_id, rooms_to_leave } => {
@@ -1039,17 +1043,6 @@ pub fn stringify_space_pagination_error(error: &matrix_sdk::Error) -> &'static s
     }
 }
 
-/// A room or subspace that the user has joined, somewhere within a space.
-#[derive(Clone, Debug)]
-pub struct JoinedRoomInSpace {
-    pub room_name_id: RoomNameId,
-    pub canonical_alias: Option<OwnedRoomAliasId>,
-    pub avatar_url: Option<OwnedMxcUri>,
-    pub is_space: bool,
-    /// The names of the other joined top-level spaces that this room is also in.
-    pub other_spaces: Vec<String>,
-}
-
 /// Actions emitted from the SpaceRoomList for a given space.
 pub enum SpaceRoomListAction {
     /// The list of rooms & spaces that are direct children of the given space has changed.
@@ -1102,13 +1095,15 @@ pub enum SpaceRoomListAction {
         /// The `was_invite` value that was originally sent with the request.
         was_invite: bool,
     },
-    /// The rooms and subspaces that the user has joined within the given space,
-    /// with subspaces first, and then both of those sorted alphabetically.
+    /// The rooms and subspaces that the user has joined within the given space.
     ///
     /// This is sent in response to a [`SpaceRequest::GetJoinedRoomsInSpace`] request.
     JoinedRoomsInSpace {
         space_id: OwnedRoomId,
-        rooms: Vec<JoinedRoomInSpace>,
+        /// The joined rooms and subspaces directly within each space, keyed by that space's ID.
+        children: FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        /// The names of the other joined top-level spaces that a given room is also in.
+        other_spaces: FxHashMap<OwnedRoomId, Vec<String>>,
     },
     /// The result of a [`SpaceRequest::LeaveSpace`].
     LeaveSpaceResult {
@@ -1160,10 +1155,11 @@ impl std::fmt::Debug for SpaceRoomListAction {
                     .field("was_invite", was_invite)
                     .finish()
             }
-            SpaceRoomListAction::JoinedRoomsInSpace { space_id, rooms } => {
+            SpaceRoomListAction::JoinedRoomsInSpace { space_id, children, other_spaces } => {
                 f.debug_struct("SpaceRoomListAction::JoinedRoomsInSpace")
                     .field("space_id", space_id)
-                    .field("num_rooms", &rooms.len())
+                    .field("num_parent_spaces", &children.len())
+                    .field("num_rooms_in_other_spaces", &other_spaces.len())
                     .finish()
             }
             SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => {

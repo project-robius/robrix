@@ -28,6 +28,7 @@ pub mod rooms_list_header;
 pub mod rooms_sidebar;
 pub mod search_messages;
 pub mod space_lobby;
+pub mod space_tree;
 pub mod spaces_bar;
 pub mod sync_indicator_bar;
 pub mod navigation_tab_bar;
@@ -57,6 +58,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     loading_pane::script_mod(vm);
     location_preview::script_mod(vm);
     add_room::script_mod(vm);
+    space_tree::script_mod(vm);
     space_lobby::script_mod(vm);
     link_preview::script_mod(vm);
     event_reaction_list::script_mod(vm);
