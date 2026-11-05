@@ -1395,15 +1395,11 @@ pub struct RoomPaneEdge {
     #[rust] initial_swap_progress: f64,
     /// Whether our size changed such that our dock must redraw.
     #[rust] needs_dock_redraw: bool,
-    /// Whether the animator must be cut to our current state, e.g., after a reapply.
-    #[rust] needs_animator_resync: bool,
 }
 
 impl ScriptHook for RoomPaneEdge {
     fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
         if apply.is_reload() {
-            self.slide = if !self.panes.is_empty() && !self.is_sliding_out { 0.0 } else { 1.0 };
-            self.needs_animator_resync = true;
             self.apply_walk();
         }
     }
@@ -1712,14 +1708,6 @@ impl Widget for RoomPaneEdge {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        if std::mem::take(&mut self.needs_animator_resync) {
-            if !self.panes.is_empty() && !self.is_sliding_out {
-                self.animator_cut(cx, ids!(panel.show));
-            } else {
-                self.animator_cut(cx, ids!(panel.hide));
-            }
-            self.animator_cut(cx, ids!(swap.on));
-        }
         // Our dock redraws itself while we're animating.
         if self.animator_handle_event(cx, event).must_redraw() {
             self.apply_walk();
@@ -1729,8 +1717,6 @@ impl Widget for RoomPaneEdge {
             self.is_sliding_out = false;
             self.panes.clear();
             self.pane_swap = None;
-            // Keep the animator's state in sync, e.g., if a rebake cut the slide short.
-            self.animator_cut(cx, ids!(panel.hide));
             self.apply_walk();
         }
         if self.pane_swap.is_some() && !self.animator.is_track_animating(id!(swap)) {

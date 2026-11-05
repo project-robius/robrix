@@ -101,8 +101,8 @@ impl Widget for SettingsScreen {
         self.view.handle_event(cx, event, scope);
 
         // ScriptReapply preserves text fields (String / ArcStringMut bail out),
-        // but still resets animator-driven controls and `script_apply_eval`-driven
-        // bits (avatar, button colors). Re-apply just those.
+        // but still resets `script_apply_eval`-driven bits (avatar, button colors).
+        // Re-apply just those.
         // Never re-`set_text` user-editable inputs here, that would wipe in-progress edits.
         if matches!(event, Event::ScriptReapply | Event::LiveEdit) {
             if let Some(app_state) = scope.data.get::<AppState>() {

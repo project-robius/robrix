@@ -478,11 +478,8 @@ impl ScriptHook for NavigationTabBar {
         });
     }
 
-    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
         self.pill.drop_widgets();
-        vm.with_cx_mut(|cx| {
-            self.apply_selected_tab(cx, None);
-        });
     }
 }
 

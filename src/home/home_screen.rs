@@ -403,7 +403,7 @@ script_mod! {
 
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
-#[derive(Script, Widget, Animator)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SpacesBarWrapper {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -412,34 +412,6 @@ pub struct SpacesBarWrapper {
     #[rust] was_drawn: bool,
     /// The room that the spaces bar keeps taking up while it replays its show animation.
     #[rust] held_height: f64,
-}
-
-impl ScriptHook for SpacesBarWrapper {
-    fn on_after_apply(
-        &mut self,
-        vm: &mut ScriptVm,
-        apply: &Apply,
-        _scope: &mut Scope,
-        _value: ScriptValue,
-    ) {
-        // When the widget tree is re-applied (e.g. after a preference change),
-        // the deref `view` resets its height to the DSL default,
-        // which clashes with whatever animator state we were in (shown, hidden).
-        // Thus, we re-apply the current animator state to prevent a hidden SpacesBar
-        // from briefly becoming shown before being hidden again.
-        // Cutting to it also takes its values (e.g., colors) from the new template,
-        // but we let an in-progress show/hide finish rather than cut it short.
-        if !apply.is_reload() || self.animator.is_track_animating(live_id!(spaces_bar_animator)) {
-            return;
-        }
-        vm.with_cx_mut(|cx| {
-            if self.animator_in_state(cx, ids!(spaces_bar_animator.show)) {
-                self.animator_cut(cx, ids!(spaces_bar_animator.show));
-            } else {
-                self.animator_cut(cx, ids!(spaces_bar_animator.hide));
-            }
-        });
-    }
 }
 
 impl Widget for SpacesBarWrapper {
