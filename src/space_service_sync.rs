@@ -11,7 +11,7 @@ use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::S
 use ruma::{OwnedMxcUri, OwnedRoomId, RoomId, events::room::MediaSource, room::RoomType};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
-use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, sliding_sync::wait_for_create_event, utils::{self, RoomNameId, stringify_matrix_error}};
+use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, sliding_sync::{is_room_private, refresh_rooms_restricted_to, wait_for_create_event}, utils::{self, RoomNameId, stringify_matrix_error}};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
@@ -295,7 +295,8 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                                 other_spaces.insert(room_id.to_owned(), names);
                             }
                         }
-                        Cx::post_action(SpaceRoomListAction::JoinedRoomsInSpace { space_id, children, other_spaces });
+                        let is_private = client.get_room(&space_id).is_none_or(|space| is_room_private(&space));
+                        Cx::post_action(SpaceRoomListAction::JoinedRoomsInSpace { space_id, is_private, children, other_spaces });
                     });
                 }
                 SpaceRequest::LeaveSpace { space_name_id, rooms_to_leave } => {
@@ -310,6 +311,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                                 None => Err(matrix_sdk_ui::spaces::Error::RoomNotFound(room_id.clone())),
                             };
                             if result.is_err() { break }
+                            refresh_rooms_restricted_to(&client, room_id);
                         }
                         if let Err(error) = &result {
                             error!("Failed to leave space {space_name_id}: {error:?}");
@@ -1100,6 +1102,8 @@ pub enum SpaceRoomListAction {
     /// This is sent in response to a [`SpaceRequest::GetJoinedRoomsInSpace`] request.
     JoinedRoomsInSpace {
         space_id: OwnedRoomId,
+        /// Whether the user would need an invite to join this space again after leaving it.
+        is_private: bool,
         /// The joined rooms and subspaces directly within each space, keyed by that space's ID.
         children: FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
         /// The names of the other joined top-level spaces that a given room is also in.
@@ -1155,9 +1159,10 @@ impl std::fmt::Debug for SpaceRoomListAction {
                     .field("was_invite", was_invite)
                     .finish()
             }
-            SpaceRoomListAction::JoinedRoomsInSpace { space_id, children, other_spaces } => {
+            SpaceRoomListAction::JoinedRoomsInSpace { space_id, is_private, children, other_spaces } => {
                 f.debug_struct("SpaceRoomListAction::JoinedRoomsInSpace")
                     .field("space_id", space_id)
+                    .field("is_private", is_private)
                     .field("num_parent_spaces", &children.len())
                     .field("num_rooms_in_other_spaces", &other_spaces.len())
                     .finish()

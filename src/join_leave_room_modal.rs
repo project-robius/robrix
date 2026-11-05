@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedServerName};
 
-use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, rooms_list::{InviteState, set_invite_state}}, room::BasicRoomDetails, sliding_sync::{MatrixRequest, submit_async_request}, utils::{self, RoomNameId}};
+use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, rooms_list::{InviteState, RoomsListRef, set_invite_state}}, room::BasicRoomDetails, sliding_sync::{MatrixRequest, submit_async_request}, utils::{self, RoomNameId}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -20,6 +20,8 @@ script_mod! {
         title := ModalTitle {}
 
         body := ModalBody {}
+
+        warning := ModalWarning {}
 
         // Only one cancel button and one accept button are shown at a time,
         // depending on whether the action is positive (joining) or negative (leaving/rejecting).
@@ -279,6 +281,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
 
             self.view.label(cx, ids!(title)).set_text(cx, &title);
             self.view.label(cx, ids!(body)).set_text(cx, &description);
+            self.view.label(cx, ids!(warning)).set_visible(cx, false);
             self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
             for accept_button in accept_buttons.iter() {
                 accept_button.set_text(cx, accept_button_text);
@@ -382,6 +385,7 @@ impl JoinLeaveRoomModal {
         let title: &str;
         let description: String;
         let tip_button: &str;
+        let mut warning = None;
 
         match &kind {
             JoinLeaveModalKind::AcceptInvite(invite) => {
@@ -395,12 +399,12 @@ impl JoinLeaveRoomModal {
             JoinLeaveModalKind::RejectInvite(invite) => {
                 title = "Reject this invite?";
                 description = format!(
-                    "Are you sure you want to reject this invite to join \"{}\"?\n\n\
-                    If this is a private room, you won't be able to join this room \
-                    without being re-invited to it.",
+                    "Are you sure you want to reject this invite to join \"{}\"?",
                     invite.room_name_id()
                 );
                 tip_button = "Reject";
+                warning = cx.get_global::<RoomsListRef>().is_room_private(invite.room_id())
+                    .then_some("This is a private room, so you won't be able to join it without being re-invited.");
             }
             JoinLeaveModalKind::JoinRoom { details, is_space, .. } => {
                 title = if *is_space {
@@ -417,17 +421,20 @@ impl JoinLeaveRoomModal {
             JoinLeaveModalKind::LeaveRoom(room) => {
                 title = "Leave this room?";
                 description = format!(
-                    "Are you sure you want to leave \"{}\"?\n\n\
-                    If this is a private room, you won't be able to join this room \
-                    without being re-invited to it.",
+                    "Are you sure you want to leave \"{}\"?",
                     room.room_name_id()
                 );
                 tip_button = "Leave";
+                warning = cx.get_global::<RoomsListRef>().is_room_private(room.room_id())
+                    .then_some("This is a private room, so you won't be able to join it again without being re-invited.");
             }
         }
 
         self.view.label(cx, ids!(title)).set_text(cx, title);
         self.view.label(cx, ids!(body)).set_text(cx, &description);
+        let warning_label = self.view.label(cx, ids!(warning));
+        warning_label.set_visible(cx, warning.is_some());
+        warning_label.set_text(cx, warning.unwrap_or_default());
         if show_tip && !cfg!(any(target_os = "ios", target_os = "android")) {
             self.view.view(cx, ids!(tip_view)).set_visible(cx, true);
             self.view.label(cx, ids!(tip)).set_text(cx, &format!(

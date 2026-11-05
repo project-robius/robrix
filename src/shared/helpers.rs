@@ -299,6 +299,13 @@ script_mod! {
         }
     }
 
+    // A warning shown beneath a modal's body, only when it applies.
+    mod.widgets.ModalWarning = mod.widgets.ModalBody {
+        visible: false
+        margin: Inset{top: 8}
+        draw_text +: { color: (COLOR_TEXT_WARNING_NOT_FOUND) }
+    }
+
     // A modal buttons row that fills the width, is right-aligned,
     // and wraps to the next line.
     mod.widgets.ModalButtonsRow = View {
