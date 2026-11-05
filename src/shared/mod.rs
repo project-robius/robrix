@@ -62,13 +62,13 @@ pub fn script_mod(vm: &mut ScriptVm, appearance: Appearance) {
     expand_arrow::script_mod(vm);
     unread_badge::script_mod(vm);
     collapsible_header::script_mod(vm);
-    collapsible_label::script_mod(vm);
     timestamp::script_mod(vm);
     room_filter_input_bar::script_mod(vm);
     room_input_popup_menu::script_mod(vm);
     avatar::script_mod(vm);
     text_or_image::script_mod(vm);
     html_or_plaintext::script_mod(vm);
+    collapsible_label::script_mod(vm);
     bouncing_dots::script_mod(vm);
     jump_to_bottom_button::script_mod(vm);
     popup_list::script_mod(vm);

@@ -1068,6 +1068,14 @@ impl Widget for HomeScreen {
                     self.show_joined_space(cx, app_state, space_name_id, dock_space.as_ref(), room_to_close.as_ref());
                 }
 
+                // A space that the user just left can't stay on the mobile screen stack or in the nav history.
+                if let Some(SpaceRoomListAction::LeaveSpaceResult { space_name_id, result: Ok(()) }) = action.downcast_ref() {
+                    let left_space = SelectedRoom::Space { space_name_id: space_name_id.clone() };
+                    if !effective_is_desktop(cx) && app_state.selected_room.as_ref() == Some(&left_space) {
+                        self.pop_selected_screen_view(cx, app_state, 1);
+                    }
+                    app_state.nav_history.remove(&left_space, app_state.selected_room.as_ref());
+                }
             }
 
             // Once the rooms list is shown again and stack nav finished its transition animation,

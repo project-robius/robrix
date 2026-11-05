@@ -6,7 +6,6 @@
 //!    that allows the user to click on it to show the `SpaceLobby`.
 //!
 
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::collections::BTreeMap;
@@ -30,6 +29,7 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry},
     home::{
         invite_modal::InviteModalAction,
+        leave_space_modal::LeaveSpaceModalAction,
         rooms_list::RoomsListRef,
     },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
@@ -523,77 +523,99 @@ script_mod! {
             color: COLOR_PRIMARY
         }
 
-        // Header with parent space info
+        // Header with parent space info. Its content wraps onto more lines rather than shrinking.
         header := SolidView {
             width: Fill,
             height: Fit,
             flow: Down,
-            padding: Inset{left: 16, right: 16, top: 16, bottom: 8}
+            spacing: 10,
+            padding: Inset{left: 16, right: 16, top: 12, bottom: 10}
 
             show_bg: true,
             draw_bg.color: (COLOR_BG_PREVIEW)
 
-            space_info_row := View {
-                width: Fill,
-                height: Fit,
-                flow: Right,
-                spacing: 10,
-                align: Align { y: 0.5 }
-
-                space_info_label := Label {
-                    width: Fit,
-                    height: Fit,
-                    flow: Flow.Right { wrap: false },
-                    margin: Inset{left: 2}
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 10},
-                        color: (COLOR_TEXT_SUBTLE),
-                    }
-                    text: "Welcome to the space:"
-                }
-
-                // Filter input bar for searching rooms/spaces in this space
-                filter_bar := mod.widgets.RoomFilterInputBar {
-                    input +: {
-                        text_input +: { empty_text: "Filter this space..." }
-                    }
-                }
-            }
-            
+            // The buttons stay on the right side while they fit beside the space's name.
             parent_space_row := View {
                 width: Fill,
                 height: Fit,
-                flow: Right,
-                align: Align{ y: 0.5 }
-                padding: Inset{ top: 8 }
-                
-                parent_avatar := Avatar {
-                    width: 36,
-                    height: 36,
-                    margin: Inset{ left: 5, right: 12 }
-                }
-                
-                parent_name := Label {
-                    width: Fill,
+                flow: Flow.Right { wrap: true, row_align: RowAlign.Center },
+                distribute: Distribute.SpaceBetween,
+                spacing: 16,
+                wrap_spacing: 10,
+
+                parent_space_title := View {
+                    width: Fit,
                     height: Fit,
-                    flow: Flow.Right { wrap: false },
-                    text_overflow: Ellipsis,
-                    margin: Inset{top: 4} // vertically center-align with the avatar
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 14},
-                        color: (COLOR_SPACE_LOBBY_NAME_TEXT),
+                    flow: Right,
+                    spacing: 12,
+                    align: Align{ y: 0.5 }
+
+                    parent_avatar := Avatar {
+                        width: 36,
+                        height: 36,
                     }
-                    text: ""
+
+                    parent_space_info := View {
+                        width: Fit,
+                        height: Fit,
+                        flow: Down,
+                        spacing: 3,
+
+                        parent_name := Label {
+                            width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
+                            height: Fit,
+                            padding: 0,
+                            flow: Flow.Right { wrap: true },
+                            text_overflow: Ellipsis,
+                            draw_text +: {
+                                text_style: TITLE_TEXT {font_size: 14},
+                                color: (COLOR_SPACE_LOBBY_NAME_TEXT),
+                            }
+                            text: ""
+                        }
+
+                        space_info_label := Label {
+                            width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
+                            height: Fit,
+                            padding: 0,
+                            flow: Flow.Right { wrap: true },
+                            text_overflow: Ellipsis,
+                            draw_text +: {
+                                text_style: REGULAR_TEXT {font_size: 10},
+                                color: (COLOR_TEXT_SUBTLE),
+                            }
+                            text: ""
+                        }
+                    }
                 }
 
-                invite_button := RobrixPositiveIconButton {
-                    width: Fit
-                    align: Align{x: 0.5, y: 0.5}
-                    margin: Inset{left: 6}
-                    padding: 12,
-                    draw_icon.svg: (ICON_ADD_USER)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Invite"
+                // Only a definite width can wrap, so this is just wide enough for both buttons.
+                parent_space_buttons := View {
+                    width: "min(172px, 100%)",
+                    height: Fit,
+                    flow: Flow.Right { wrap: true },
+                    spacing: 8,
+                    wrap_spacing: 8,
+
+                    invite_button := RobrixPositiveIconButton {
+                        width: 82
+                        height: 35
+                        align: Align{x: 0.5, y: 0.5}
+                        padding: Inset{left: 12, right: 12}
+                        draw_icon.svg: (ICON_ADD_USER)
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                        text: "Invite"
+                    }
+
+                    leave_button := RobrixNegativeIconButton {
+                        width: 82
+                        height: 35
+                        align: Align{x: 0.5, y: 0.5}
+                        padding: Inset{left: 12, right: 12}
+                        draw_icon.svg: (ICON_LOGOUT)
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                        text: "Leave"
+                    }
                 }
             }
 
@@ -602,21 +624,24 @@ script_mod! {
             space_topic_view := View {
                 visible: false,
                 width: Fill, height: Fit,
-                margin: Inset{left: 5, top: 8}
 
-                space_topic := MessageHtml {
-                    width: Fill, height: Fit,
-                    margin: 0
-                    max_lines: 2
-                    text_overflow: Ellipsis
-                    font_size: 10
-                    font_color: (COLOR_TEXT_SUBTLE)
-                    text_style_normal      +: { font_size: 10, line_spacing: 1.2 }
-                    text_style_italic      +: { font_size: 10, line_spacing: 1.2 }
-                    text_style_bold        +: { font_size: 10, line_spacing: 1.2 }
-                    text_style_bold_italic +: { font_size: 10, line_spacing: 1.2 }
-                    text_style_fixed       +: { font_size: 10, line_spacing: 1.2 }
-                    body: ""
+                space_topic := mod.widgets.CollapsibleHtml {
+                    html +: {
+                        font_size: 10
+                        font_color: (COLOR_TEXT_SUBTLE)
+                        text_style_normal      +: { font_size: 10, line_spacing: 1.2 }
+                        text_style_italic      +: { font_size: 10, line_spacing: 1.2 }
+                        text_style_bold        +: { font_size: 10, line_spacing: 1.2 }
+                        text_style_bold_italic +: { font_size: 10, line_spacing: 1.2 }
+                        text_style_fixed       +: { font_size: 10, line_spacing: 1.2 }
+                    }
+                }
+            }
+
+            // Filter input bar for searching rooms/spaces in this space
+            filter_bar := mod.widgets.RoomFilterInputBar {
+                input +: {
+                    text_input +: { empty_text: "Filter this space..." }
                 }
             }
         }
@@ -1121,7 +1146,7 @@ impl Widget for SpaceLobbyScreen {
                     {
                         self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
                         self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
-                        self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, &format!(
+                        self.view.label(cx, ids!(header.parent_space_row.parent_space_title.parent_space_info.space_info_label)).set_text(cx, &format!(
                             "{}  ·  {} {}",
                             match sr.join_rule {
                                 Some(JoinRuleSummary::Public) => "🌐  Public space",
@@ -1176,15 +1201,7 @@ impl Widget for SpaceLobbyScreen {
                     }
                     SubspaceEntryAction::LeaveClicked { room_id, is_space } => {
                         if *is_space {
-                            if let Some(space_request_sender) = self.space_request_sender.clone() {
-                                cx.action(JoinLeaveRoomModalAction::Open {
-                                    kind: JoinLeaveModalKind::LeaveSpace {
-                                        details: self.basic_room_details_for(room_id),
-                                        space_request_sender,
-                                    },
-                                    show_tip: false,
-                                });
-                            }
+                            cx.action(LeaveSpaceModalAction::Open(self.known_space_name_id(room_id)));
                         } else {
                             cx.action(JoinLeaveRoomModalAction::Open {
                                 kind: JoinLeaveModalKind::LeaveRoom(
@@ -1205,9 +1222,19 @@ impl Widget for SpaceLobbyScreen {
             }
 
             // Handle the invite button being clicked in the header.
-            if self.view.button(cx, ids!(header.parent_space_row.invite_button)).clicked(actions) {
+            if self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.invite_button)).clicked(actions) {
                 if let Some(space_name_id) = self.space_name_id.as_ref() {
                     cx.action(InviteModalAction::Open(space_name_id.clone()));
+                }
+            }
+
+            // Handle the leave button being clicked in the header.
+            let leave_button = self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.leave_button));
+            if leave_button.clicked(actions) {
+                if let Some(space_name_id) = self.space_name_id.as_ref() {
+                    // The modal covers this button, so it never gets the hover-out event.
+                    leave_button.reset_hover(cx);
+                    cx.action(LeaveSpaceModalAction::Open(space_name_id.clone()));
                 }
             }
 
@@ -1814,13 +1841,7 @@ impl SpaceLobbyScreen {
         let space_topic_view = self.view.view(cx, ids!(header.space_topic_view));
         match topic.map(str::trim).filter(|t| !t.is_empty()) {
             Some(topic) => {
-                let one_liner = replace_linebreaks_separators(topic, false);
-                let html = match utils::linkify(&one_liner, false) {
-                    Cow::Borrowed(plaintext) => htmlize::escape_text(plaintext).into_owned(),
-                    Cow::Owned(linkified) => linkified,
-                };
-                self.view.html(cx, ids!(header.space_topic_view.space_topic))
-                    .set_text(cx, &html);
+                self.view.widget(cx, ids!(header.space_topic_view.space_topic)).set_text(cx, topic);
                 space_topic_view.set_visible(cx, true);
             }
             None => space_topic_view.set_visible(cx, false),
@@ -1878,7 +1899,7 @@ impl SpaceLobbyScreen {
 
     pub fn set_displayed_space(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let space_name = space_name_id.display();
-        let parent_name = self.view.label(cx, ids!(header.parent_space_row.parent_name));
+        let parent_name = self.view.label(cx, ids!(header.parent_space_row.parent_space_title.parent_space_info.parent_name));
         parent_name.set_text(cx, &space_name);
 
         // If this space is already being displayed, then update its name here in case it changed.
@@ -1899,7 +1920,7 @@ impl SpaceLobbyScreen {
 
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
-        self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, "");
+        self.view.label(cx, ids!(header.parent_space_row.parent_space_title.parent_space_info.space_info_label)).set_text(cx, "");
         // Also clear the avatar, so we don't show the previous space's avatar.
         self.space_avatar_state = AvatarState::Unknown;
         self.set_space_topic(cx, None);
@@ -1919,7 +1940,7 @@ impl SpaceLobbyScreen {
 
         // TODO: move avatar setting to `draw_walk()`
         // Set parent avatar
-        let avatar_ref = self.view.avatar(cx, ids!(header.parent_space_row.parent_avatar));
+        let avatar_ref = self.view.avatar(cx, ids!(header.parent_space_row.parent_space_title.parent_avatar));
         let first_char = utils::user_name_first_letter(&space_name);
         avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
 

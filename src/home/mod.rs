@@ -11,6 +11,7 @@ pub mod home_screen;
 pub mod identity_reset_banner;
 pub mod invite_modal;
 pub mod invite_screen;
+pub mod leave_space_modal;
 pub mod light_themed_dock;
 pub mod tombstone_footer;
 pub mod loading_pane;
@@ -74,6 +75,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     room_context_menu::script_mod(vm);
     nav_history_menu::script_mod(vm);
     invite_modal::script_mod(vm);
+    leave_space_modal::script_mod(vm);
     invite_screen::script_mod(vm);
     tombstone_footer::script_mod(vm);
     failed_send_banner::script_mod(vm);

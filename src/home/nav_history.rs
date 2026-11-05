@@ -137,6 +137,13 @@ impl NavHistory {
         self.drop_duplicate_places(current);
     }
 
+    /// Removes the given screen from this history, e.g., a space that the user left.
+    pub fn remove(&mut self, screen: &SelectedRoom, current: Option<&SelectedRoom>) {
+        self.back.retain(|place| place.as_ref() != Some(screen));
+        self.forward.retain(|place| place.as_ref() != Some(screen));
+        self.drop_duplicate_places(current);
+    }
+
     /// Drops any place that's the same as the one next to it, including the `current` place.
     fn drop_duplicate_places(&mut self, current: Option<&SelectedRoom>) {
         self.back.dedup();

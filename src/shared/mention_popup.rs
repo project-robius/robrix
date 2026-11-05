@@ -579,7 +579,7 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             new_widget.label(cx, ids!(info.title)).set_text(cx, &name);
             let alias = candidate.alias.as_ref().map(|a| a.as_str()).unwrap_or("");
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, alias);
-            new_widget.avatar(cx, ids!(avatar)).show_room(cx, candidate.room_name_id.room_id(), candidate.avatar_url.as_ref(), candidate.room_name_id.name_for_avatar());
+            new_widget.avatar(cx, ids!(avatar)).show_room(cx, candidate.room_name_id.room_id(), candidate.avatar_url.as_ref(), candidate.room_name_id.name_for_avatar(), TextAvatarBgColor::UnknownRoom);
             new_widget
         }
         MentionItem::Command(cmd) => {

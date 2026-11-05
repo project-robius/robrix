@@ -44,7 +44,7 @@ use crate::{
         room_filter_input_bar::MainFilterAction,
     },
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, RoomDiagnosticsReady, TimelineKind, submit_async_request},
-    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{RoomNameId, VecDiff},
+    space_service_sync::{JoinedRoomInSpace, ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{RoomNameId, VecDiff},
 };
 
 /// Whether to pre-paginate visible rooms at least once in order to
@@ -1777,6 +1777,8 @@ impl RoomsList {
             // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
             SpaceRoomListAction::DetailedChildren { .. }
             | SpaceRoomListAction::SpaceDetails(_) => { }
+            // The LeaveSpaceModal asks for this and handles it.
+            SpaceRoomListAction::JoinedRoomsInSpace { .. } => { }
         }
     }
 
@@ -1799,19 +1801,47 @@ impl RoomsList {
         }
     }
 
-    /// The space graph can have cycles due to arbitrary nesting, so this avoids those
-    /// and caches the result, updating our `rooms_in_selected_space` set in an optimized way.
-    fn rescan_selected_space(&mut self) -> bool {
-        let Some(selected) = self.selected_space.as_ref() else {
-            let had_rooms = !self.rooms_in_selected_space.is_empty();
-            self.rooms_in_selected_space = Vec::new();
-            self.is_selected_space_loading = false;
-            return had_rooms;
-        };
+    /// Starts fetching the given space's children if we don't have the full list of them yet.
+    fn request_missing_space_children(&mut self, space_name_id: &RoomNameId, parent_chain: ParentChain) {
+        let pagination = self.space_map
+            .get(space_name_id.room_id())
+            .map(|smv| smv.pagination)
+            .unwrap_or_default();
+        if pagination == SpacePaginationState::Complete { return }
+        let Some(sender) = self.space_request_sender.as_ref() else { return };
+        // These requests are a fresh new attempt, so clear any previous failures to load a space's children.
+        if let Some(smv) = self.space_map.get_mut(space_name_id.room_id()) {
+            smv.pagination = SpacePaginationState::InProgress;
+        }
+        if sender.send(SpaceRequest::SubscribeToSpaceRoomList {
+            space_name_id: space_name_id.clone(),
+            parent_chain: parent_chain.clone(),
+        }).is_err() {
+            error!("BUG: RoomsList: failed to send SubscribeToSpaceRoomList request for space {space_name_id}.");
+        }
+        if sender.send(SpaceRequest::PaginateSpaceRoomList {
+            space_id: space_name_id.room_id().clone(),
+            parent_chain: parent_chain.clone(),
+        }).is_err() {
+            error!("BUG: RoomsList: failed to send PaginateSpaceRoomList request for space {space_name_id}.");
+        }
+        if sender.send(SpaceRequest::GetChildren {
+            space_id: space_name_id.room_id().clone(),
+            parent_chain,
+        }).is_err() {
+            error!("BUG: RoomsList: failed to send GetRooms request for space {space_name_id}.");
+        }
+    }
+
+    /// Returns the sets of rooms that we know of anywhere within the given space,
+    /// and whether we might not know of all of them yet.
+    ///
+    /// The space graph can have cycles due to arbitrary nesting, so this avoids those.
+    fn get_rooms_within_space(&self, space_id: &OwnedRoomId) -> (Vec<Arc<FxHashSet<OwnedRoomId>>>, bool) {
         let mut rooms = Vec::new();
         let mut is_loading = false;
         let mut visited = FxHashSet::default();
-        let mut to_visit = vec![selected.room_id()];
+        let mut to_visit = vec![space_id];
         while let Some(space_id) = to_visit.pop() {
             if !visited.insert(space_id) { continue }
             let Some(smv) = self.space_map.get(space_id) else {
@@ -1828,6 +1858,18 @@ impl RoomsList {
                 to_visit.extend(children.subspaces.iter());
             }
         }
+        (rooms, is_loading)
+    }
+
+    /// Caches the rooms within the selected space, updating our `rooms_in_selected_space` set in an optimized way.
+    fn rescan_selected_space(&mut self) -> bool {
+        let Some(selected) = self.selected_space.as_ref() else {
+            let had_rooms = !self.rooms_in_selected_space.is_empty();
+            self.rooms_in_selected_space = Vec::new();
+            self.is_selected_space_loading = false;
+            return had_rooms;
+        };
+        let (rooms, is_loading) = self.get_rooms_within_space(selected.room_id());
         // Return whether any rooms actually changed, to avoid unnecessary work.
         let is_unchanged = rooms.len() == self.rooms_in_selected_space.len()
             && rooms.iter().zip(&self.rooms_in_selected_space).all(|(new, old)| Arc::ptr_eq(new, old));
@@ -2046,39 +2088,8 @@ impl Widget for RoomsList {
                             self.selected_space = Some(space_name_id.clone());
                             self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_visible(cx, !self.has_bar_spaces);
 
-                            // If we don't have the full list of children in this newly-selected space, then fetch it.
-                            let pagination = self.space_map
-                                .get(space_name_id.room_id())
-                                .map(|smv| smv.pagination)
-                                .unwrap_or_default();
                             // A selected space is always a top-level space, even if we saved it as a subspace before.
-                            let parent_chain = ParentChain::new();
-                            if pagination != SpacePaginationState::Complete
-                                && let Some(sender) = self.space_request_sender.as_ref()
-                            {
-                                // These requests are a fresh new attempt, so clear any previous failures to load a space's children.
-                                if let Some(smv) = self.space_map.get_mut(space_name_id.room_id()) {
-                                    smv.pagination = SpacePaginationState::InProgress;
-                                }
-                                if sender.send(SpaceRequest::SubscribeToSpaceRoomList {
-                                    space_name_id: space_name_id.clone(),
-                                    parent_chain: parent_chain.clone(),
-                                }).is_err() {
-                                    error!("BUG: RoomsList: failed to send SubscribeToSpaceRoomList request for space {space_name_id}.");
-                                }
-                                if sender.send(SpaceRequest::PaginateSpaceRoomList {
-                                    space_id: space_name_id.room_id().clone(),
-                                    parent_chain: parent_chain.clone(),
-                                }).is_err() {
-                                    error!("BUG: RoomsList: failed to send PaginateSpaceRoomList request for space {space_name_id}.");
-                                }
-                                if sender.send(SpaceRequest::GetChildren {
-                                    space_id: space_name_id.room_id().clone(),
-                                    parent_chain,
-                                }).is_err() {
-                                    error!("BUG: RoomsList: failed to send GetRooms request for space {space_name_id}.");
-                                }
-                            }
+                            self.request_missing_space_children(space_name_id, ParentChain::new());
                         }
                         SelectedTab::Home => {
                             self.selected_space = None;
@@ -2442,6 +2453,35 @@ impl RoomsListRef {
     /// to the background space service.
     pub fn get_space_request_sender(&self) -> Option<UnboundedSender<SpaceRequest>> {
         self.borrow()?.space_request_sender.clone()
+    }
+
+    /// Starts fetching the given space's children if we don't have the full list of them yet.
+    pub fn request_missing_space_children(&self, space_name_id: &RoomNameId) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let parent_chain = inner.space_map.get(space_name_id.room_id())
+            .map(|smv| smv.parent_chain.clone())
+            .unwrap_or_default();
+        inner.request_missing_space_children(space_name_id, parent_chain);
+    }
+
+    /// Returns the joined rooms that we know of anywhere within the given space, sorted by name,
+    /// and whether we might not know of all of them yet.
+    pub fn get_joined_rooms_in_space(&self, space_id: &OwnedRoomId) -> (Vec<JoinedRoomInSpace>, bool) {
+        let Some(inner) = self.borrow() else { return (Vec::new(), false) };
+        let (room_sets, is_loading) = inner.get_rooms_within_space(space_id);
+        let mut rooms: Vec<_> = room_sets.iter()
+            .flat_map(|rooms| rooms.iter())
+            .filter_map(|room_id| inner.all_joined_rooms.get(room_id))
+            .map(|room| JoinedRoomInSpace {
+                room_name_id: room.room_name_id.clone(),
+                canonical_alias: room.canonical_alias.clone(),
+                avatar_url: None,
+                is_space: false,
+                other_spaces: Vec::new(),
+            })
+            .collect();
+        rooms.sort_by_cached_key(|room| room.room_name_id.display().to_lowercase());
+        (rooms, is_loading)
     }
 
     /// Returns the parent chain of the given space, if known.

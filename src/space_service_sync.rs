@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{Client, RoomState, media::MediaRequestParameters, ruma::api::error::ErrorKind};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
-use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
+use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, RoomId, events::room::MediaSource, room::RoomType};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
 use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, persistence, room::FetchedRoomAvatar, sliding_sync::wait_for_create_event, utils::{self, RoomNameId, stringify_matrix_error}};
@@ -38,11 +38,18 @@ pub enum SpaceRequest {
     UnsubscribeFromSpaceRoomList {
         space_id: OwnedRoomId,
     },
-    /// Leave the given space and all joined rooms within it.
+    /// Get all of the rooms and subspaces within the given space that the user has joined.
+    ///
+    /// This will result in a [`SpaceRoomListAction::JoinedRoomsInSpace`] action being emitted.
+    GetJoinedRoomsInSpace {
+        space_id: OwnedRoomId,
+    },
+    /// Leave the given space, along with the given rooms and subspaces within it.
     ///
     /// Will emit a [`SpaceRoomListAction::LeaveSpaceResult`] action.
     LeaveSpace {
         space_name_id: RoomNameId,
+        rooms_to_leave: Vec<OwnedRoomId>,
     },
     /// Paginate the given space's room list, i.e., fetch the next batch of rooms in the list.
     ///
@@ -113,6 +120,23 @@ struct SpaceRoomListTask {
 /// and weren't banned from it. Anything else is no longer worth syncing.
 fn is_still_in_space(space: &SpaceRoom) -> bool {
     !matches!(space.state, Some(RoomState::Left) | Some(RoomState::Banned))
+}
+
+/// Returns whether the given room is anywhere within the given space, according to the local space graph.
+async fn is_room_in_space(space_service: &SpaceService, room_id: &RoomId, space_id: &OwnedRoomId) -> bool {
+    let mut to_visit = vec![room_id.to_owned()];
+    let mut visited = FxHashSet::default();
+    while let Some(id) = to_visit.pop() {
+        for parent_id in space_service.joined_parent_ids_of_child(&id).await {
+            if parent_id == *space_id {
+                return true;
+            }
+            if visited.insert(parent_id.clone()) {
+                to_visit.push(parent_id);
+            }
+        }
+    }
+    false
 }
 
 /// Stops the room list task for the given space and any now-unreachable subspaces within it.
@@ -241,39 +265,53 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                         &all_joined_spaces,
                     );
                 }
-                SpaceRequest::LeaveSpace { space_name_id } => {
-                    match space_service.leave_space(space_name_id.room_id()).await {
-                        Ok(leave_handle) => {
-                            match leave_handle.leave(|_| true).await {
-                                Ok(()) => {
-                                    // Leaving a space leaves its subspaces too, so stop all of their tasks.
-                                    shutdown_space_room_list_tasks(
-                                        &mut space_room_list_tasks,
-                                        space_name_id.room_id(),
-                                        &all_joined_spaces,
-                                    );
-                                    Cx::post_action(SpaceRoomListAction::LeaveSpaceResult {
-                                        space_name_id,
-                                        result: Ok(()),
-                                    });
-                                }
-                                Err(error) => {
-                                    error!("LeaveSpace: failed to leave all rooms in space {space_name_id}: {error:?}");
-                                    Cx::post_action(SpaceRoomListAction::LeaveSpaceResult {
-                                        space_name_id,
-                                        result: Err(error),
-                                    });
-                                }
+                SpaceRequest::GetJoinedRoomsInSpace { space_id } => {
+                    let space_service = Arc::clone(&space_service);
+                    let client = client.clone();
+                    let top_level_spaces = all_joined_spaces.clone();
+                    // This checks every joined room, so spawn it in a new task.
+                    Handle::current().spawn(async move {
+                        // A subspace's rooms are always inside of its ancestors, so those aren't "other" spaces.
+                        let own_ancestors = space_service.top_level_ancestors_of(&space_id).await;
+                        let mut rooms = Vec::new();
+                        for room in client.joined_rooms() {
+                            if room.room_id() == space_id || !is_room_in_space(&space_service, room.room_id(), &space_id).await {
+                                continue;
                             }
-                        }
-                        Err(error) => {
-                            error!("Failed to leave space {space_name_id}: {error:?}");
-                            Cx::post_action(SpaceRoomListAction::LeaveSpaceResult {
-                                space_name_id,
-                                result: Err(error),
+                            let ancestors = space_service.top_level_ancestors_of(room.room_id()).await;
+                            rooms.push(JoinedRoomInSpace {
+                                room_name_id: RoomNameId::from_room(&room).await,
+                                canonical_alias: room.canonical_alias(),
+                                avatar_url: room.avatar_url(),
+                                is_space: room.is_space(),
+                                other_spaces: top_level_spaces.iter()
+                                    .filter(|s| ancestors.contains(&s.room_id) && !own_ancestors.contains(&s.room_id))
+                                    .map(|s| s.display_name.clone())
+                                    .collect(),
                             });
                         }
-                    }
+                        rooms.sort_by_cached_key(|r| (!r.is_space, r.room_name_id.display().to_lowercase()));
+                        Cx::post_action(SpaceRoomListAction::JoinedRoomsInSpace { space_id, rooms });
+                    });
+                }
+                SpaceRequest::LeaveSpace { space_name_id, rooms_to_leave } => {
+                    let client = client.clone();
+                    // Each room is left with a separate request, so spawn this in a new task.
+                    Handle::current().spawn(async move {
+                        let mut result = Ok(());
+                        // We leave the space itself last, so the user can try again if leaving a room fails.
+                        for room_id in rooms_to_leave.iter().chain([space_name_id.room_id()]) {
+                            result = match client.get_room(room_id) {
+                                Some(room) => room.leave().await.map_err(matrix_sdk_ui::spaces::Error::LeaveSpace),
+                                None => Err(matrix_sdk_ui::spaces::Error::RoomNotFound(room_id.clone())),
+                            };
+                            if result.is_err() { break }
+                        }
+                        if let Err(error) = &result {
+                            error!("Failed to leave space {space_name_id}: {error:?}");
+                        }
+                        Cx::post_action(SpaceRoomListAction::LeaveSpaceResult { space_name_id, result });
+                    });
                 }
                 SpaceRequest::GetDetailedChildren { space_name_id, parent_chain } => {
                     let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_name_id, &parent_chain).await;
@@ -1001,6 +1039,17 @@ pub fn stringify_space_pagination_error(error: &matrix_sdk::Error) -> &'static s
     }
 }
 
+/// A room or subspace that the user has joined, somewhere within a space.
+#[derive(Clone, Debug)]
+pub struct JoinedRoomInSpace {
+    pub room_name_id: RoomNameId,
+    pub canonical_alias: Option<OwnedRoomAliasId>,
+    pub avatar_url: Option<OwnedMxcUri>,
+    pub is_space: bool,
+    /// The names of the other joined top-level spaces that this room is also in.
+    pub other_spaces: Vec<String>,
+}
+
 /// Actions emitted from the SpaceRoomList for a given space.
 pub enum SpaceRoomListAction {
     /// The list of rooms & spaces that are direct children of the given space has changed.
@@ -1053,6 +1102,14 @@ pub enum SpaceRoomListAction {
         /// The `was_invite` value that was originally sent with the request.
         was_invite: bool,
     },
+    /// The rooms and subspaces that the user has joined within the given space,
+    /// with subspaces first, and then both of those sorted alphabetically.
+    ///
+    /// This is sent in response to a [`SpaceRequest::GetJoinedRoomsInSpace`] request.
+    JoinedRoomsInSpace {
+        space_id: OwnedRoomId,
+        rooms: Vec<JoinedRoomInSpace>,
+    },
     /// The result of a [`SpaceRequest::LeaveSpace`].
     LeaveSpaceResult {
         space_name_id: RoomNameId,
@@ -1101,6 +1158,12 @@ impl std::fmt::Debug for SpaceRoomListAction {
                     .field("space_name_id", space_name_id)
                     .field("dock_space", dock_space)
                     .field("was_invite", was_invite)
+                    .finish()
+            }
+            SpaceRoomListAction::JoinedRoomsInSpace { space_id, rooms } => {
+                f.debug_struct("SpaceRoomListAction::JoinedRoomsInSpace")
+                    .field("space_id", space_id)
+                    .field("num_rooms", &rooms.len())
                     .finish()
             }
             SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => {
