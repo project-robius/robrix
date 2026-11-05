@@ -255,7 +255,7 @@ script_mod! {
 
     // Docked panes are real flow children around the center, so they reflow the timeline.
     mod.widgets.RoomPaneDock = set_type_default() do #(RoomPaneDock::register_widget(vm)) {
-        ..mod.widgets.RoundedView
+        ..mod.widgets.View
         width: Fill, height: Fill
         flow: Overlay
 

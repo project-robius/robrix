@@ -256,6 +256,9 @@ script_mod! {
             border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
             pixel: fn() {
+                if self.hover + self.highlight + self.mention <= 0.0 {
+                    return vec4(0.0);
+                }
                 let mut fill_color = self.color;
                 let mut fill_color_hover = self.color_hover;
                 if self.mention > 0.5 {
