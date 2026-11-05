@@ -14,7 +14,7 @@ use std::sync::Arc;
 use emojis::Emoji;
 use makepad_widgets::*;
 use crate::{
-    shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
+    shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, context_menu::{get_keyboard_height, get_popup_bounds}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
     utils::RoomNameId,
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedUserId};
@@ -151,6 +151,8 @@ pub struct MentionablePopup {
     #[rust] cancel_scope: Option<CancelScope>,
     /// The location of the text input cursor that this popup is positioned near.
     #[rust] anchor_rect: Rect,
+    /// How much of the window the soft keyboard covers, which the popup stays above.
+    #[rust] keyboard_height: f64,
     /// The MentionableTextInput widget instance that opened and is controlling this popup.
     #[rust] owner: Option<WidgetUid>,
     /// The UID of the source widget controlling this (e.g., the TextInput that triggered it).
@@ -180,6 +182,13 @@ pub struct MentionablePopup {
 
 impl Widget for MentionablePopup {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // The keyboard is usually up before we open, so we keep track of it even while closed.
+        if let Some(height) = get_keyboard_height(event) {
+            self.keyboard_height = height;
+            if self.is_open {
+                self.redraw(cx);
+            }
+        }
         if !self.is_open {
             return;
         }
@@ -297,23 +306,21 @@ impl MentionablePopup {
 
     /// Recalculates and updates the position of the `popup_frame`.
     fn position_content(&mut self, cx: &mut Cx2d) {
-        let window_size = cx.current_pass_size();
         let edge = 10.0;
         let gap = 16.0; // space between the current line of text and the popup border
         let anchor = self.anchor_rect;
         // The anchor is in absolute coords (relative to the whole app window),
         // but the margins are relatively to the overlay container.
         let overlay = cx.turtle().origin();
+        let bounds = get_popup_bounds(cx, overlay, self.keyboard_height, edge);
 
         // Align the left side of the popup with the current textinput's cursor location,
-        // and then ensure that the width is either limited by the app window size or a fixed max value.
-        let width = (window_size.x - 2.0 * edge).clamp(0.0, POPUP_MAX_WIDTH);
-        let left_win = anchor.pos.x.clamp(edge, (window_size.x - edge - width).max(edge));
+        // and then ensure that the width is either limited by the available space or a fixed max value.
+        let width = bounds.size.x.min(POPUP_MAX_WIDTH);
+        let left_win = anchor.pos.x.clamp(bounds.pos.x, bounds.pos.x + bounds.size.x - width);
 
-        // Measure space inside the overlay body, not the window: its top is at
-        // overlay.y, so the popup never spills up into the caption or the status bar.
-        let top_limit = overlay.y + cx.display_context.safe_area_insets.top + edge;
-        let bottom_limit = window_size.y - edge;
+        let top_limit = bounds.pos.y;
+        let bottom_limit = top_limit + bounds.size.y;
         // Must match header_view's fixed height in the DSL.
         let header_h = HEADER_HEIGHT;
         let space_above = (anchor.pos.y - gap - top_limit).max(0.0);
