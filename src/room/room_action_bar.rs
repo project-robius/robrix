@@ -316,8 +316,6 @@ pub struct RoomActionBar {
     #[live] expand: f32,
     /// The full height of the expanded buttons, as of when they were last drawn.
     #[rust] expanded_height: f64,
-    /// Whether the animator must be cut to our current state, e.g., after a reapply.
-    #[rust] needs_animator_resync: bool,
     /// The layout we last drew, so we know when it needs to be redrawn.
     ///
     /// This is: `(width, is_desktop_mode, whether expanded buttons are shown, num buttons in header)`.
@@ -343,10 +341,7 @@ impl ScriptHook for RoomActionBar {
         }
         self.latest_layout = None;
         self.highlighted_panes = None;
-        // A reapply resets `expand` to its DSL default, and the animator can't be changed during an apply.
         if apply.is_reload() {
-            self.expand = if self.is_expanded { 1.0 } else { 0.0 };
-            self.needs_animator_resync = true;
             self.latest_header_height = None;
         }
     }
@@ -363,9 +358,6 @@ impl Widget for RoomActionBar {
                 || a.downcast_ref::<RoomTombstoned>().is_some())
         {
             self.redraw(cx);
-        }
-        if std::mem::take(&mut self.needs_animator_resync) {
-            self.cut_to_expanded(cx);
         }
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
@@ -543,7 +535,8 @@ impl RoomActionBar {
         match (animate, expanded) {
             (true, true) => self.animator_play(cx, ids!(expand.on)),
             (true, false) => self.animator_play(cx, ids!(expand.off)),
-            (false, _) => self.cut_to_expanded(cx),
+            (false, true) => self.animator_cut(cx, ids!(expand.on)),
+            (false, false) => self.animator_cut(cx, ids!(expand.off)),
         }
         self.latest_layout = None;
         self.redraw_next_frame = cx.new_next_frame();
@@ -561,14 +554,6 @@ impl RoomActionBar {
         self.latest_header_height = Some(height);
         cx.widget_action(self.widget_uid(), RoomActionBarAction::LayoutChanged { new_height: height });
         true
-    }
-
-    fn cut_to_expanded(&mut self, cx: &mut Cx) {
-        if self.is_expanded {
-            self.animator_cut(cx, ids!(expand.on));
-        } else {
-            self.animator_cut(cx, ids!(expand.off));
-        }
     }
 
     /// Whether the expanded buttons are shown, including while they slide out of view.

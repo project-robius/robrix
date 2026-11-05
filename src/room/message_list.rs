@@ -152,7 +152,7 @@ pub enum MessageListRowAction {
 
 /// A row in a list of messages, which handles clicks and hovers on the whole row
 /// before its children, so that a click on a link in its preview still counts as a click on the row.
-#[derive(Script, Widget, Animator)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct MessageListRow {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -164,19 +164,6 @@ pub struct MessageListRow {
     #[rust] timestamp_width: f64,
     /// Whether the timestamp is shown beneath the preview, as it'd cut off the sender's name beside it.
     #[rust] is_timestamp_below: bool,
-}
-
-impl ScriptHook for MessageListRow {
-    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
-        // A reload keeps the hover color from the old template (or drops it), so we cut to our hover state again.
-        vm.with_cx_mut(|cx| {
-            if self.animator_in_state(cx, ids!(bg_hover.on)) {
-                self.animator_cut(cx, ids!(bg_hover.on));
-            } else {
-                self.animator_cut(cx, ids!(bg_hover.off));
-            }
-        });
-    }
 }
 
 impl Widget for MessageListRow {

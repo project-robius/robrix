@@ -1245,9 +1245,6 @@ impl AppSettings {
     }
 
     /// Makes the given text input editable or read-only, with the matching enabled or disabled look.
-    ///
-    /// A reload resets the input's disabled look but not its animator state,
-    /// so restoring it needs `Animate::No`, since an animated toggle would see nothing to do.
     fn set_input_enabled(cx: &mut Cx, view: &View, input: &[LiveId], enabled: bool, animate: Animate) {
         let input_ref = view.text_input(cx, input);
         input_ref.set_is_read_only(cx, !enabled);
