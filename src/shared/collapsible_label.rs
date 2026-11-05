@@ -1,8 +1,11 @@
 //! A `CollapsibleLabel` shows only the first few lines of a long text,
 //! with "Show more" and "Show less" buttons to expand and collapse it.
+//! A `CollapsibleHtml` is the same, except that it shows the text's URLs as links.
 //!
 //! While collapsed, line breaks become spaces, so those few lines hold as much text as they can.
 //! Once expanded, it shows the full text as written.
+
+use std::borrow::Cow;
 
 use makepad_widgets::*;
 
@@ -38,6 +41,18 @@ script_mod! {
         }
     }
 
+    let ShowMoreButton = mod.widgets.ShowMoreLessButton {
+        margin: Inset{top: 6}
+        draw_icon +: { svg: (ICON_TRIANGLE_DOWN) }
+        text: "Show more…"
+    }
+
+    let ShowLessButton = mod.widgets.ShowMoreLessButton {
+        margin: Inset{top: 6}
+        draw_icon +: { svg: (ICON_TRIANGLE_UP) }
+        text: "Show less"
+    }
+
     mod.widgets.CollapsibleLabel = #(CollapsibleLabel::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
@@ -53,17 +68,23 @@ script_mod! {
             text: ""
         }
 
-        expand_button := mod.widgets.ShowMoreLessButton {
-            margin: Inset{top: 6}
-            draw_icon +: { svg: (ICON_TRIANGLE_DOWN) }
-            text: "Show more…"
+        expand_button := ShowMoreButton {}
+        collapse_button := ShowLessButton {}
+    }
+
+    mod.widgets.CollapsibleHtml = #(CollapsibleHtml::register_widget(vm)) {
+        width: Fill, height: Fit
+        flow: Down
+        collapsed_lines: 2
+
+        html := mod.widgets.MessageHtml {
+            margin: 0
+            text_overflow: Ellipsis
+            body: ""
         }
 
-        collapse_button := mod.widgets.ShowMoreLessButton {
-            margin: Inset{top: 6}
-            draw_icon +: { svg: (ICON_TRIANGLE_UP) }
-            text: "Show less"
-        }
+        expand_button := ShowMoreButton {}
+        collapse_button := ShowLessButton {}
     }
 }
 
@@ -84,15 +105,10 @@ pub struct CollapsibleLabel {
 impl Widget for CollapsibleLabel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-        if let Event::Actions(actions) = event {
-            let expand_button = self.view.button(cx, ids!(expand_button));
-            let collapse_button = self.view.button(cx, ids!(collapse_button));
-            if expand_button.clicked(actions) || collapse_button.clicked(actions) {
-                self.is_expanded = !self.is_expanded;
-                expand_button.reset_hover(cx);
-                collapse_button.reset_hover(cx);
-                self.redraw(cx);
-            }
+        if let Event::Actions(actions) = event
+            && toggle_if_clicked(&self.view, cx, actions, &mut self.is_expanded)
+        {
+            self.redraw(cx);
         }
     }
 
@@ -125,18 +141,7 @@ impl Widget for CollapsibleLabel {
                 laidout.is_truncated
             }
         });
-        let expand_button = self.view.button(cx, ids!(expand_button));
-        let collapse_button = self.view.button(cx, ids!(collapse_button));
-        let (shown, hidden) = if self.is_expanded {
-            (collapse_button, expand_button)
-        } else {
-            (expand_button, collapse_button)
-        };
-        hidden.set_visible(cx, false);
-        shown.set_visible(cx, is_collapsible);
-        if is_collapsible {
-            shown.draw_all(cx, scope);
-        }
+        draw_toggle_button(&self.view, cx, scope, self.is_expanded, is_collapsible);
         cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
     }
@@ -155,5 +160,106 @@ impl Widget for CollapsibleLabel {
         self.collapsed_text = utils::replace_linebreaks_separators(text, false).into_owned();
         self.is_expanded = false;
         self.redraw(cx);
+    }
+}
+
+#[derive(Script, ScriptHook, Widget)]
+pub struct CollapsibleHtml {
+    #[deref] view: View,
+    #[walk] walk: Walk,
+    #[layout] layout: Layout,
+    #[redraw] #[area] #[rust] area: Area,
+    /// How many lines of text to show while collapsed.
+    #[live] collapsed_lines: usize,
+    #[rust] text: String,
+    #[rust] is_expanded: bool,
+}
+
+impl Widget for CollapsibleHtml {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        if let Event::Actions(actions) = event
+            && toggle_if_clicked(&self.view, cx, actions, &mut self.is_expanded)
+        {
+            self.show_text_as_html(cx);
+            self.redraw(cx);
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let html = self.view.html(cx, ids!(html));
+        if let Some(mut html) = html.borrow_mut() {
+            html.max_lines = if self.is_expanded { 0 } else { self.collapsed_lines };
+        }
+        cx.begin_turtle(walk, self.layout);
+        html.draw_all(cx, scope);
+
+        // We only know if the collapsed text overflows right after drawing it,
+        // so once it's expanded, we rely on it having overflowed to get there.
+        let is_collapsible = self.is_expanded || html.borrow().is_some_and(|html| html.is_content_truncated());
+        draw_toggle_button(&self.view, cx, scope, self.is_expanded, is_collapsible);
+        cx.end_turtle_with_area(&mut self.area);
+        DrawStep::done()
+    }
+
+    fn text(&self) -> String {
+        self.text.clone()
+    }
+
+    /// Sets the plaintext to show, collapsing it again if it changed.
+    fn set_text(&mut self, cx: &mut Cx, text: &str) {
+        if self.text == text {
+            return;
+        }
+        self.text.clear();
+        self.text.push_str(text);
+        self.is_expanded = false;
+        self.show_text_as_html(cx);
+        self.redraw(cx);
+    }
+}
+
+impl CollapsibleHtml {
+    /// Shows our text as HTML with links for its URLs, which keeps its line breaks only while expanded.
+    fn show_text_as_html(&mut self, cx: &mut Cx) {
+        let text = if self.is_expanded {
+            Cow::Borrowed(self.text.as_str())
+        } else {
+            utils::replace_linebreaks_separators(&self.text, false)
+        };
+        let html = match utils::linkify(&text, false) {
+            Cow::Borrowed(plaintext) => utils::escape_text_and_line_breaks(plaintext).into_owned(),
+            Cow::Owned(linkified) => linkified.replace('\n', "<br>"),
+        };
+        self.view.html(cx, ids!(html)).set_text(cx, &html);
+    }
+}
+
+/// Flips `is_expanded` if the given `view`'s expand or collapse button was clicked, and returns whether it did.
+fn toggle_if_clicked(view: &View, cx: &mut Cx, actions: &Actions, is_expanded: &mut bool) -> bool {
+    let expand_button = view.button(cx, ids!(expand_button));
+    let collapse_button = view.button(cx, ids!(collapse_button));
+    let was_clicked = expand_button.clicked(actions) || collapse_button.clicked(actions);
+    if was_clicked {
+        *is_expanded = !*is_expanded;
+        expand_button.reset_hover(cx);
+        collapse_button.reset_hover(cx);
+    }
+    was_clicked
+}
+
+/// Draws the given `view`'s expand or collapse button, or neither if it isn't `is_collapsible`.
+fn draw_toggle_button(view: &View, cx: &mut Cx2d, scope: &mut Scope, is_expanded: bool, is_collapsible: bool) {
+    let expand_button = view.button(cx, ids!(expand_button));
+    let collapse_button = view.button(cx, ids!(collapse_button));
+    let (shown, hidden) = if is_expanded {
+        (collapse_button, expand_button)
+    } else {
+        (expand_button, collapse_button)
+    };
+    hidden.set_visible(cx, false);
+    shown.set_visible(cx, is_collapsible);
+    if is_collapsible {
+        shown.draw_all(cx, scope);
     }
 }

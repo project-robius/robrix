@@ -1078,7 +1078,7 @@ impl Widget for AddRoomScreen {
                 match &frp.room_avatar {
                     // We may not have this avatar's image yet, e.g., for a search result, so the avatar cache fetches it.
                     FetchedRoomAvatar::Text(_) => {
-                        room_avatar.show_room(cx, frp.room_name_id.room_id(), frp.avatar_url.as_ref(), frp.room_name_id.name_for_avatar());
+                        room_avatar.show_room(cx, frp.room_name_id.room_id(), frp.avatar_url.as_ref(), frp.room_name_id.name_for_avatar(), TextAvatarBgColor::UnknownRoom);
                     }
                     FetchedRoomAvatar::Image(avatar_image) => {
                         let res = room_avatar.show_image(
@@ -2007,7 +2007,7 @@ impl SearchResultRow for RoomSearchResult {
             subtitle.insert_str(0, "✅ Joined · ");
         }
         row.label(cx, ids!(info.subtitle)).set_text(cx, &subtitle);
-        row.avatar(cx, ids!(avatar)).show_room(cx, self.room_id(), self.preview.avatar_url.as_ref(), Some(name))
+        row.avatar(cx, ids!(avatar)).show_room(cx, self.room_id(), self.preview.avatar_url.as_ref(), Some(name), TextAvatarBgColor::UnknownRoom)
     }
 }
 

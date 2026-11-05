@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{home_screen::ScreenRestoredAction, nav_history::{GoBackAction, GoForwardAction, NavHistory, can_show}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, sliding_sync::TimelineKind, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{home_screen::ScreenRestoredAction, nav_history::{GoBackAction, GoForwardAction, NavHistory, can_show}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, sliding_sync::TimelineKind, space_service_sync::SpaceRoomListAction, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt}, room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt}, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
 use crate::{logout::logout_confirm_modal::LogoutAction, room::{pinned_messages_list::PinnedMessagesListAction, room_action_bar::RoomActionBarWidgetRefExt, room_pane, room_tabs::RoomTabs}};
 
@@ -738,6 +738,16 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                 self.selected_space = None;
+                continue;
+            }
+
+            // A space that the user just left can't stay open in a tab.
+            if let Some(SpaceRoomListAction::LeaveSpaceResult { space_name_id, result: Ok(()) }) = action.downcast_ref() {
+                let tab_id = LiveId::from_str(space_name_id.room_id().as_str());
+                if self.open_rooms.contains_key(&tab_id) {
+                    self.close_tab(cx, tab_id);
+                    should_save_dock_action = true;
+                }
                 continue;
             }
 
