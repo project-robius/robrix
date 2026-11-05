@@ -27,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, message_shield::MessageShieldWidgetRefExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, message_shield::MessageShieldWidgetRefExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, moderation::ReportTarget, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::{
         user_profile::{RoomMembershipInfo, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
         user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_user_verification_state},
@@ -50,7 +50,7 @@ use crate::room::{
     pane_dock::{RoomPaneDockAction, RoomPaneDockWidgetExt, RoomPaneDockWidgetRefExt, SavedRoomPane},
     pinned_messages_list::{PinnedMessagesListAction, confirm_unpin_message},
     room_action_bar::{RoomActionBarAction, RoomActionBarWidgetExt},
-    room_members_list::{RoomMembersChanged, RoomMembersListAction, show_member_profile},
+    room_members_list::{LISTED_MEMBERSHIPS, RoomMembersChanged, RoomMembersListAction, show_member_profile},
     room_pane::{self, RoomPaneKind},
 };
 use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
@@ -2140,7 +2140,7 @@ impl RoomScreen {
                     // we need to actually get the new list for use in this room screen.
                     submit_async_request(MatrixRequest::GetRoomMembers {
                         timeline_kind: tl.kind.clone(),
-                        memberships: matrix_sdk::RoomMemberships::ACTIVE,
+                        memberships: LISTED_MEMBERSHIPS,
                         local_only: true,
                     });
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
@@ -2968,35 +2968,28 @@ impl RoomScreen {
                         }),
                     );
                 }
-                MessageAction::Redact { details, reason } => {
+                MessageAction::Redact(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     let timeline_event_id = details.timeline_event_id.clone();
                     let timeline_kind = tl.kind.clone();
-                    let reason = reason.clone();
                     // An unsent message should just be immediately discarded without confirmation,
                     // as the user might be rushing to quickly cancel it before it actually sends.
                     if matches!(timeline_event_id, TimelineEventItemId::TransactionId(_)) {
                         submit_async_request(MatrixRequest::RedactMessage {
                             timeline_kind,
                             timeline_event_id,
-                            reason,
+                            reason: None,
                         });
                         continue;
                     }
-                    let content = ConfirmationModalContent {
-                        title_text: "Delete Message".into(),
-                        body_text: "Are you sure you want to delete this message? This cannot be undone.".into(),
-                        accept_button_text: Some("Delete".into()),
-                        on_accept_clicked: Some(Box::new(move |_cx| {
-                            submit_async_request(MatrixRequest::RedactMessage {
-                                timeline_kind,
-                                timeline_event_id,
-                                reason,
-                            });
-                        })),
-                        ..Default::default()
-                    };
-                    cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
+                    let sender_name = Self::find_event_in_timeline(&tl.items, details)
+                        .filter(|event| !event.is_own())
+                        .map(|event| display_name_or_user_id(cx, tl.kind.room_id(), event.sender().to_owned()));
+                    cx.action(ModerationModalAction::Open(ModerationRequest::DeleteMessage {
+                        timeline_kind,
+                        timeline_event_id,
+                        sender_name,
+                    }));
                 }
                 MessageAction::RetrySend(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
@@ -3005,10 +2998,14 @@ impl RoomScreen {
                         timeline_event_id: details.timeline_event_id.clone(),
                     });
                 }
-                // MessageAction::Report(details) => {
-                //     // TODO
-                // }
-
+                MessageAction::Report(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    let Some(event_id) = details.event_id() else { continue };
+                    cx.action(ModerationModalAction::Open(ModerationRequest::Report(ReportTarget::Message {
+                        room_id: tl.kind.room_id().clone(),
+                        event_id: event_id.clone(),
+                    })));
+                }
                 MessageAction::DownloadAttachment(info) => {
                     self.begin_media_transfer(cx, portal_list, info, TransferKind::Download, start_attachment_download);
                 }
@@ -3253,11 +3250,11 @@ impl RoomScreen {
 
                 let tl_state = TimelineUiState {
                     kind,
-                    // Initially, we assume the user has all power levels by default.
+                    // Initially, we assume the user has all regular powers by default.
                     // This avoids unexpectedly hiding any UI elements that should be visible to the user.
                     // This doesn't mean that the user can actually perform all actions;
                     // the power levels will be updated from the homeserver once the room is opened.
-                    user_power: UserPowerLevels::all(),
+                    user_power: UserPowerLevels::assumed_until_fetched(),
                     is_encrypted,
                     // Room members start as None and get populated when fetched from the server
                     room_members: None,
@@ -3348,7 +3345,7 @@ impl RoomScreen {
             });
             submit_async_request(MatrixRequest::GetRoomMembers {
                 timeline_kind: tl_state.kind.clone(),
-                memberships: matrix_sdk::RoomMemberships::ACTIVE,
+                memberships: LISTED_MEMBERSHIPS,
                 // Fetch from the local cache, as we already requested to sync
                 // the room members from the homeserver above.
                 local_only: true,
@@ -3617,7 +3614,7 @@ impl RoomScreen {
         {
             submit_async_request(MatrixRequest::GetRoomMembers {
                 timeline_kind: tl.kind.clone(),
-                memberships: matrix_sdk::RoomMemberships::ACTIVE,
+                memberships: LISTED_MEMBERSHIPS,
                 local_only: false,
             });
         }
@@ -6285,16 +6282,11 @@ pub enum MessageAction {
     JumpToEvent(OwnedEventId),
     /// The user clicked the "delete" button on a message.
     #[doc(alias("delete"))]
-    Redact {
-        details: MessageDetails,
-        reason: Option<String>,
-    },
+    Redact(MessageDetails),
     /// The user clicked the "retry sending" button on a message that failed to send.
     RetrySend(MessageDetails),
-
-    // /// The user clicked the "report" button on a message.
-    // Report(MessageDetails),
-
+    /// The user clicked the "report" button on a message.
+    Report(MessageDetails),
     /// The user clicked the "Download" button on a media/file message.
     DownloadAttachment(DownloadableAttachment),
     /// The user clicked the "Share" button on a media/file message.

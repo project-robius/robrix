@@ -39,6 +39,7 @@ script_mod! {
     mod.widgets.ICON_LOCATION_PIN     = crate_resource("self://resources/icons/location-pin.svg")
     mod.widgets.ICON_LOGOUT           = crate_resource("self://resources/icons/logout.svg")
     mod.widgets.ICON_MEMBERS          = crate_resource("self://resources/icons/members.svg")
+    mod.widgets.ICON_MUTE             = crate_resource("self://resources/icons/microphone_off.svg")
     mod.widgets.ICON_LINK             = crate_resource("self://resources/icons/link.svg")
     mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
     mod.widgets.ICON_UNPIN            = crate_resource("self://resources/icons/unpin.svg")

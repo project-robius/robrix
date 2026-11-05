@@ -137,15 +137,10 @@ script_mod! {
 
             divider_before_report_delete := mod.widgets.ContextMenuDivider { }
 
-            // report_button = mod.widgets.ContextMenuDangerButton {
-            //     draw_icon.svg: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
-            //     text: "Report"
-            // }
-
-            // Note: we don't yet support deleting others' messages via admin/moderator power levels.
-            //       For now we only consider whether its the user's own message.
-            //       The caller needs to use `can_redact_own()` or `can_redact_other()`:
-            //       https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_redact_own
+            report_button := mod.widgets.ContextMenuDangerButton {
+                draw_icon.svg: (ICON_FLAG)
+                text: "Report"
+            }
 
             delete_button := mod.widgets.ContextMenuDangerButton {
                 draw_icon.svg: (ICON_TRASH)
@@ -187,6 +182,8 @@ bitflags! {
         const CanCancelSend = 1 << 9;
         /// Whether this message has a real event ID, i.e., it isn't a local echo.
         const HasEventId = 1 << 10;
+        /// Whether the user can report this message to their homeserver's admins.
+        const CanReport = 1 << 11;
     }
 }
 impl MessageAbilities {
@@ -208,13 +205,18 @@ impl MessageAbilities {
                 MessageType::Image(_) | MessageType::Video(_) | MessageType::File(_) | MessageType::Audio(_),
             )
         );
+        let is_redacted = matches!(message.kind, MsgLikeKind::Redacted);
         abilities.set(Self::CanEdit, event_tl_item.is_editable() && !is_unsent_upload);
-        // Currently we only support deleting one's own messages.
-        // But for unsent messages, we show "Cancel Sending" instead of "Delete".
-        if event_tl_item.is_own() && !is_local_echo {
-            abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
+        // For unsent messages, we show "Cancel Sending" instead of "Delete".
+        if !is_local_echo && !is_redacted {
+            abilities.set(Self::CanDelete, if event_tl_item.is_own() {
+                user_power_levels.can_redact_own()
+            } else {
+                user_power_levels.can_redact_others()
+            });
         }
         abilities.set(Self::HasEventId, event_tl_item.event_id().is_some());
+        abilities.set(Self::CanReport, !event_tl_item.is_own() && !is_local_echo && !is_redacted);
         match event_tl_item.send_state() {
             Some(EventSendState::SendingFailed { error, .. }) => {
                 abilities.set(Self::CanRetrySend, is_send_error_retryable(error));
@@ -237,8 +239,7 @@ impl MessageAbilities {
         abilities.set(
             Self::CanReact,
             // don't let the user react to unsent messages, that doesn't make sense
-            user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some()
-                && !matches!(message.kind, MsgLikeKind::Redacted),
+            user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some() && !is_redacted,
         );
         abilities.set(Self::HasHtml, has_html);
         abilities
@@ -464,26 +465,17 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             );
             close_menu = true;
         }
-        // else if self.button(cx, ids!(report_button)).clicked(actions) {
-        //     cx.widget_action(
-        //         details.room_screen_widget_uid,
-        //         &scope.path,
-        //         // TODO: display a dialog to confirm the report reason.
-        //         MessageAction::Report {
-        //             event_id: details.event_id.clone(),
-        //             item_id: details.item_id,
-        //         },
-        //     );
-        //    close_menu = true;
-        // }
+        else if self.button(cx, ids!(report_button)).clicked(actions) {
+            cx.widget_action(
+                details.room_screen_widget_uid,
+                MessageAction::Report(details.clone()),
+            );
+            close_menu = true;
+        }
         else if self.button(cx, ids!(delete_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid, 
-                MessageAction::Redact {
-                    details: details.clone(),
-                    // TODO: show a Modal to confirm deletion, and get the reason.
-                    reason: None,
-                },
+                details.room_screen_widget_uid,
+                MessageAction::Redact(details.clone()),
             );
             close_menu = true;
         }
@@ -535,7 +527,7 @@ impl NewMessageContextMenu {
         let copy_link_button = self.view.button(cx, ids!(copy_link_to_message_button));
         let view_source_button = self.view.button(cx, ids!(view_source_button));
         let jump_to_related_button = self.view.button(cx, ids!(jump_to_related_button));
-        // let report_button = self.view.button(cx, ids!(report_button));
+        let report_button = self.view.button(cx, ids!(report_button));
         let delete_button = self.view.button(cx, ids!(delete_button));
 
         // Determine which buttons should be shown.
@@ -553,10 +545,10 @@ impl NewMessageContextMenu {
         let show_copy_link = details.abilities.contains(MessageAbilities::HasEventId);
         let show_view_source = details.abilities.contains(MessageAbilities::HasEventId);
         let show_jump_to_related = details.related_event_id.is_some();
-        // let show_report = true;
+        let show_report = details.abilities.contains(MessageAbilities::CanReport);
         let show_cancel_send = details.abilities.contains(MessageAbilities::CanCancelSend);
         let show_delete = show_cancel_send || details.abilities.contains(MessageAbilities::CanDelete);
-        let show_divider_before_report_delete = show_delete; // || show_report;
+        let show_divider_before_report_delete = show_delete || show_report;
 
         // Actually set the buttons' visibility.
         retry_send_button.set_visible(cx, show_retry);
@@ -583,7 +575,7 @@ impl NewMessageContextMenu {
         view_source_button.set_visible(cx, show_view_source);
         jump_to_related_button.set_visible(cx, show_jump_to_related);
         self.view.view(cx, ids!(divider_before_report_delete)).set_visible(cx, show_divider_before_report_delete);
-        // report_button.set_visible(cx, show_report);
+        report_button.set_visible(cx, show_report);
         delete_button.set_text(cx, if show_cancel_send { "Cancel Sending" } else { "Delete" });
         delete_button.set_visible(cx, show_delete);
 
@@ -601,7 +593,7 @@ impl NewMessageContextMenu {
         copy_link_button.reset_hover(cx);
         view_source_button.reset_hover(cx);
         jump_to_related_button.reset_hover(cx);
-        // report_button.reset_hover(cx);
+        report_button.reset_hover(cx);
         delete_button.reset_hover(cx);
 
         // Reset reaction input view stuff.
@@ -623,7 +615,7 @@ impl NewMessageContextMenu {
             + show_copy_link as usize
             + show_view_source as usize
             + show_jump_to_related as usize
-            // + show_report as usize
+            + show_report as usize
             + show_delete as usize;
         let num_visible_dividers =
             show_divider_after_retry as usize

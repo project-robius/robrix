@@ -1,4 +1,4 @@
-//! A filterable list of a room's joined and invited members,
+//! A filterable list of a room's joined, invited, and banned members,
 //! showing each member's avatar, display name, and role.
 //!
 //! The list doesn't fetch members itself: its host provides them, e.g., a RoomScreen
@@ -7,7 +7,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use makepad_widgets::*;
-use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{OwnedRoomId, events::room::{member::MembershipState, power_levels::UserPowerLevel}}};
+use matrix_sdk::{RoomMemberships, room::{RoomMember, RoomMemberRole}, ruma::{OwnedRoomId, events::room::{member::MembershipState, power_levels::UserPowerLevel}}};
 use rustc_hash::FxHashSet;
 
 use crate::{
@@ -61,6 +61,11 @@ script_mod! {
         }
     }
 }
+
+/// The memberships of the room members shown in a [`RoomMembersList`].
+///
+/// This includes banned members so that a moderator can find them in order to unban them.
+pub const LISTED_MEMBERSHIPS: RoomMemberships = RoomMemberships::ACTIVE.union(RoomMemberships::BAN);
 
 /// The result of a [`crate::sliding_sync::MatrixRequest::GetRoomMembersList`] request.
 ///
@@ -126,12 +131,18 @@ impl MemberEntry {
     fn is_invited(&self) -> bool {
         matches!(self.member.membership(), MembershipState::Invite)
     }
+
+    fn is_banned(&self) -> bool {
+        matches!(self.member.membership(), MembershipState::Ban)
+    }
 }
 
 /// Returns the role of the given member to show beneath their name.
 fn role_text(member: &RoomMember) -> Cow<'static, str> {
-    if matches!(member.membership(), MembershipState::Invite) {
-        return "Invited".into();
+    match member.membership() {
+        MembershipState::Invite => return "Invited".into(),
+        MembershipState::Ban => return "Banned".into(),
+        _ => {}
     }
     let role = member.suggested_role_for_power_level();
     let default_level = match role {
@@ -164,7 +175,7 @@ pub struct RoomMembersList {
     #[rust] room_name_id: Option<RoomNameId>,
     /// The members given by our host, unsorted, or `None` until they're fetched.
     #[rust] members: Option<Arc<Vec<RoomMember>>>,
-    /// All members, sorted: joined before invited, then by power level, then by name.
+    /// All members, sorted: joined, then invited, then banned, then by power level, then by name.
     #[rust] entries: Vec<MemberEntry>,
     /// Indices into `entries` of the members that match the current filter.
     #[rust] filtered: Vec<usize>,
@@ -287,7 +298,8 @@ impl RoomMembersList {
         self.error = None;
         let mut entries: Vec<MemberEntry> = members.iter().cloned().map(MemberEntry::new).collect();
         self.members = Some(members);
-        entries.sort_by(|a, b| a.is_invited().cmp(&b.is_invited())
+        entries.sort_by(|a, b| a.is_banned().cmp(&b.is_banned())
+            .then_with(|| a.is_invited().cmp(&b.is_invited()))
             .then_with(|| b.member.power_level().cmp(&a.member.power_level()))
             .then_with(|| a.search_text.cmp(&b.search_text))
         );
@@ -343,13 +355,20 @@ impl RoomMembersList {
 
     fn update_count_label(&mut self, cx: &mut Cx) {
         let invited = self.entries.iter().filter(|e| e.is_invited()).count();
-        let joined = self.entries.len() - invited;
-        let text = match (joined, invited) {
+        let banned = self.entries.iter().filter(|e| e.is_banned()).count();
+        let joined = self.entries.len() - invited - banned;
+        let mut text = match (joined, invited) {
             (0, 0) => String::new(),
             (1, 0) => String::from("1 member"),
             (j, 0) => format!("{j} members"),
             (j, i) => format!("{j} {}, {i} invited", if j == 1 { "member" } else { "members" }),
         };
+        if banned > 0 {
+            if !text.is_empty() {
+                text.push_str(", ");
+            }
+            text.push_str(&format!("{banned} banned"));
+        }
         self.view.child_by_path(ids!(member_count_label)).set_text(cx, &text);
     }
 }

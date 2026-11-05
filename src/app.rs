@@ -15,6 +15,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
+    moderation_modal::{ModerationModalAction, ModerationModalWidgetRefExt},
     avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::{clear_room_preview_cache, process_room_preview_updates}, home::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, clear_all_invited_rooms}, rooms_list_header::{RoomsListHeaderAction, SyncStatusGlobal, get_last_synced_at}
     }, join_leave_room_modal::{
@@ -168,6 +169,11 @@ script_mod! {
                         // A modal to confirm blocking or unblocking a user.
                         block_user_modal := Modal {
                             content := BlockUserModal {}
+                        }
+
+                        // A modal to confirm a moderation action, with an optional reason for it.
+                        moderation_modal := Modal {
+                            content := ModerationModal {}
                         }
 
                         // A modal to preview and confirm file uploads.
@@ -574,6 +580,21 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            // Handle actions needed to open/close the moderation modal.
+            match action.downcast_ref() {
+                Some(ModerationModalAction::Open(request)) => {
+                    self.ui.moderation_modal(cx, ids!(moderation_modal.content))
+                        .set_info(cx, request.clone());
+                    self.ui.modal(cx, ids!(moderation_modal)).open(cx);
+                    continue;
+                }
+                Some(ModerationModalAction::Close) => {
+                    self.ui.modal(cx, ids!(moderation_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
             // Handle actions needed to open/close the join/leave room modal.
             match action.downcast_ref() {
                 Some(JoinLeaveRoomModalAction::Open { kind, show_tip }) => {
@@ -853,6 +874,7 @@ impl AppMain for App {
         crate::room::script_mod(vm);
         crate::join_leave_room_modal::script_mod(vm);
         crate::block_user_modal::script_mod(vm);
+        crate::moderation_modal::script_mod(vm);
         crate::verification_modal::script_mod(vm);
         crate::profile::script_mod(vm);
         crate::home::script_mod(vm);
