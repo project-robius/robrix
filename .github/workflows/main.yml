@@ -8,16 +8,17 @@ on:
     push:
       branches:
         - main
+      ## PRs must be up to date to merge, so `main` only reruns these to refresh its caches.
       paths:
-        - packaging/**
-        - resources/**
-        - src/**
         - .cargo/**
-        - build.rs
         - .github/**
         - Cargo.lock
         - Cargo.toml
         - rust-toolchain.toml
+
+    ## Keeps the caches current with new Rust releases, and covers merges that skipped CI.
+    schedule:
+      - cron: '0 8 * * *'
 
     pull_request:
       types: [opened, synchronize, reopened, ready_for_review]
@@ -51,19 +52,15 @@ jobs:
   clippy:
     if: github.event.pull_request.draft == false
     name: clippy
-    runs-on: macos-15  ## avoids having to install Linux deps
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/install-linux-deps
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: "true"
-          cache-on-failure: "true"
+      - uses: ./.github/actions/setup-rust-cache
       - run: cargo clippy --workspace --all-features --all-targets
-      - name: Run unit tests
-        run: cargo test --workspace --all-features --lib --locked
 
   typos:
     if: github.event.pull_request.draft == false

@@ -7,7 +7,7 @@
 # │   Host OS       │   Target        │   Build Tool    │
 # ├─────────────────┼─────────────────┼─────────────────┤
 # │ Ubuntu Latest   │ Linux x86_64    │ cargo build     │
-# │ macOS 15 Intel  │ macOS x86_64    │ cargo build     │
+# │ macOS 15 ARM64  │ macOS x86_64    │ cargo build     │
 # │ macOS 15 ARM64  │ macOS ARM64     │ cargo build     │
 # │ Windows 2022    │ Windows x86_64  │ cargo build     │
 # │ macOS 15        │ iOS aarch64     │ cargo-makepad   │
@@ -23,19 +23,16 @@ on:
   push:
     branches:
       - main
+    ## PRs must be up to date to merge, so `main` only reruns these to refresh its caches.
     paths:
-        - packaging/**
-        - resources/**
-        - src/**
-        - build.rs
         - .github/**
         - .cargo/**
         - Cargo.lock
         - Cargo.toml
         - rust-toolchain.toml
-        # ignore files
-        - '!**/*.md'
-        - '!LICENSE-MIT'
+  ## Keeps the caches current with new Rust releases, and covers merges that skipped CI.
+  schedule:
+    - cron: '0 8 * * *'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -67,70 +64,60 @@ jobs:
     name: Build Ubuntu
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft == false
+    env:
+      RUSTFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libssl-dev \
-            libsqlite3-dev \
-            pkg-config \
-            llvm \
-            clang \
-            libclang-dev \
-            binfmt-support \
-            libxcursor-dev \
-            libx11-dev \
-            libasound2-dev \
-            libpulse-dev \
-            libwayland-dev libxkbcommon-dev
+      - uses: ./.github/actions/install-linux-deps
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ubuntu-build-${{ hashFiles('Cargo.lock') }}
+        uses: ./.github/actions/setup-rust-cache
 
       - name: Build
-        env:
-          RUSTFLAGS: "-D warnings"
         run: |
           cargo build --profile fast
 
+      ## Using the `fast` profile lets this reuse all the deps from the build above.
+      - name: Run unit tests
+        run: |
+          cargo test --profile fast --lib --locked
+
   build_macos:
     name: Build macOS (${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-15
     if: github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
         include:
           # Apple Silicon Macs (M1/M2/M3/M4 chips)
-          - os: macos-15
-            arch: arm64
-          # Intel Macs (x86_64 architecture)
-          - os: macos-15-intel
-            arch: x86_64
+          - arch: arm64
+            target: aarch64-apple-darwin
+          # Intel Macs (x86_64 architecture), cross-compiled since Intel runners are so much slower
+          - arch: x86_64
+            target: x86_64-apple-darwin
     steps:
       - uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/setup-rust-cache
         with:
-          key: macos-${{ matrix.arch }}-build-${{ hashFiles('Cargo.lock') }}
+          key: ${{ matrix.arch }}
 
       - name: Build
         env:
           RUSTFLAGS: "-D warnings"
         run: |
-          cargo build --profile fast
+          cargo build --profile fast --target ${{ matrix.target }}
 
   build_windows:
     name: Build Windows
@@ -146,9 +133,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: windows-build-${{ hashFiles('Cargo.lock') }}
+        uses: ./.github/actions/setup-rust-cache
 
       - name: Build
         env:
@@ -168,14 +153,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install Rust stable and nightly
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
 
-      - name: Install Rust nightly
-        run: |
-          rustup toolchain install nightly
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/setup-rust-cache
 
       - name: Setup cargo-makepad
         uses: ./.github/actions/setup-cargo-makepad
@@ -186,12 +168,7 @@ jobs:
 
       - name: Install bindgen-cli for aws-lc-sys cross-compilation
         run: |
-          cargo install --force --locked bindgen-cli
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ios-macos-build-${{ hashFiles('Cargo.lock') }}
+          cargo install --locked bindgen-cli
 
       - name: Build for iOS targets
         env:
@@ -222,17 +199,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/setup-rust-cache
+
       - name: Setup cargo-makepad
         uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
           cargo makepad android install-toolchain --full-ndk
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: android-macos-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build Android APK
         env:
@@ -256,17 +231,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/setup-rust-cache
+
       - name: Setup cargo-makepad
         uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
           cargo makepad android install-toolchain --full-ndk
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: android-linux-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build Android APK
         env:
@@ -292,17 +265,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: ./.github/actions/setup-rust-cache
+
       - name: Setup cargo-makepad
         uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
           cargo makepad android --abi=armv7 install-toolchain --full-ndk
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: android-armv7-linux-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build Android APK
         env:
@@ -330,9 +301,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: android-windows-build-${{ hashFiles('Cargo.lock') }}
+        uses: ./.github/actions/setup-rust-cache
 
       - name: Setup cargo-makepad
         uses: ./.github/actions/setup-cargo-makepad
@@ -340,10 +309,6 @@ jobs:
       - name: Install Android toolchain
         run: |
           cargo makepad android install-toolchain --full-ndk
-
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: powershell
 
       - name: Build Android APK
         env:
