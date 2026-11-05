@@ -217,6 +217,8 @@ pub enum SlashCommandAction {
         user_id: OwnedUserId,
         action: MemberAction,
         reason: Option<String>,
+        /// Whether the user can also remove this member's messages when banning them.
+        can_remove_messages: bool,
     },
     /// Set the current user's display name across all rooms.
     SetDisplayName(String),
@@ -280,15 +282,16 @@ pub fn parse_input(text: &str, user_power_levels: UserPowerLevels) -> SlashComma
                 "\"{user}\" isn't a valid user ID; it should look like @user:server.org"
             ));
         };
+        let can_remove_messages = user_power_levels.can_redact_others();
         return SlashCommandOutcome::Action(match command.name {
             "dm" => SlashCommandAction::OpenDirectMessage(user_id),
             "invite" => SlashCommandAction::InviteUser(user_id),
             "whois" => SlashCommandAction::ShowUserProfile(user_id),
             "block" => SlashCommandAction::BlockUser { user_id, block: true },
             "unblock" => SlashCommandAction::BlockUser { user_id, block: false },
-            "kick" => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Kick, reason },
-            "ban" => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Ban, reason },
-            _ => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Unban, reason },
+            "kick" => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Kick, reason, can_remove_messages },
+            "ban" => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Ban, reason, can_remove_messages },
+            _ => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Unban, reason, can_remove_messages },
         });
     }
 

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
     moderation_modal::{ModerationModalAction, ModerationModalWidgetRefExt},
+    remove_messages_modal::{RemoveMessagesModalAction, RemoveMessagesModalWidgetRefExt},
     avatar_cache::{clear_avatar_cache, process_avatar_updates}, room_preview_cache::{clear_room_preview_cache, process_room_preview_updates}, home::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, leave_space_modal::{LeaveSpaceModalAction, LeaveSpaceModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, clear_all_invited_rooms}, rooms_list_header::{RoomsListHeaderAction, SyncStatusGlobal, get_last_synced_at}
     }, join_leave_room_modal::{
@@ -179,6 +180,11 @@ script_mod! {
                         // A modal to confirm a moderation action, with an optional reason for it.
                         moderation_modal := Modal {
                             content := ModerationModal {}
+                        }
+
+                        // A modal to choose which of a user's messages to remove, and to show that happening.
+                        remove_messages_modal := Modal {
+                            content := RemoveMessagesModal {}
                         }
 
                         // A modal to preview and confirm file uploads.
@@ -352,6 +358,8 @@ impl MatchEvent for App {
                     // Clear and reset all app state to its default.
                     clear_all_app_state(cx);
                     self.ui.modal(cx, ids!(verification_modal)).close(cx);
+                    self.ui.remove_messages_modal(cx, ids!(remove_messages_modal.content)).reset();
+                    self.ui.modal(cx, ids!(remove_messages_modal)).close(cx);
                     self.app_state = Default::default();
                     // We also need to broadcast those default values out,
                     // such that all other widgets can be reset to their default state.
@@ -595,6 +603,26 @@ impl MatchEvent for App {
                 }
                 Some(ModerationModalAction::Close) => {
                     self.ui.modal(cx, ids!(moderation_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Handle actions needed to open/close and update the remove messages modal.
+            match action.downcast_ref() {
+                Some(RemoveMessagesModalAction::Open(request)) => {
+                    self.ui.remove_messages_modal(cx, ids!(remove_messages_modal.content))
+                        .show(cx, request.clone());
+                    self.ui.modal(cx, ids!(remove_messages_modal)).open(cx);
+                    continue;
+                }
+                Some(RemoveMessagesModalAction::Close) => {
+                    self.ui.modal(cx, ids!(remove_messages_modal)).close(cx);
+                    continue;
+                }
+                Some(RemoveMessagesModalAction::Update(update)) => {
+                    self.ui.remove_messages_modal(cx, ids!(remove_messages_modal.content))
+                        .handle_update(cx, update);
                     continue;
                 }
                 _ => {}
@@ -894,6 +922,7 @@ impl AppMain for App {
         crate::join_leave_room_modal::script_mod(vm);
         crate::block_user_modal::script_mod(vm);
         crate::moderation_modal::script_mod(vm);
+        crate::remove_messages_modal::script_mod(vm);
         crate::verification_modal::script_mod(vm);
         crate::profile::script_mod(vm);
         crate::home::script_mod(vm);

@@ -22,23 +22,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    let SelectRoomsButton = RobrixIconButton {
-        padding: Inset{top: 7, bottom: 7, left: 10, right: 10}
-        spacing: 0
-        icon_walk: Walk{width: 0, height: 0}
-        draw_bg +: {
-            color: (COLOR_BG_ACCENT_TINT)
-            color_hover: (COLOR_BG_ACCENT_TINT_HOVER)
-            color_down: (COLOR_BG_ACCENT_TINT_DOWN)
-        }
-        draw_text +: {
-            color: (COLOR_ACTIVE_PRIMARY_DARKER)
-            color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
-            color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
-            text_style: REGULAR_TEXT {font_size: 9.5}
-        }
-    }
-
     mod.widgets.LeaveSpaceModal = set_type_default() do #(LeaveSpaceModal::register_widget(vm)) {
         ..mod.widgets.SmallModal
 
@@ -65,8 +48,8 @@ script_mod! {
                 wrap_spacing: 8
                 margin: Inset{left: 6}
 
-                select_all_button := SelectRoomsButton { text: "Select All" }
-                select_none_button := SelectRoomsButton { text: "Select None" }
+                select_all_button := mod.widgets.SelectRowsButton { text: "Select All" }
+                select_none_button := mod.widgets.SelectRowsButton { text: "Select None" }
 
                 // This sits outside of the list so it's always in view, and the list doesn't move when it goes away.
                 loading_view := View {

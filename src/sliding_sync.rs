@@ -30,7 +30,7 @@ use ruma::{OwnedRoomAliasId, OwnedRoomOrAliasId, RoomId, events::tag::Tags, room
 use rustc_hash::FxBuildHasher;
 use tokio::{
     runtime::Handle,
-    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::{Instant, error::Elapsed},
+    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, oneshot, watch, Notify, Semaphore}, task::JoinHandle, time::{Instant, error::Elapsed},
 };
 use url::Url;
 use std::{borrow::Cow, cmp::{max, min}, future::Future, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, SystemTime}};
@@ -39,7 +39,7 @@ use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::{stringify_send_error, upload_percent}, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
-    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, moderation::{self, MemberModeration, ReportTarget}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
+    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, moderation::{self, MemberModeration, ReportTarget, UserMessage}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
         user_verification_cache::{UserVerificationState, UserVerificationUpdate, enqueue_user_verification_update},
@@ -960,6 +960,24 @@ pub enum MatrixRequest {
     GetMemberAbilities {
         room_id: OwnedRoomId,
         user_id: OwnedUserId,
+    },
+    /// Requests all of the given user's messages that we can see in the given room.
+    ///
+    /// See [`moderation::fetch_user_messages()`].
+    GetUserMessages {
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+        fetch_id: u64,
+        stop: oneshot::Receiver<()>,
+    },
+    /// Removes the given messages from the given room.
+    ///
+    /// See [`moderation::remove_user_messages()`].
+    RemoveUserMessages {
+        room_id: OwnedRoomId,
+        messages: Vec<UserMessage>,
+        reason: Option<String>,
+        stop: oneshot::Receiver<()>,
     },
     /// Retries sending the given local echo of a message,
     /// typically one that previously failed to send.
@@ -3244,6 +3262,16 @@ async fn matrix_worker_task(
             MatrixRequest::GetMemberAbilities { room_id, user_id } => {
                 let Some(client) = get_client() else { continue };
                 let _abilities_task = Handle::current().spawn(moderation::fetch_member_abilities(client, room_id, user_id));
+            },
+
+            MatrixRequest::GetUserMessages { room_id, user_id, fetch_id, stop } => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_task = Handle::current().spawn(moderation::fetch_user_messages(client, room_id, user_id, fetch_id, stop));
+            },
+
+            MatrixRequest::RemoveUserMessages { room_id, messages, reason, stop } => {
+                let Some(client) = get_client() else { continue };
+                let _remove_task = Handle::current().spawn(moderation::remove_user_messages(client, room_id, messages, reason, stop));
             },
 
             MatrixRequest::RetrySend { timeline_kind, timeline_event_id } => {

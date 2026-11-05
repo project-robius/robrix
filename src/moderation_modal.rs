@@ -5,6 +5,7 @@ use matrix_sdk_ui::timeline::TimelineEventItemId;
 
 use crate::{
     moderation::{MemberAction, MemberModeration, ReportTarget},
+    remove_messages_modal::{RemoveMessagesModalAction, RemoveMessagesRequest},
     sliding_sync::{MatrixRequest, TimelineKind, submit_async_request},
 };
 
@@ -12,6 +13,23 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
+
+    // A text input for the optional reason behind a moderation action.
+    mod.widgets.ModerationReasonView = View {
+        width: Fill, height: Fit
+        margin: Inset{top: 15}
+
+        reason_input := RobrixTextInput {
+            height: Fit { max: FitBound.Rel{base: Base.Full, factor: 0.5} }
+            is_multiline: true
+            submit_on_enter: true
+            empty_text: "Reason (optional)"
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 11},
+                color: (COLOR_MODAL_INPUT_TEXT)
+            }
+        }
+    }
 
     mod.widgets.ModerationModal = set_type_default() do #(ModerationModal::register_widget(vm)) {
         ..mod.widgets.SmallModal
@@ -26,18 +44,38 @@ script_mod! {
 
         body := ModalBody {}
 
-        reason_view := View {
-            width: Fill, height: Fit
-            margin: Inset{top: 15}
+        reason_view := mod.widgets.ModerationReasonView {}
 
-            reason_input := RobrixTextInput {
-                height: Fit { max: FitBound.Rel{base: Base.Full, factor: 0.5} }
-                is_multiline: true
-                submit_on_enter: true
-                empty_text: "Reason (optional)"
+        remove_messages_view := View {
+            visible: false
+            width: Fill, height: Fit
+            flow: Down, spacing: 3
+            margin: Inset{top: 14}
+
+            remove_messages_checkbox := CheckBoxFlat {
+                padding: 0
+                label_walk +: { margin: Inset{left: 30} }
+                draw_bg +: { size: 20.0 }
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 11},
-                    color: (COLOR_MODAL_INPUT_TEXT)
+                    color: (COLOR_TEXT_BODY)
+                    color_hover: (COLOR_TEXT_BODY)
+                    color_down: (COLOR_TEXT_BODY)
+                    color_focus: (COLOR_TEXT_BODY)
+                    color_active: (COLOR_TEXT_BODY)
+                    text_style: REGULAR_TEXT {font_size: 11}
+                }
+                text: "Also remove their messages"
+            }
+            View {
+                width: Fill, height: Fit
+                padding: Inset{left: 30}
+
+                Label {
+                    width: Fill, height: Fit
+                    flow: Flow.Right{wrap: true}
+                    padding: 0
+                    draw_text +: { color: (COLOR_LIST_ROW_TEXT_MUTED), text_style: REGULAR_TEXT {font_size: 10} }
+                    text: "You can choose which ones on the next screen."
                 }
             }
         }
@@ -92,6 +130,8 @@ pub enum ModerationRequest {
         moderation: MemberModeration,
         /// The reason to fill in up front, e.g., one given in a slash command.
         initial_reason: Option<String>,
+        /// Whether the user can also remove this member's messages when banning them.
+        can_remove_messages: bool,
     },
 }
 
@@ -155,9 +195,17 @@ impl WidgetMatchEvent for ModerationModal {
         if !confirmed { return }
         let Some(request) = self.request.take() else { return };
 
-        let reason = match reason_input.text().trim() {
-            "" => None,
-            reason => Some(reason.to_owned()),
+        let reason = get_entered_reason(&reason_input);
+        let remove_messages_request = match &request {
+            ModerationRequest::Member { moderation, .. }
+                if self.view.check_box(cx, ids!(remove_messages_checkbox)).active(cx) => Some(RemoveMessagesRequest {
+                    room_id: moderation.room_id.clone(),
+                    room_name: moderation.room_name.clone(),
+                    user_id: moderation.user_id.clone(),
+                    user_name: moderation.user_name.clone(),
+                    initial_reason: reason.clone(),
+                }),
+            _ => None,
         };
         submit_async_request(match request {
             ModerationRequest::DeleteMessage { timeline_kind, timeline_event_id, .. } => {
@@ -167,6 +215,9 @@ impl WidgetMatchEvent for ModerationModal {
             ModerationRequest::Member { moderation, .. } => MatrixRequest::ModerateMember { moderation, reason },
         });
         cx.action(ModerationModalAction::Close);
+        if let Some(remove_messages_request) = remove_messages_request {
+            cx.action(RemoveMessagesModalAction::Open(remove_messages_request));
+        }
     }
 }
 
@@ -261,12 +312,18 @@ impl ModerationModal {
             ModerationRequest::Member { initial_reason: Some(reason), .. } => reason.as_str(),
             _ => "",
         };
+        let can_remove_messages = matches!(
+            &request,
+            ModerationRequest::Member { moderation: MemberModeration { action: MemberAction::Ban, .. }, can_remove_messages: true, .. }
+        );
 
         self.view.label(cx, ids!(title)).set_text(cx, title);
         self.view.label(cx, ids!(body)).set_text(cx, &body);
 
         self.view.view(cx, ids!(reason_view)).set_visible(cx, has_reason);
         self.view.text_input(cx, ids!(reason_input)).set_text(cx, initial_reason);
+        self.view.view(cx, ids!(remove_messages_view)).set_visible(cx, can_remove_messages);
+        self.view.check_box(cx, ids!(remove_messages_checkbox)).set_active(cx, false, Animate::No);
 
         let negative_button = self.view.button(cx, ids!(negative_button));
         negative_button.set_visible(cx, !is_positive);
@@ -292,5 +349,13 @@ impl ModerationModalRef {
     pub fn set_info(&self, cx: &mut Cx, request: ModerationRequest) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_info(cx, request);
+    }
+}
+
+/// Returns the reason entered into the given reason input, if there is one.
+pub fn get_entered_reason(reason_input: &TextInputRef) -> Option<String> {
+    match reason_input.text().trim() {
+        "" => None,
+        reason => Some(reason.to_owned()),
     }
 }
