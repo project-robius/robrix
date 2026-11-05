@@ -613,7 +613,7 @@ impl RoomInputBar {
                     reject_invite_to: None,
                 }))
             }
-            SlashCommandAction::ModerateMember { user_id, action, reason } => {
+            SlashCommandAction::ModerateMember { user_id, action, reason, can_remove_messages } => {
                 let room_name_id = cx.get_global::<RoomsListRef>().get_room_name(room_id)
                     .unwrap_or_else(|| utils::RoomNameId::empty(room_id.clone()));
                 let user_name = display_name_or_user_id(cx, room_id, user_id.clone());
@@ -626,6 +626,7 @@ impl RoomInputBar {
                         action,
                     },
                     initial_reason: reason,
+                    can_remove_messages,
                 }))
             }
             SlashCommandAction::SetDisplayName(new_display_name) => {

@@ -360,7 +360,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] List of members within a room (https://github.com/project-robius/robrix/pull/1094)
 - [x] List of pinned messages within a room (https://github.com/project-robius/robrix/pull/1096)
 - [x] List of threads within a room (https://github.com/project-robius/robrix/pull/1101)
-- [ ] Administrative abilities: ban, kick, mass delete messages, etc
+- [x] Administrative abilities: ban, kick, mass delete messages, etc
 - [x] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
 

@@ -39,6 +39,24 @@ script_mod! {
         }
     }
 
+    // A small button for selecting all or none of a list's rows.
+    mod.widgets.SelectRowsButton = RobrixIconButton {
+        padding: Inset{top: 7, bottom: 7, left: 10, right: 10}
+        spacing: 0
+        icon_walk: Walk{width: 0, height: 0}
+        draw_bg +: {
+            color: (COLOR_BG_ACCENT_TINT)
+            color_hover: (COLOR_BG_ACCENT_TINT_HOVER)
+            color_down: (COLOR_BG_ACCENT_TINT_DOWN)
+        }
+        draw_text +: {
+            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
+            color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            text_style: REGULAR_TEXT {font_size: 9.5}
+        }
+    }
+
     // A row shown while a list's items are still loading.
     mod.widgets.ListLoadingRow = View {
         width: Fill, height: Fit, flow: Right, spacing: 10, align: Align{x: 0.5, y: 0.5}

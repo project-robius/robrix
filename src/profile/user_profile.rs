@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    block_user_modal::{BlockUserModalAction, BlockUserRequest}, moderation::{MemberAbilities, MemberAbilitiesFetched, MemberAction, MemberModeration, ReportTarget}, moderation_modal::{ModerationModalAction, ModerationRequest}, room::room_members_list::RoomMembersChanged, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetExt}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils, verification::UserVerificationRequestAction
+    block_user_modal::{BlockUserModalAction, BlockUserRequest}, moderation::{MemberAbilities, MemberAbilitiesFetched, MemberAction, MemberModeration, ReportTarget}, moderation_modal::{ModerationModalAction, ModerationRequest}, remove_messages_modal::{RemoveMessagesModalAction, RemoveMessagesRequest}, room::room_members_list::RoomMembersChanged, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color, verification_badge::UserVerificationBadgeWidgetExt}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils, verification::UserVerificationRequestAction
 };
 use super::{
     user_profile_cache::{self, UserProfilesUpdated},
@@ -365,6 +365,14 @@ script_mod! {
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
                 text: "Unban User"
+            }
+
+            remove_messages_button := RobrixNegativeIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: 0,
+                draw_icon.svg: (ICON_TRASH)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
+                text: "Remove Messages"
             }
         }
 
@@ -792,6 +800,21 @@ impl Widget for UserProfileSlidingPane {
                         action,
                     },
                     initial_reason: None,
+                    can_remove_messages: self.member_abilities.contains(MemberAbilities::CanRemoveMessages),
+                }));
+                self.animate_out(cx);
+                return;
+            }
+
+            if self.button(cx, ids!(remove_messages_button)).clicked(actions)
+                && let Some(room) = info.room.as_ref()
+            {
+                cx.action(RemoveMessagesModalAction::Open(RemoveMessagesRequest {
+                    room_id: room.room_id.clone(),
+                    room_name: room.room_name.clone(),
+                    user_id: info.user_id.clone(),
+                    user_name: info.displayable_name().to_owned(),
+                    initial_reason: None,
                 }));
                 self.animate_out(cx);
             }
@@ -891,6 +914,7 @@ impl Widget for UserProfileSlidingPane {
         self.button(cx, ids!(kick_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanKick));
         self.button(cx, ids!(ban_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanBan));
         self.button(cx, ids!(unban_user_button)).set_visible(cx, abilities.contains(MemberAbilities::CanUnban));
+        self.button(cx, ids!(remove_messages_button)).set_visible(cx, abilities.contains(MemberAbilities::CanRemoveMessages));
 
         self.view.draw_walk(cx, scope, walk)
     }
@@ -1013,6 +1037,7 @@ impl UserProfileSlidingPane {
         self.view.button(cx, ids!(kick_user_button)).reset_hover(cx);
         self.view.button(cx, ids!(ban_user_button)).reset_hover(cx);
         self.view.button(cx, ids!(unban_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(remove_messages_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }
