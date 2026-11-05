@@ -88,7 +88,11 @@ pub enum ModerationRequest {
     /// Report something to the homeserver's admins.
     Report(ReportTarget),
     /// Moderate a member of a room.
-    Member(MemberModeration),
+    Member {
+        moderation: MemberModeration,
+        /// The reason to fill in up front, e.g., one given in a slash command.
+        initial_reason: Option<String>,
+    },
 }
 
 /// Actions handled by the parent widget of the [`ModerationModal`].
@@ -160,7 +164,7 @@ impl WidgetMatchEvent for ModerationModal {
                 MatrixRequest::RedactMessage { timeline_kind, timeline_event_id, reason }
             }
             ModerationRequest::Report(target) => MatrixRequest::Report { target, reason },
-            ModerationRequest::Member(moderation) => MatrixRequest::ModerateMember { moderation, reason },
+            ModerationRequest::Member { moderation, .. } => MatrixRequest::ModerateMember { moderation, reason },
         });
         cx.action(ModerationModalAction::Close);
     }
@@ -199,7 +203,7 @@ impl ModerationModal {
                 "Report",
                 &self.icon_report,
             ),
-            ModerationRequest::Member(MemberModeration { room_name, user_name, action, .. }) => match action {
+            ModerationRequest::Member { moderation: MemberModeration { room_name, user_name, action, .. }, .. } => match action {
                 MemberAction::Kick => (
                     "Kick this user?",
                     format!(
@@ -251,14 +255,18 @@ impl ModerationModal {
         // A change to someone's power level has nowhere to put a reason.
         let has_reason = !matches!(
             &request,
-            ModerationRequest::Member(MemberModeration { action: MemberAction::Mute | MemberAction::Unmute, .. })
+            ModerationRequest::Member { moderation: MemberModeration { action: MemberAction::Mute | MemberAction::Unmute, .. }, .. }
         );
+        let initial_reason = match &request {
+            ModerationRequest::Member { initial_reason: Some(reason), .. } => reason.as_str(),
+            _ => "",
+        };
 
         self.view.label(cx, ids!(title)).set_text(cx, title);
         self.view.label(cx, ids!(body)).set_text(cx, &body);
 
         self.view.view(cx, ids!(reason_view)).set_visible(cx, has_reason);
-        self.view.text_input(cx, ids!(reason_input)).set_text(cx, "");
+        self.view.text_input(cx, ids!(reason_input)).set_text(cx, initial_reason);
 
         let negative_button = self.view.button(cx, ids!(negative_button));
         negative_button.set_visible(cx, !is_positive);

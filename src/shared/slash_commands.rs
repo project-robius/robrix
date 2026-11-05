@@ -8,7 +8,7 @@ use std::fmt::Write;
 use unicode_segmentation::UnicodeSegmentation;
 use ruma::{events::room::message::RoomMessageEventContent, matrix_uri::MatrixId, OwnedUserId, UserId};
 
-use crate::utils;
+use crate::{moderation::MemberAction, sliding_sync::UserPowerLevels, utils};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SlashCommand {
@@ -18,6 +18,17 @@ pub struct SlashCommand {
     pub aliases: &'static [&'static str],
     pub description: &'static str,
     pub usage: &'static str,
+}
+impl SlashCommand {
+    /// Returns whether a user with the given power levels can run this command.
+    pub fn is_allowed(&self, user_power_levels: UserPowerLevels) -> bool {
+        match self.name {
+            "kick" => user_power_levels.can_kick(),
+            "ban" => user_power_levels.can_ban(),
+            "unban" => user_power_levels.can_unban(),
+            _ => true,
+        }
+    }
 }
 
 /// The full list of slash commands, in display order
@@ -119,6 +130,24 @@ pub static SLASH_COMMANDS: &[SlashCommand] = &[
         usage: "/unblock <user-id>",
     },
     SlashCommand {
+        name: "kick",
+        aliases: &["remove"],
+        description: "Kick a user out of this room",
+        usage: "/kick <user-id> [<reason>]",
+    },
+    SlashCommand {
+        name: "ban",
+        aliases: &[],
+        description: "Ban a user from this room",
+        usage: "/ban <user-id> [<reason>]",
+    },
+    SlashCommand {
+        name: "unban",
+        aliases: &[],
+        description: "Unban a user from this room",
+        usage: "/unban <user-id> [<reason>]",
+    },
+    SlashCommand {
         name: "nick",
         aliases: &[],
         description: "Change your display name in every room",
@@ -135,7 +164,6 @@ pub static SLASH_COMMANDS: &[SlashCommand] = &[
     //
     // * /knock <room-address> [reason]: `MatrixRequest::Knock` already takes an alias,
     //   so this mostly needs `add_room::parse_address` made public.
-    // * /kick, /ban, /unban <user-id> [reason]: these just need to submit `MatrixRequest::ModerateMember`.
     // * /topic [<topic>], /roomname <name>: one new state-event `MatrixRequest`.
     // * /react <emoji>, /redact [reason]: need to find the latest matching timeline item,
     //   like `MessageAction::EditLatest` does.
@@ -183,6 +211,13 @@ pub enum SlashCommandAction {
         user_id: OwnedUserId,
         block: bool,
     },
+    /// Kick, ban, or unban the given user in the current room.
+    #[doc(alias("kick", "ban", "unban"))]
+    ModerateMember {
+        user_id: OwnedUserId,
+        action: MemberAction,
+        reason: Option<String>,
+    },
     /// Set the current user's display name across all rooms.
     SetDisplayName(String),
 }
@@ -203,7 +238,7 @@ pub fn matching_commands(query: &str) -> impl Iterator<Item = &'static SlashComm
 ///
 /// Text that isn't a command comes back as a regular Markdown message, so callers only
 /// need to handle the three outcomes rather than sniffing for a leading slash themselves.
-pub fn parse_input(text: &str) -> SlashCommandOutcome {
+pub fn parse_input(text: &str, user_power_levels: UserPowerLevels) -> SlashCommandOutcome {
     // A doubled slash escapes the command, so "//foo" sends the literal text "/foo".
     if text.starts_with("//") {
         return SlashCommandOutcome::Message(RoomMessageEventContent::text_markdown(&text[1..]));
@@ -216,6 +251,11 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
             "Unknown command \"/{name}\". Begin your message with \"//\" to send a literal slash."
         ));
     };
+    if !command.is_allowed(user_power_levels) {
+        return SlashCommandOutcome::Error(format!(
+            "You don't have permission to use /{} in this room.", command.name
+        ));
+    }
 
     // Only the emoticons and /leave still make sense with nothing after them.
     let arg = arg.trim();
@@ -229,11 +269,15 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
         return SlashCommandOutcome::Error(format!("Usage: {}", command.usage));
     }
 
-    // Commands focused on a single user all take one argument, so parse it once.
-    if let "dm" | "invite" | "whois" | "block" | "unblock" = command.name {
-        let Some(user_id) = parse_user_id(arg) else {
+    // Commands focused on a single user all start with that user, so parse it once.
+    if let "dm" | "invite" | "whois" | "block" | "unblock" | "kick" | "ban" | "unban" = command.name {
+        let (user, reason) = match command.name {
+            "kick" | "ban" | "unban" => split_user_and_reason(arg),
+            _ => (arg, None),
+        };
+        let Some(user_id) = parse_user_id(user) else {
             return SlashCommandOutcome::Error(format!(
-                "\"{arg}\" isn't a valid user ID; it should look like @user:server.org"
+                "\"{user}\" isn't a valid user ID; it should look like @user:server.org"
             ));
         };
         return SlashCommandOutcome::Action(match command.name {
@@ -241,7 +285,10 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
             "invite" => SlashCommandAction::InviteUser(user_id),
             "whois" => SlashCommandAction::ShowUserProfile(user_id),
             "block" => SlashCommandAction::BlockUser { user_id, block: true },
-            _ => SlashCommandAction::BlockUser { user_id, block: false },
+            "unblock" => SlashCommandAction::BlockUser { user_id, block: false },
+            "kick" => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Kick, reason },
+            "ban" => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Ban, reason },
+            _ => SlashCommandAction::ModerateMember { user_id, action: MemberAction::Unban, reason },
         });
     }
 
@@ -305,6 +352,18 @@ fn parse_user_id(arg: &str) -> Option<OwnedUserId> {
         MatrixId::User(user_id) => Some(user_id),
         _ => None,
     }
+}
+
+/// Splits a command's argument into the user at its start and the optional reason after that user.
+fn split_user_and_reason(arg: &str) -> (&str, Option<String>) {
+    // The name in a mention pill can contain spaces, so a pill ends at its closing parenthesis.
+    let pill_end = arg.starts_with('[')
+        .then(|| arg.match_indices(')').map(|(i, _)| i + 1).find(|&end| parse_user_id(&arg[..end]).is_some()))
+        .flatten();
+    let user_end = pill_end.or_else(|| arg.find(char::is_whitespace)).unwrap_or(arg.len());
+    let (user, reason) = arg.split_at(user_end);
+    let reason = reason.trim();
+    (user, (!reason.is_empty()).then(|| reason.to_owned()))
 }
 
 fn split_command(text: &str) -> Option<(&str, &str)> {
@@ -474,21 +533,21 @@ mod tests_slash_commands {
     use ruma::events::room::message::MessageType;
 
     fn message(text: &str) -> RoomMessageEventContent {
-        match parse_input(text) {
+        match parse_input(text, UserPowerLevels::all()) {
             SlashCommandOutcome::Message(content) => content,
             other => panic!("expected a message for {text:?}, got {other:?}"),
         }
     }
 
     fn action(text: &str) -> SlashCommandAction {
-        match parse_input(text) {
+        match parse_input(text, UserPowerLevels::all()) {
             SlashCommandOutcome::Action(action) => action,
             other => panic!("expected an action for {text:?}, got {other:?}"),
         }
     }
 
     fn error(text: &str) -> String {
-        match parse_input(text) {
+        match parse_input(text, UserPowerLevels::all()) {
             SlashCommandOutcome::Error(err) => err,
             other => panic!("expected an error for {text:?}, got {other:?}"),
         }
@@ -614,7 +673,7 @@ mod tests_slash_commands {
         assert_eq!(message("/tableflip").body(), "(╯°□°）╯︵ ┻━┻");
         assert_eq!(message("/unflip").body(), "┬──┬ ノ( ゜-゜ノ)");
         assert_eq!(message("/lenny").body(), "( ͡° ͜ʖ ͡°)");
-        assert!(matches!(parse_input("/leave"), SlashCommandOutcome::Action(_)));
+        assert!(matches!(parse_input("/leave", UserPowerLevels::all()), SlashCommandOutcome::Action(_)));
         assert_eq!(error("/leave now"), "Usage: /leave");
         assert_eq!(error("/part now"), "Usage: /leave");
     }

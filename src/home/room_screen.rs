@@ -821,7 +821,7 @@ impl ReadReceiptState {
 
 
 /// Returns the user's display name in the given room, falling back to their user ID.
-fn display_name_or_user_id(cx: &mut Cx, room_id: &OwnedRoomId, user_id: OwnedUserId) -> String {
+pub fn display_name_or_user_id(cx: &mut Cx, room_id: &OwnedRoomId, user_id: OwnedUserId) -> String {
     user_profile_cache::get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), false)
         .into_option()
         .unwrap_or_else(|| user_id.to_string())
