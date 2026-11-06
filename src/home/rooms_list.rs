@@ -261,6 +261,11 @@ pub enum RoomsListUpdate {
         topic: Option<String>,
         join_rule: Option<JoinRuleSummary>,
     },
+    /// Update whether the user would need an invite to join the given room.
+    UpdateIsPrivate {
+        room_id: OwnedRoomId,
+        is_private: bool,
+    },
     /// Remove the given room from the rooms list
     RemoveRoom {
         room_id: OwnedRoomId,
@@ -430,6 +435,8 @@ pub struct JoinedRoomInfo {
     pub dm_user_id: Option<OwnedUserId>,
     /// Whether this room is tombstoned (shut down and replaced with a successor room).
     pub is_tombstoned: bool,
+    /// Whether the user would need an invite to join this room again after leaving it.
+    pub is_private: bool,
 
     // TODO: we could store the parent chain(s) of this room, i.e., which spaces
     //       they are children of. One room can be in multiple spaces.
@@ -450,6 +457,8 @@ pub struct InvitedRoomInfo {
     pub topic: Option<String>,
     /// The join rule of this room, if known.
     pub join_rule: Option<JoinRuleSummary>,
+    /// Whether the user would need another invite to join this room after rejecting this one.
+    pub is_private: bool,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub room_avatar: FetchedRoomAvatar,
@@ -1114,6 +1123,13 @@ impl RoomsList {
                     if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
                         room.topic = topic;
                         room.join_rule = join_rule;
+                    }
+                }
+                RoomsListUpdate::UpdateIsPrivate { room_id, is_private } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        room.is_private = is_private;
+                    } else if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        room.is_private = is_private;
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state, is_space } => {
@@ -2389,6 +2405,14 @@ impl RoomsListRef {
     /// See [`RoomsList::get_room_state()`].
     pub fn get_room_state(&self, room_id: &OwnedRoomId) -> Option<RoomState> {
         self.borrow()?.get_room_state(room_id)
+    }
+
+    /// Returns whether the user would need an invite to join the given joined or invited room after leaving it.
+    /// A room we don't know about counts as private, since an extra warning beats a missing one.
+    pub fn is_room_private(&self, room_id: &OwnedRoomId) -> bool {
+        let Some(inner) = self.borrow() else { return true };
+        let is_private = inner.all_joined_rooms.get(room_id).map(|room| room.is_private);
+        is_private.or_else(|| inner.invited_rooms.borrow().get(room_id).map(|room| room.is_private)).unwrap_or(true)
     }
 
     /// Returns the avatar for the given room, if it is known and fetched.

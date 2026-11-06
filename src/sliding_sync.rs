@@ -1490,6 +1490,7 @@ async fn matrix_worker_task(
                     let result_action = match result {
                         Ok(room) => {
                             log!("Successfully joined room {room_id}.");
+                            refresh_rooms_restricted_to(&client, &room_id);
                             let room_name_id = RoomNameId::from_room(&room).await;
                             enqueue_popup_notification(
                                 format!(
@@ -1549,6 +1550,7 @@ async fn matrix_worker_task(
                     let result_action = match room.leave().await {
                         Ok(()) => {
                             log!("Successfully left room {room_id}.");
+                            refresh_rooms_restricted_to(&client, &room_id);
                             // The room list service doesn't track outdated rooms, so it won't remove this one for us.
                             if was_outdated {
                                 ALL_JOINED_ROOMS.lock().unwrap().remove(&room_id);
@@ -4062,6 +4064,7 @@ struct RoomListServiceRoomInfo {
     topic: Option<String>,
     /// Only ever set for invited rooms.
     join_rule: Option<JoinRuleSummary>,
+    is_private: bool,
     num_joined_members: u64,
     num_invited_members: u64,
     /// Whether all of this room's members are fully available in the local store.
@@ -4128,6 +4131,7 @@ impl RoomListServiceRoomInfo {
             inviter_info,
             topic: is_invited.then(|| room.topic()).flatten(),
             join_rule: is_invited.then(|| room.join_rule().map(JoinRuleSummary::from)).flatten(),
+            is_private: is_room_private(&room),
             num_joined_members: room.joined_members_count(),
             num_invited_members: room.invited_members_count(),
             members_synced: room.are_members_synced(),
@@ -4979,6 +4983,13 @@ async fn update_room(
             });
         }
 
+        if old_room.is_private != new_room.is_private {
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateIsPrivate {
+                room_id: new_room_id.clone(),
+                is_private: new_room.is_private,
+            });
+        }
+
         // Check to see if any room aliases have changed.
         if old_room.canonical_alias != new_room.canonical_alias
             || old_room.alt_aliases != new_room.alt_aliases
@@ -5201,6 +5212,7 @@ async fn add_new_room(
                 alt_aliases: new_room.alt_aliases.clone(),
                 topic: new_room.topic.clone(),
                 join_rule: new_room.join_rule.clone(),
+                is_private: new_room.is_private,
                 invite_state: Default::default(),
                 is_selected: false,
                 is_direct: new_room.is_direct,
@@ -5295,6 +5307,7 @@ async fn add_new_room(
         is_direct: new_room.is_direct,
         dm_user_id: new_room.dm_user_id.clone(),
         is_tombstoned: new_room.is_tombstoned,
+        is_private: new_room.is_private,
     }));
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully {
@@ -5302,6 +5315,35 @@ async fn add_new_room(
         is_invite: false,
     });
     Ok(())
+}
+
+/// Returns whether the user needs an invite to get into the given room or space when they're not in it.
+/// A room with no known join rule counts as private, since rooms are invite-only by default.
+pub fn is_room_private(room: &Room) -> bool {
+    match room.join_rule().map(JoinRuleSummary::from) {
+        Some(JoinRuleSummary::Public) => false,
+        // Anyone who's in one of the allowed rooms can join without an invite.
+        Some(JoinRuleSummary::Restricted(restricted) | JoinRuleSummary::KnockRestricted(restricted)) => {
+            let client = room.client();
+            !restricted.allowed_room_ids.iter()
+                .any(|room_id| client.get_room(room_id).is_some_and(|allowed| allowed.state() == RoomState::Joined))
+        }
+        _ => true,
+    }
+}
+
+/// Refreshes whether each room restricted to the given room is private, since the user just joined or left it.
+pub fn refresh_rooms_restricted_to(client: &Client, room_id: &RoomId) {
+    for room in client.joined_rooms().into_iter().chain(client.invited_rooms()) {
+        if let Some(JoinRuleSummary::Restricted(restricted) | JoinRuleSummary::KnockRestricted(restricted)) = room.join_rule().map(JoinRuleSummary::from)
+            && restricted.allowed_room_ids.iter().any(|allowed_id| allowed_id == room_id)
+        {
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateIsPrivate {
+                room_id: room.room_id().to_owned(),
+                is_private: is_room_private(&room),
+            });
+        }
+    }
 }
 
 /// Returns whether the given room is outdated, meaning that we're still in it

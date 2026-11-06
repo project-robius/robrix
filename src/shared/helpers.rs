@@ -11,19 +11,18 @@ script_mod! {
     mod.widgets.ScrollBar.draw_bg.color_drag = (COLOR_SCROLL_BAR_HANDLE_DRAG)
 
     // Every toggle, checkbox, and radio button uses this styling.
-    mod.widgets.CheckBoxFlat.draw_bg.color = (COLOR_TOGGLE_BG)
-    mod.widgets.CheckBoxFlat.draw_bg.color_hover = (COLOR_TOGGLE_BG)
-    mod.widgets.CheckBoxFlat.draw_bg.color_down = (COLOR_TOGGLE_BG)
-    mod.widgets.CheckBoxFlat.draw_bg.color_focus = (COLOR_TOGGLE_BG)
-    mod.widgets.CheckBoxFlat.draw_bg.color_active = (COLOR_TOGGLE_BG)
-    mod.widgets.CheckBoxFlat.draw_bg.color_disabled = (COLOR_TOGGLE_BG_DISABLED)
-    mod.widgets.CheckBoxFlat.draw_bg.border_color = (COLOR_TOGGLE_BORDER)
-    mod.widgets.CheckBoxFlat.draw_bg.border_color_hover = (COLOR_TOGGLE_BORDER_HOVER)
-    mod.widgets.CheckBoxFlat.draw_bg.border_color_down = (COLOR_TOGGLE_BORDER_HOVER)
-    mod.widgets.CheckBoxFlat.draw_bg.border_color_focus = (COLOR_TOGGLE_BORDER_HOVER)
-    mod.widgets.CheckBoxFlat.draw_bg.border_color_active = (COLOR_TOGGLE_BORDER)
-    mod.widgets.CheckBoxFlat.draw_bg.border_color_disabled = (COLOR_TOGGLE_BORDER_DISABLED)
-    mod.widgets.CheckBoxFlat.draw_bg.mark_color_active = (COLOR_TOGGLE_MARK_ACTIVE)
+    mod.widgets.ToggleFlat.draw_bg.color = (COLOR_TOGGLE_BG)
+    mod.widgets.ToggleFlat.draw_bg.color_hover = (COLOR_TOGGLE_BG)
+    mod.widgets.ToggleFlat.draw_bg.color_down = (COLOR_TOGGLE_BG)
+    mod.widgets.ToggleFlat.draw_bg.color_focus = (COLOR_TOGGLE_BG)
+    mod.widgets.ToggleFlat.draw_bg.color_active = (COLOR_TOGGLE_BG)
+    mod.widgets.ToggleFlat.draw_bg.color_disabled = (COLOR_TOGGLE_BG_DISABLED)
+    mod.widgets.ToggleFlat.draw_bg.border_color = (COLOR_TOGGLE_BORDER)
+    mod.widgets.ToggleFlat.draw_bg.border_color_hover = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.ToggleFlat.draw_bg.border_color_down = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.ToggleFlat.draw_bg.border_color_focus = (COLOR_TOGGLE_BORDER_HOVER)
+    mod.widgets.ToggleFlat.draw_bg.border_color_active = (COLOR_TOGGLE_BORDER)
+    mod.widgets.ToggleFlat.draw_bg.border_color_disabled = (COLOR_TOGGLE_BORDER_DISABLED)
 
     // ToggleFlat derives from CheckBoxFlat but has its own knob colors.
     mod.widgets.ToggleFlat.draw_bg.mark_color = (COLOR_TOGGLE_MARK)
@@ -50,6 +49,21 @@ script_mod! {
     mod.widgets.DrawCheckLabel.color_focus = (COLOR_TOGGLE_TEXT)
     mod.widgets.DrawCheckLabel.color_active = (COLOR_TOGGLE_TEXT)
     mod.widgets.DrawCheckLabel.color_disabled = (COLOR_TOGGLE_TEXT_DISABLED)
+
+    // A checkbox's box is the exception, since it matches our tinted buttons.
+    mod.widgets.CheckBoxFlat.draw_bg.color = (COLOR_BG_ACCENT_TINT)
+    mod.widgets.CheckBoxFlat.draw_bg.color_hover = (COLOR_BG_ACCENT_TINT_HOVER)
+    mod.widgets.CheckBoxFlat.draw_bg.color_down = (COLOR_BG_ACCENT_TINT_DOWN)
+    mod.widgets.CheckBoxFlat.draw_bg.color_focus = (COLOR_BG_ACCENT_TINT)
+    mod.widgets.CheckBoxFlat.draw_bg.color_active = (COLOR_BG_ACCENT_TINT)
+    mod.widgets.CheckBoxFlat.draw_bg.color_disabled = (COLOR_BG_NEUTRAL)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color = (COLOR_TRANSPARENT)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_hover = (COLOR_TRANSPARENT)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_down = (COLOR_TRANSPARENT)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_focus = (COLOR_TRANSPARENT)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_active = (COLOR_TRANSPARENT)
+    mod.widgets.CheckBoxFlat.draw_bg.border_color_disabled = (COLOR_TRANSPARENT)
+    mod.widgets.CheckBoxFlat.draw_bg.mark_color_active = (COLOR_ACTIVE_PRIMARY_DARKER)
 
     // The scroll bar used by all lists (like portallists).
     mod.widgets.ListScrollBar = ScrollBar { bar_size: 9 }
@@ -283,6 +297,13 @@ script_mod! {
             text_style: REGULAR_TEXT {font_size: 11.5},
             color: (COLOR_TEXT_BODY)
         }
+    }
+
+    // A warning shown beneath a modal's body, only when it applies.
+    mod.widgets.ModalWarning = mod.widgets.ModalBody {
+        visible: false
+        margin: Inset{top: 8}
+        draw_text +: { color: (COLOR_TEXT_WARNING_NOT_FOUND) }
     }
 
     // A modal buttons row that fills the width, is right-aligned,

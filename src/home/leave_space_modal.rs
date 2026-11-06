@@ -44,6 +44,10 @@ script_mod! {
 
         body := ModalBody {}
 
+        warning := ModalWarning {
+            text: "This is a private space, so you won't be able to join it again without being re-invited."
+        }
+
         select_view := View {
             visible: false
             width: Fill, height: Fit
@@ -330,10 +334,11 @@ impl WidgetMatchEvent for LeaveSpaceModal {
         let mut did_loading_change = false;
         for action in actions {
             match action.downcast_ref() {
-                Some(SpaceRoomListAction::JoinedRoomsInSpace { space_id, children, other_spaces })
+                Some(SpaceRoomListAction::JoinedRoomsInSpace { space_id, is_private, children, other_spaces })
                     if *space_id == shown_space_id && self.state == LeaveSpaceModalState::WaitingForRooms =>
                 {
                     self.state = LeaveSpaceModalState::WaitingForUserInput;
+                    self.view.label(cx, ids!(warning)).set_visible(cx, *is_private);
                     self.other_spaces = other_spaces.clone();
                     for (parent_id, children) in children {
                         self.add_children(cx, parent_id, children);
@@ -433,6 +438,7 @@ impl WidgetMatchEvent for LeaveSpaceModal {
                 "Leaving \"{space_name_id}\".\n\n\
                 Waiting for confirmation from the homeserver...",
             ));
+            self.view.label(cx, ids!(warning)).set_visible(cx, false);
             self.view.view(cx, ids!(select_view)).set_visible(cx, false);
             self.view.view(cx, ids!(rooms_view)).set_visible(cx, false);
             leave_button.set_text(cx, "Leaving...");
@@ -528,13 +534,10 @@ impl LeaveSpaceModal {
 
     pub fn show(&mut self, cx: &mut Cx, space_name_id: RoomNameId) {
         self.view.label(cx, ids!(title)).set_text(cx, "Leave this space?");
-        self.view.label(cx, ids!(body)).set_text(cx, &format!(
-            "Are you sure you want to leave \"{space_name_id}\"?\n\n\
-            If this is a private space, you won't be able to join this space \
-            without being re-invited to it.",
-        ));
+        self.view.label(cx, ids!(body)).set_text(cx, &format!("Are you sure you want to leave \"{space_name_id}\"?"));
 
         // Reset the UI state
+        self.view.label(cx, ids!(warning)).set_visible(cx, false);
         self.view.view(cx, ids!(select_view)).set_visible(cx, true);
         self.view.view(cx, ids!(loading_view)).set_visible(cx, true);
         let rooms_view = self.view.view(cx, ids!(rooms_view));
