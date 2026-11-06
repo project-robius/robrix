@@ -1,6 +1,6 @@
 //! Panes that show extra info about a room (e.g., its member list).
 //!
-//! A pane is docked to one edge of a RoomScreen's timeline,
+//! A pane is docked to one edge of a RoomScreen's timeline (or a space's lobby),
 //! or popped out into its own dock tab (desktop) or stack view (mobile).
 //! Docked panes are saved and restored along with their timeline's UI state,
 //! as are their loaded contents and scroll position.
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use ruma::{OwnedRoomId, RoomId};
 
-use crate::{app::SelectedRoom, home::rooms_list::RoomsListAction, room::pane_dock::SavedPaneContent, sliding_sync::TimelineKind, utils::RoomNameId};
+use crate::{app::SelectedRoom, home::rooms_list::{RoomsListAction, RoomsListRef}, room::pane_dock::SavedPaneContent, sliding_sync::TimelineKind, utils::RoomNameId};
 
 /// The kinds of panes that can be shown for a room.
 ///
@@ -217,6 +217,24 @@ pub fn pop_out(
 pub fn popped_out_from(room_id: &RoomId, kind: &RoomPaneKind) -> TimelineKind {
     with_room_panes(|rp| rp.pane_origins.get(&(room_id.to_owned(), kind.clone())).cloned())
         .unwrap_or_else(|| TimelineKind::MainRoom { room_id: room_id.to_owned() })
+}
+
+/// Returns whether the given room is a space, whose panes are docked in its lobby rather than a timeline.
+pub fn is_space(cx: &mut Cx, room_id: &OwnedRoomId) -> bool {
+    cx.has_global::<RoomsListRef>() && cx.get_global::<RoomsListRef>().is_known_space(room_id)
+}
+
+/// Returns the screen that the given popped-out pane goes back into, and the timeline that it docks into there.
+///
+/// A space has no timeline, so its panes go back into its lobby.
+pub fn get_return_destination(cx: &mut Cx, room_name_id: &RoomNameId, kind: &RoomPaneKind) -> (SelectedRoom, TimelineKind) {
+    let timeline_kind = popped_out_from(room_name_id.room_id(), kind);
+    let screen = if is_space(cx, room_name_id.room_id()) {
+        SelectedRoom::Space { space_name_id: room_name_id.clone() }
+    } else {
+        timeline_screen(room_name_id, &timeline_kind)
+    };
+    (screen, timeline_kind)
 }
 
 /// Takes the saved state of the given popped-out pane, so its original roomscreen can show the same pane.

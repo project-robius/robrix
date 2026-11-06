@@ -1,4 +1,4 @@
-//! A dock around a room's timeline that shows that room's panes, e.g., its member list.
+//! A dock around a room's timeline (or a space's lobby) that shows that room's panes, e.g., its member list.
 //!
 //! Each pane is docked to one of the four edges around the timeline,
 //! can be resized via the grab handles on its inner border and between it and its edge's other panes,
@@ -20,7 +20,7 @@ use crate::{
 use super::{
     room_action_bar::RoomActionTooltip,
     pinned_messages_list::{PinnedMessagesListWidgetRefExt, SavedPinnedMessagesList},
-    room_members_list::{LISTED_MEMBERSHIPS, RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList},
+    room_members_list::{LISTED_MEMBERSHIPS, MembersUpdate, RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList, get_members_update},
     room_info::{RoomInfoViewAction, RoomInfoViewWidgetRefExt, SavedRoomInfoView},
     room_pane::{self, PaneLayout, PaneSide, RoomPaneKind, RoomPanesPending},
     threads_list::{SavedThreadsList, ThreadsListWidgetRefExt},
@@ -538,6 +538,8 @@ pub struct RoomPaneDock {
     #[rust] room_name_id: Option<RoomNameId>,
     /// The timeline that this dock's panes belong to.
     #[rust] timeline_kind: Option<TimelineKind>,
+    /// Whether this dock is in a space's lobby, which has no timeline to get the space's members from.
+    #[rust] is_space: bool,
     /// Our timeline's room members, shared with its RoomScreen and given to any members pane.
     #[rust] room_members: TimelineMembers,
     #[rust] panes: Vec<DockedPane>,
@@ -648,11 +650,23 @@ impl Widget for RoomPaneDock {
                     selected_room.room_id() == timeline_kind.room_id() && match selected_room {
                         SelectedRoom::JoinedRoom { .. } => timeline_kind.thread_root_event_id().is_none(),
                         SelectedRoom::Thread { thread_root_event_id, .. } => timeline_kind.thread_root_event_id() == Some(thread_root_event_id),
+                        SelectedRoom::Space { .. } => self.is_space,
                         _ => false,
                     }
                 );
                 self.update_cancel_scope(cx);
                 continue;
+            }
+            if self.is_space {
+                match get_members_update(action, room_id) {
+                    Some(MembersUpdate::Fetched(members)) => self.set_room_members(cx, Some(Ok(members))),
+                    Some(MembersUpdate::Failed(error)) => {
+                        error!("Failed to fetch members of space {room_id}: {error}");
+                        self.set_room_members(cx, Some(Err(error)));
+                    }
+                    Some(MembersUpdate::Outdated) if self.has_pane(&RoomPaneKind::Members) => self.fetch_members(),
+                    _ => {}
+                }
             }
             if let Some(widget_action) = action.as_widget_action() {
                 match widget_action.cast() {
@@ -829,21 +843,26 @@ impl RoomPaneDock {
         }
         self.room_name_id = None;
         self.timeline_kind = None;
+        self.is_space = false;
         self.room_members = None;
     }
 
     /// Shows the given timeline's saved panes right away, and then slides in any pending panes.
-    fn show_timeline(
+    ///
+    /// A space has no timeline, so its lobby's panes belong to the main timeline of the space's room ID.
+    fn show_panes(
         &mut self,
         cx: &mut Cx,
         room_name_id: &RoomNameId,
         timeline_kind: TimelineKind,
+        is_space: bool,
         room_members: Option<Arc<Vec<RoomMember>>>,
         saved_panes: Vec<SavedRoomPane>,
     ) {
         self.clear(cx);
         self.room_name_id = Some(room_name_id.clone());
         self.timeline_kind = Some(timeline_kind);
+        self.is_space = is_space;
         self.room_members = room_members.map(Ok);
         for saved in saved_panes {
             self.create_pane(cx, saved.kind, saved.layout, saved.weight, Some(saved.content), saved.opened_from);
@@ -1001,16 +1020,21 @@ impl RoomPaneDock {
         }
         // Our timeline only keeps its members up to date while a members pane is open,
         // so refresh them when one is opened (and fetch any that are missing).
-        if *kind == RoomPaneKind::Members
-            && let Some(timeline_kind) = self.timeline_kind.clone()
-        {
-            submit_async_request(MatrixRequest::GetRoomMembers {
-                timeline_kind,
-                memberships: LISTED_MEMBERSHIPS,
-                local_only: false,
-            });
+        if *kind == RoomPaneKind::Members {
+            self.fetch_members();
         }
         Some(frame)
+    }
+
+    /// Fetches our room's members for our members pane, from our timeline,
+    /// or for a space, from the space's room itself.
+    fn fetch_members(&self) {
+        let Some(timeline_kind) = self.timeline_kind.clone() else { return };
+        submit_async_request(if self.is_space {
+            MatrixRequest::GetRoomMembersList { room_id: timeline_kind.room_id().clone(), local_only: false }
+        } else {
+            MatrixRequest::GetRoomMembers { timeline_kind, memberships: LISTED_MEMBERSHIPS, local_only: false }
+        });
     }
 
     /// Creates a new pane, which is placed on an edge by `place_panes()`.
@@ -1165,7 +1189,7 @@ impl RoomPaneDock {
 }
 
 impl RoomPaneDockRef {
-    /// See [`RoomPaneDock::show_timeline()`].
+    /// Shows the panes of the given timeline. See [`RoomPaneDock::show_panes()`].
     pub fn show_timeline(
         &self,
         cx: &mut Cx,
@@ -1175,7 +1199,15 @@ impl RoomPaneDockRef {
         saved_panes: Vec<SavedRoomPane>,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_timeline(cx, room_name_id, timeline_kind, room_members, saved_panes);
+            inner.show_panes(cx, room_name_id, timeline_kind, false, room_members, saved_panes);
+        }
+    }
+
+    /// Shows the panes of the given space's lobby. See [`RoomPaneDock::show_panes()`].
+    pub fn show_space(&self, cx: &mut Cx, space_name_id: &RoomNameId, saved_panes: Vec<SavedRoomPane>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            let timeline_kind = TimelineKind::MainRoom { room_id: space_name_id.room_id().clone() };
+            inner.show_panes(cx, space_name_id, timeline_kind, true, None, saved_panes);
         }
     }
 

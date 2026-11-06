@@ -1489,16 +1489,19 @@ async fn matrix_worker_task(
                         Ok(room) => {
                             log!("Successfully joined room {room_id}.");
                             refresh_rooms_restricted_to(&client, &room_id);
+                            // Until the room's state arrives, we don't know its name or whether it's a space.
+                            wait_for_create_event(&room).await;
+                            let is_space = room.is_space();
                             let room_name_id = RoomNameId::from_room(&room).await;
                             enqueue_popup_notification(
                                 format!(
                                     "Successfully joined {} \"{room_name_id}\".",
-                                    if room.is_space() { "space" } else { "room" },
+                                    if is_space { "space" } else { "room" },
                                 ),
                                 PopupKind::Success,
                                 Some(4.0),
                             );
-                            JoinRoomResultAction::Joined { room_id }
+                            JoinRoomResultAction::Joined { room_id, is_space }
                         }
                         Err(e) => {
                             error!("Error joining room {room_id}: {e:?}");
@@ -1516,9 +1519,8 @@ async fn matrix_worker_task(
                     };
                     Cx::post_action(result_action);
                     // The rooms list won't load an old room that we just joined if we're already in the room
-                    // that replaced it, so we load it ourselves once we know whether that's the case.
+                    // that replaced it, so we load it ourselves.
                     if let Some(room) = joined_room {
-                        wait_for_create_event(&room).await;
                         load_outdated_room(&room).await;
                     }
                 });

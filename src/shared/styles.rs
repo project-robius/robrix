@@ -604,6 +604,43 @@ pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
     });
 }
 
+/// Applies the lavender button styling to the given button, or the purple styling if it's selected.
+pub fn apply_lavender_button_style(cx: &mut Cx, button: &mut ButtonRef, is_selected: bool) {
+    if is_selected {
+        script_apply_eval!(cx, button, {
+            draw_bg +: {
+                color: mod.widgets.COLOR_BG_LAVENDER_SELECTED,
+                color_hover: mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER,
+                color_down: mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN,
+            }
+            draw_text +: {
+                color: mod.widgets.COLOR_TEXT_ON_ACCENT,
+                color_hover: mod.widgets.COLOR_TEXT_ON_ACCENT,
+                color_down: mod.widgets.COLOR_TEXT_ON_ACCENT,
+            }
+            draw_icon +: {
+                color: mod.widgets.COLOR_TEXT_ON_ACCENT,
+            }
+        });
+    } else {
+        script_apply_eval!(cx, button, {
+            draw_bg +: {
+                color: mod.widgets.COLOR_BG_LAVENDER,
+                color_hover: mod.widgets.COLOR_BG_LAVENDER_HOVER,
+                color_down: mod.widgets.COLOR_BG_LAVENDER_DOWN,
+            }
+            draw_text +: {
+                color: mod.widgets.ROOM_NAME_TEXT_COLOR,
+                color_hover: mod.widgets.ROOM_NAME_TEXT_COLOR,
+                color_down: mod.widgets.ROOM_NAME_TEXT_COLOR,
+            }
+            draw_icon +: {
+                color: mod.widgets.ROOM_NAME_TEXT_COLOR,
+            }
+        });
+    }
+}
+
 /// Sets the background color of the given view, updating it in place if it's already drawn.
 pub fn set_view_bg_color(cx: &mut Cx, view: &ViewRef, color: Vec4f) {
     let Some(mut view) = view.borrow_mut() else { return };

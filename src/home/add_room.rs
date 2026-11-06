@@ -8,7 +8,7 @@ use matrix_sdk::RoomState;
 use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomId, ServerName, room::{JoinRuleSummary, RoomType}};
 use rustc_hash::FxHashSet;
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult, get_room_directory_servers}, home::{invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::NavigationBarAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, settings::app_preferences::AppPreferencesAction, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, page_header::PAGE_SIDE_PADDING, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils::{self, MatchQuality}};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult, get_room_directory_servers}, home::{invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::NavigationBarAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, settings::app_preferences::AppPreferencesAction, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, collapsible_html::handle_link_clicked, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, page_header::PAGE_SIDE_PADDING, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils::{self, MatchQuality}};
 
 /// The width of the Go buttons and the Edit button below the room search box, so they line up.
 const SEARCH_BUTTON_WIDTH: f64 = 72.0;
@@ -319,12 +319,12 @@ script_mod! {
                 draw_text +: { text_style: theme.font_regular { font_size: 12 } }
             }
 
-            room_topic := MessageHtml {
+            room_topic := CollapsibleHtml {
                 padding: Inset{left: 20, top: 5, right: 10, bottom: 10}
-                width: Fill,
-                height: Fit,
-                font_size: 11
-                font_color: (MESSAGE_TEXT_COLOR)
+                html +: {
+                    font_size: 11
+                    font_color: (MESSAGE_TEXT_COLOR)
+                }
             }
 
             buttons_view := View {
@@ -527,19 +527,20 @@ impl AddRoomState {
         }
     }
 
-    fn transition_to_joined(&mut self) {
-        // We never get a `RoomLoadedSuccessfully` for a space, so we can go to it as soon as we've joined it.
-        if let Self::FetchedRoomPreview { frp, .. } = self
-            && frp.room_type == Some(RoomType::Space)
-        {
-            self.transition_to_loaded(false);
-            return;
-        }
+    fn transition_to_joined(&mut self, is_space: bool) {
         let prev = std::mem::take(self);
-        if let Self::FetchedRoomPreview { frp, .. } = prev {
-            *self = Self::Joined { frp };
-        } else {
+        let Self::FetchedRoomPreview { mut frp, .. } = prev else {
             *self = prev;
+            return;
+        };
+        // Now we know for sure whether it's a space, which its preview may have gotten wrong.
+        if is_space != (frp.room_type == Some(RoomType::Space)) {
+            frp.room_type = is_space.then_some(RoomType::Space);
+        }
+        *self = Self::Joined { frp };
+        // We never get a `RoomLoadedSuccessfully` for a space, so we can go to it as soon as we've joined it.
+        if is_space {
+            self.transition_to_loaded(false);
         }
     }
 
@@ -638,11 +639,16 @@ impl Widget for AddRoomScreen {
         };
 
         // While the profile pane is shown, it gets all of the user's input.
-        if utils::is_interactive_hit_event(event) && profile_pane.is_currently_shown(cx) {
-            profile_pane.handle_event(cx, event, scope);
-        } else {
-            self.view.handle_event(cx, event, scope);
-        }
+        // We only open the links that were clicked within this screen.
+        let mut inner_actions = cx.capture_actions(|cx| {
+            if utils::is_interactive_hit_event(event) && profile_pane.is_currently_shown(cx) {
+                profile_pane.handle_event(cx, event, scope);
+            } else {
+                self.view.handle_event(cx, event, scope);
+            }
+        });
+        inner_actions.retain(|action| !handle_link_clicked(action));
+        cx.extend_actions(inner_actions);
 
         // Closing the profile pane doesn't put the user back in the people search box,
         // so we stop showing the arrow keys' focus on the person they had opened.
@@ -846,7 +852,7 @@ impl Widget for AddRoomScreen {
             // If we've fetched and displayed the room preview, handle any responses to
             // the user clicking the join button (e.g., knocked on or joined the room/space).
             let mut transition_to_knocked = false;
-            let mut transition_to_joined  = false;
+            let mut joined_is_space = None;
             if let AddRoomState::FetchedRoomPreview { frp, .. } = &self.state {
                 for action in actions {
                     if let Some(KnockResultAction::Knocked { room, .. }) = action.downcast_ref()
@@ -859,8 +865,8 @@ impl Widget for AddRoomScreen {
                     match action.downcast_ref() {
                         // Don't show success/failure popups here, they're shown in the backend task
                         // which is more consistent than doing it here, as the user may have left the AddRoom screen by then.
-                        Some(JoinRoomResultAction::Joined { room_id }) if room_id == frp.room_name_id.room_id() => {
-                            transition_to_joined = true;
+                        Some(JoinRoomResultAction::Joined { room_id, is_space }) if room_id == frp.room_name_id.room_id() => {
+                            joined_is_space = Some(*is_space);
                             break;
                         }
                         Some(JoinRoomResultAction::Failed { room_id, .. }) if room_id == frp.room_name_id.room_id() => {
@@ -874,8 +880,8 @@ impl Widget for AddRoomScreen {
                 self.state.transition_to_knocked();
                 self.redraw(cx);
             }
-            if transition_to_joined {
-                self.state.transition_to_joined();
+            if let Some(is_space) = joined_is_space {
+                self.state.transition_to_joined(is_space);
                 self.redraw(cx);
             }
 
@@ -891,8 +897,17 @@ impl Widget for AddRoomScreen {
                     self.record_room_state(cx, room_name_id.room_id(), if *is_invite { RoomState::Invited } else { RoomState::Joined });
                 }
                 // We show a found room's preview as soon as the user picks it, so we keep our membership in it up to date.
-                if let Some(JoinRoomResultAction::Joined { room_id }) = action.downcast_ref() {
+                if let Some(JoinRoomResultAction::Joined { room_id, is_space }) = action.downcast_ref() {
                     self.record_room_state(cx, room_id, RoomState::Joined);
+                    if *is_space {
+                        self.mark_room_as_space(cx, room_id);
+                    }
+                }
+                // A room that the user opened from a room directory might turn out to be a space.
+                if let Some(RoomPreviewAction::Fetched { result: Ok(fetched), .. }) = action.downcast_ref()
+                    && fetched.room_type == Some(RoomType::Space)
+                {
+                    self.mark_room_as_space(cx, fetched.room_name_id.room_id());
                 }
                 if let Some(KnockResultAction::Knocked { room, .. }) = action.downcast_ref() {
                     self.record_room_state(cx, room.room_id(), RoomState::Knocked);
@@ -1119,14 +1134,13 @@ impl Widget for AddRoomScreen {
                     cx,
                     &format!("ID: {}", frp.room_name_id.room_id().as_str()),
                 );
-                fetched_room_summary.label(cx, ids!(subsection_topic)).set_text(
-                    cx,
-                    &format!("{room_or_space_uc} Topic"),
-                );
-                fetched_room_summary.html(cx, ids!(room_topic)).set_text(
-                    cx,
-                    frp.topic.as_deref().unwrap_or("<i>No topic set</i>"),
-                );
+                let topic = frp.topic.as_deref().map(str::trim).filter(|topic| !topic.is_empty());
+                let subsection_topic = fetched_room_summary.label(cx, ids!(subsection_topic));
+                subsection_topic.set_text(cx, &format!("{room_or_space_uc} Topic"));
+                subsection_topic.set_visible(cx, topic.is_some());
+                let room_topic = fetched_room_summary.widget(cx, ids!(room_topic));
+                room_topic.set_text(cx, topic.unwrap_or_default());
+                room_topic.set_visible(cx, topic.is_some());
 
                 let room_summary = fetched_room_summary.label(cx, ids!(room_summary));
                 let join_room_button = fetched_room_summary.button(cx, ids!(join_room_button));
@@ -1636,17 +1650,51 @@ impl AddRoomScreen {
     /// We already have everything that its preview shows, so we don't have to fetch it.
     fn open_room_result(&mut self, cx: &mut Cx, key: LiveId) {
         self.pending_submit = None;
-        let Some(mut frp) = self.room_search.results.as_ref()
+        let Some((mut frp, is_exact_match)) = self.room_search.results.as_ref()
             .and_then(|results| results.rooms.items.iter().chain(&results.spaces.items).find(|room| room.row_key() == key))
-            .map(|room| room.preview.clone())
+            .map(|room| (room.preview.clone(), room.is_exact_match))
         else { return };
         if let Some(avatar_url) = &frp.avatar_url
             && let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url)
         {
             frp.room_avatar = FetchedRoomAvatar::Image((avatar_url.clone(), data).into());
         }
-        let room_or_alias_id = frp.alias.clone().map_or_else(|| frp.room_name_id.room_id().clone().into(), Into::into);
+        let room_or_alias_id: OwnedRoomOrAliasId = frp.alias.clone().map_or_else(|| frp.room_name_id.room_id().clone().into(), Into::into);
+        // A room directory might not say which rooms are spaces, so we check the rooms that we don't know yet.
+        if !is_exact_match && frp.state.is_none() && frp.room_type != Some(RoomType::Space) {
+            submit_async_request(MatrixRequest::GetRoomPreview {
+                room_or_alias_id: room_or_alias_id.clone(),
+                via: frp.via.clone(),
+                response_mode: RoomPreviewResponseMode::Action,
+            });
+        }
         self.show_room_preview(cx, frp, room_or_alias_id);
+    }
+
+    /// Shows the given room as a space, if its preview or search result said that it's a room.
+    fn mark_room_as_space(&mut self, cx: &mut Cx, room_id: &RoomId) {
+        if let AddRoomState::FetchedRoomPreview { frp, .. } = &mut self.state
+            && frp.room_name_id.room_id() == room_id
+        {
+            frp.room_type = Some(RoomType::Space);
+        }
+        if let Some(results) = self.room_search.results.as_mut()
+            && let Some(index) = results.rooms.items.iter().position(|room| room.room_id() == room_id)
+        {
+            let rooms = &mut results.rooms;
+            // The rooms after it move up to take its place.
+            if index < rooms.joined_start_index {
+                rooms.joined_start_index -= 1;
+            }
+            if index < rooms.load_more_start_index {
+                rooms.load_more_start_index -= 1;
+            }
+            let mut space = rooms.items.remove(index);
+            space.preview.room_type = Some(RoomType::Space);
+            self.result_rows.populated.remove(&space.row_key());
+            results.spaces.add_results(&[space], &mut self.result_rows);
+        }
+        self.redraw(cx);
     }
 
     /// Records our new membership in the given room, if it's one of the rooms or spaces that we found.

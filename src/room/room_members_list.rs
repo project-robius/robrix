@@ -8,9 +8,11 @@ use std::{borrow::Cow, sync::Arc};
 
 use makepad_widgets::*;
 use matrix_sdk::{RoomMemberships, room::{RoomMember, RoomMemberRole}, ruma::{OwnedRoomId, events::room::{member::MembershipState, power_levels::UserPowerLevel}}};
+use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use rustc_hash::FxHashSet;
 
 use crate::{
+    home::rooms_list_header::RoomsListHeaderAction,
     profile::{
         user_profile::{RoomMembershipInfo, UserProfile, UserProfilePaneInfo, UserProfileSlidingPaneRef, member_display_name, role_name},
         user_profile_cache,
@@ -439,4 +441,29 @@ pub fn show_member_profile(
         }),
     });
     pane.show(cx);
+}
+
+/// A change to a room's members, for a host that fetches them itself because it has no timeline to get them from.
+pub enum MembersUpdate {
+    Fetched(Arc<Vec<RoomMember>>),
+    Failed(String),
+    /// The members may have changed, so the host should fetch them again.
+    Outdated,
+}
+
+/// Returns how the given action changes the members of the given room, if at all.
+pub fn get_members_update(action: &Action, room_id: &OwnedRoomId) -> Option<MembersUpdate> {
+    match action.downcast_ref() {
+        Some(RoomMembersFetchAction::Fetched { room_id: fetched_room_id, members }) if fetched_room_id == room_id => {
+            return Some(MembersUpdate::Fetched(members.clone()));
+        }
+        Some(RoomMembersFetchAction::Failed { room_id: failed_room_id, error }) if failed_room_id == room_id => {
+            return Some(MembersUpdate::Failed(error.clone()));
+        }
+        _ => {}
+    }
+    let is_outdated = action.downcast_ref::<RoomMembersChanged>().is_some_and(|changed| changed.room_id == *room_id)
+        // Retry syncing members that failed to sync while we were offline.
+        || matches!(action.downcast_ref(), Some(RoomsListHeaderAction::StateUpdate(state)) if !matches!(state, SyncServiceState::Offline));
+    is_outdated.then_some(MembersUpdate::Outdated)
 }

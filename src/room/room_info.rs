@@ -143,14 +143,13 @@ script_mod! {
                     room_member_count := RoomInfoDetailsLabel {}
                 }
 
-                room_topic := CollapsibleLabel {
+                room_topic := CollapsibleHtml {
                     margin: Inset{top: 4}
-                    label +: {
-                        align: Align{x: 0.5, y: 0}
-                        draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: 10.5}
-                            color: (MESSAGE_TEXT_COLOR)
-                        }
+                    align: Align{x: 0.5, y: 0}
+                    html +: {
+                        align: Align{x: 0.5, y: 0.5}
+                        font_size: 10.5
+                        font_color: (MESSAGE_TEXT_COLOR)
                     }
                 }
 

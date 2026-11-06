@@ -122,18 +122,15 @@ script_mod! {
                 text: ""
             }
 
-            room_topic := Label {
+            room_topic := CollapsibleHtml {
                 visible: false
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true}
-                align: Align{x: 0.5}
-                max_lines: 3
-                text_overflow: TextOverflow.Ellipsis
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 10.5}
-                    color: (MESSAGE_TEXT_COLOR)
+                collapsed_lines: 3
+                align: Align{x: 0.5, y: 0}
+                html +: {
+                    align: Align{x: 0.5, y: 0.5}
+                    font_size: 10.5
+                    font_color: (MESSAGE_TEXT_COLOR)
                 }
-                text: ""
             }
 
             description := Label {
@@ -293,7 +290,7 @@ impl RoomCreationItem {
         room_alias.set_text(cx, alias.map_or("", |alias| alias.as_str()));
         room_alias.set_visible(cx, alias.is_some());
         let topic = topic.filter(|topic| !topic.is_empty());
-        let room_topic = self.view.label(cx, ids!(room_topic));
+        let room_topic = self.view.widget(cx, ids!(room_topic));
         room_topic.set_text(cx, topic.unwrap_or_default());
         room_topic.set_visible(cx, topic.is_some());
 

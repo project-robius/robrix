@@ -2029,7 +2029,7 @@ impl Widget for RoomsList {
                 // might've been closed before we got the result
                 // (and we still want to track the state of that invite here in the rooms list).
                 match action.downcast_ref() {
-                    Some(JoinRoomResultAction::Joined { room_id }) => {
+                    Some(JoinRoomResultAction::Joined { room_id, .. }) => {
                         set_invite_state(cx, room_id, InviteState::WaitingForJoinedRoom);
                         continue;
                     }
@@ -2516,6 +2516,11 @@ impl RoomsListRef {
     /// Returns whether we might not know of all of the rooms within the given space yet.
     pub fn is_space_loading(&self, space_id: &OwnedRoomId) -> bool {
         self.borrow().is_some_and(|inner| inner.get_rooms_within_space(space_id).1)
+    }
+
+    /// Returns whether the given room is a space that we know of, e.g., a joined space or one of its subspaces.
+    pub fn is_known_space(&self, room_id: &OwnedRoomId) -> bool {
+        self.borrow().is_some_and(|inner| inner.space_map.contains_key(room_id))
     }
 
     /// Returns the parent chain of the given space, if known.

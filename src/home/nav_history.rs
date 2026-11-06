@@ -219,7 +219,11 @@ pub fn can_show(cx: &mut Cx) -> impl Fn(Option<&SelectedRoom>) -> bool + use<> {
         None => !is_desktop,
         // Joined spaces aren't in the rooms list.
         Some(SelectedRoom::Space { .. }) => true,
-        Some(screen) => rooms_list.as_ref().is_none_or(|rooms_list| rooms_list.get_room_state(screen.room_id()).is_some()),
+        Some(screen) => rooms_list.as_ref().is_none_or(|rooms_list|
+            rooms_list.get_room_state(screen.room_id()).is_some()
+                // Nor are the spaces whose panes we show.
+                || (matches!(screen, SelectedRoom::RoomPane { .. }) && rooms_list.is_known_space(screen.room_id()))
+        ),
     }
 }
 

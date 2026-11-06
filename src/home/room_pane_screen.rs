@@ -2,20 +2,19 @@
 //! into its own dock tab (desktop) or stack view (mobile).
 
 use makepad_widgets::*;
-use matrix_sdk_ui::sync_service::State as SyncServiceState;
 
 use crate::{
     app::AppStateAction,
-    home::rooms_list_header::RoomsListHeaderAction,
     profile::user_profile::UserProfileSlidingPaneWidgetExt,
     room::{
-        room_members_list::{RoomMembersChanged, RoomMembersFetchAction, RoomMembersListAction, RoomMembersListWidgetRefExt, show_member_profile},
+        room_members_list::{MembersUpdate, RoomMembersListAction, RoomMembersListWidgetRefExt, get_members_update, show_member_profile},
         pane_dock::{SavedPaneContent, populate_content, restore_content, save_content, set_pane_header},
         pinned_messages_list::PinnedMessagesListWidgetRefExt,
         room_info::{RoomInfoViewAction, RoomInfoViewWidgetRefExt},
         room_pane::{self, RoomPaneKind},
         threads_list::ThreadsListWidgetRefExt,
     },
+    shared::collapsible_html::handle_link_clicked,
     sliding_sync::{MatrixRequest, submit_async_request},
     utils::RoomNameId,
 };
@@ -103,11 +102,12 @@ impl Drop for RoomPaneScreen {
 
 impl Widget for RoomPaneScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // A reapply resets the title's padding that we set, so we set it again.
+        // A reapply resets the title's padding and the return button's text that we set, so we set them again.
         if matches!(event, Event::LiveEdit | Event::ScriptReapply)
-            && let Some((_, kind)) = self.displayed.as_ref()
+            && let Some((room_name_id, kind)) = self.displayed.clone()
         {
-            set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), kind);
+            set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), &kind);
+            self.set_return_button_text(cx, &room_name_id);
         }
 
         if let Event::Actions(actions) = event {
@@ -126,23 +126,15 @@ impl Widget for RoomPaneScreen {
                 // Without a timeline, we fetch this room's members ourselves.
                 let Some((room_name_id, RoomPaneKind::Members)) = self.displayed.as_ref() else { continue };
                 let members_list = self.view.child_by_path(ids!(content.room_members)).as_room_members_list();
-                match action.downcast_ref() {
-                    Some(RoomMembersFetchAction::Fetched { room_id, members }) if room_id == room_name_id.room_id() => {
-                        members_list.set_members(cx, room_name_id, Some(members.clone()));
+                match get_members_update(action, room_name_id.room_id()) {
+                    Some(MembersUpdate::Fetched(members)) => members_list.set_members(cx, room_name_id, Some(members)),
+                    Some(MembersUpdate::Failed(error)) => {
+                        error!("Failed to fetch members of room {}: {error}", room_name_id.room_id());
+                        members_list.set_error(cx, error);
                     }
-                    Some(RoomMembersFetchAction::Failed { room_id, error }) if room_id == room_name_id.room_id() => {
-                        error!("Failed to fetch members of room {room_id}: {error}");
-                        members_list.set_error(cx, error.clone());
-                    }
-                    _ => {}
+                    Some(MembersUpdate::Outdated) => members_changed = true,
+                    None => {}
                 }
-                members_changed |= action.downcast_ref::<RoomMembersChanged>()
-                    .is_some_and(|changed| changed.room_id == *room_name_id.room_id());
-                // Retry syncing members that failed to sync while we were offline.
-                members_changed |= matches!(
-                    action.downcast_ref(),
-                    Some(RoomsListHeaderAction::StateUpdate(state)) if !matches!(state, SyncServiceState::Offline)
-                );
             }
             if members_changed {
                 self.fetch_members(false);
@@ -173,6 +165,10 @@ impl Widget for RoomPaneScreen {
             {
                 room_pane::open_in_place_of(room_name_id.room_id(), kind.clone(), displayed_kind);
                 cx.widget_action(self.widget_uid(), RoomPaneScreenAction::ShowPaneInPlace { room_name_id, kind });
+                continue;
+            }
+            // Unlike a RoomScreen, we can't show a link in-app, so we just open it.
+            if handle_link_clicked(&action) {
                 continue;
             }
             unhandled.push(action);
@@ -210,6 +206,7 @@ impl RoomPaneScreen {
         }
         set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), &kind);
         self.view.label(cx, ids!(pane_room)).set_text(cx, &room_name_id.to_string());
+        self.set_return_button_text(cx, room_name_id);
         self.view.child_by_path(ids!(content.room_members)).set_visible(cx, kind == RoomPaneKind::Members);
         self.view.child_by_path(ids!(content.pinned_messages)).set_visible(cx, kind == RoomPaneKind::PinnedMessages);
         self.view.child_by_path(ids!(content.threads)).set_visible(cx, kind == RoomPaneKind::Threads);
@@ -224,6 +221,12 @@ impl RoomPaneScreen {
         // Also re-fetch members upon re-showing the pane, in case we missed some membership changes.
         self.fetch_members(false);
         self.redraw(cx);
+    }
+
+    /// Labels the return button with where it docks this pane back into: its room, or its space's lobby.
+    fn set_return_button_text(&self, cx: &mut Cx, room_name_id: &RoomNameId) {
+        let text = if room_pane::is_space(cx, room_name_id.room_id()) { "Back to space" } else { "Back to room" };
+        self.view.button(cx, ids!(return_button)).set_text(cx, text);
     }
 
     /// Fetches the displayed room's members.
