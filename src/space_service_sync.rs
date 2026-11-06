@@ -303,18 +303,31 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     let client = client.clone();
                     // Each room is left with a separate request, so spawn this in a new task.
                     Handle::current().spawn(async move {
+                        log!(
+                            "Leaving space \"{space_name_id}\" ({}), along with {} of its rooms and subspaces.",
+                            space_name_id.room_id(),
+                            rooms_to_leave.len(),
+                        );
                         let mut result = Ok(());
                         // We leave the space itself last, so the user can try again if leaving a room fails.
                         for room_id in rooms_to_leave.iter().chain([space_name_id.room_id()]) {
-                            result = match client.get_room(room_id) {
-                                Some(room) => room.leave().await.map_err(matrix_sdk_ui::spaces::Error::LeaveSpace),
-                                None => Err(matrix_sdk_ui::spaces::Error::RoomNotFound(room_id.clone())),
+                            let Some(room) = client.get_room(room_id) else {
+                                error!("Couldn't find {room_id} to leave it.");
+                                result = Err(matrix_sdk_ui::spaces::Error::RoomNotFound(room_id.clone()));
+                                break;
                             };
-                            if result.is_err() { break }
+                            let room_name_id = RoomNameId::from_room(&room).await;
+                            let kind = if room_id == space_name_id.room_id() { "space" } else if room.is_space() { "subspace" } else { "room" };
+                            result = room.leave().await.map_err(matrix_sdk_ui::spaces::Error::LeaveSpace);
+                            if let Err(error) = &result {
+                                error!("Failed to leave {kind} \"{room_name_id}\" ({room_id}): {error:?}");
+                                break;
+                            }
+                            log!("Left {kind} \"{room_name_id}\" ({room_id}).");
                             refresh_rooms_restricted_to(&client, room_id);
                         }
-                        if let Err(error) = &result {
-                            error!("Failed to leave space {space_name_id}: {error:?}");
+                        if result.is_err() {
+                            error!("Didn't finish leaving space \"{space_name_id}\" ({}), so we're still in it.", space_name_id.room_id());
                         }
                         Cx::post_action(SpaceRoomListAction::LeaveSpaceResult { space_name_id, result });
                     });
