@@ -127,6 +127,8 @@ pub struct SpeechTextInput {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
+    /// Whether to offer dictation at all, where the platform supports it.
+    #[live(true)] has_mic: bool,
     /// The inner text input's padding, not counting the microphone's gutter.
     #[live] text_padding: Inset,
     /// The inner text input's right padding while the microphone button is shown.
@@ -160,7 +162,7 @@ pub struct SpeechTextInput {
 impl ScriptHook for SpeechTextInput {
     fn on_after_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
         if apply.is_eval() || apply.is_animate() { return; }
-        let show_mic = is_speech_supported() && !self.is_mic_hidden;
+        let show_mic = self.has_mic && is_speech_supported() && !self.is_mic_hidden;
         vm.with_cx_mut(|cx| {
             self.show_mic(cx, show_mic);
             // Re-applying the DSL resets the button to its idle look, so restyle it for any running session.

@@ -9,6 +9,7 @@ use emojis::{Emoji, Group, SkinTone};
 use makepad_widgets::{makepad_platform::event::finger::TAP_COUNT_DISTANCE, *};
 use rustc_hash::FxHashSet;
 use crate::{
+    room::room_action_bar::RoomActionTooltip,
     shared::{
         emoji_catalog::{get_emoji_catalog, get_shortcode, group_title, with_skin_tone, without_skin_tone},
         list_rows::handle_row_actions,
@@ -20,9 +21,11 @@ use crate::{
 };
 
 /// The width and height of each emoji's cell in the grid, though cells widen to fill each row.
-const CELL_SIZE: f64 = 40.0;
+const CELL_SIZE: f64 = 44.0;
 const HEADER_ROW_HEIGHT: f64 = 30.0;
 const TEXT_REACTION_ROW_HEIGHT: f64 = 40.0;
+/// The category buttons and the skin tone buttons take turns in this space, so they're the same height.
+const TABS_HEIGHT: f64 = 36.0;
 /// How many rows of frequently used emoji we show at the top of the grid.
 const FREQUENTLY_USED_ROWS: usize = 3;
 
@@ -50,6 +53,16 @@ const SKIN_TONES: [SkinTone; 6] = [
     SkinTone::Dark,
 ];
 
+/// The tooltips of the skin tone buttons, in the order of those buttons.
+const SKIN_TONE_TOOLTIPS: [&str; SKIN_TONES.len()] = [
+    "Default skin tone",
+    "Light skin tone",
+    "Medium-light skin tone",
+    "Medium skin tone",
+    "Medium-dark skin tone",
+    "Dark skin tone",
+];
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -65,7 +78,7 @@ script_mod! {
         }
         draw_emoji +: {
             ink_centered: false
-            text_style: EMOJI_TEXT {}
+            text_style: EMOJI_TEXT {font_size: 20}
         }
         color_hover: (COLOR_FLOATING_ITEM_BG_HOVER)
         color_focus: (COLOR_LIST_ITEM_BG_FOCUS)
@@ -75,12 +88,14 @@ script_mod! {
 
     // A button in the category bar, which jumps to that category's emoji.
     mod.widgets.EmojiCategoryButton = RobrixIconButton {
-        width: Fill, height: 32
-        padding: 0, spacing: 0
+        width: 40, height: #(TABS_HEIGHT)
+        margin: 0, padding: 0, spacing: 0
         align: Align{x: 0.5, y: 0.5}
         // Tapping it shouldn't take the key focus away from a message input, which hides the soft keyboard.
         grab_key_focus: false
-        icon_walk: Walk{width: 18, height: 18}
+        // A long press shows its tooltip.
+        enable_long_press: true
+        icon_walk: Walk{width: 22, height: 22}
         draw_bg +: {
             color: (COLOR_TRANSPARENT)
             color_hover: (COLOR_FLOATING_ITEM_BG_HOVER)
@@ -95,6 +110,8 @@ script_mod! {
         padding: 0, spacing: 0
         align: Align{x: 0.5, y: 0.5}
         grab_key_focus: false
+        // A long press shows its tooltip.
+        enable_long_press: true
         draw_bg +: {
             color: (COLOR_TRANSPARENT)
             color_hover: (COLOR_FLOATING_ITEM_BG_HOVER)
@@ -129,7 +146,7 @@ script_mod! {
 
             search_bar := RoomFilterInputBar {
                 input +: {
-                    mic_tooltip: "Search by voice"
+                    has_mic: false
                     text_input +: { empty_text: "Search emoji..." }
                 }
             }
@@ -140,11 +157,23 @@ script_mod! {
         tabs := View {
             width: Fill, height: Fit
             flow: Overlay
-            padding: Inset{left: 6, right: 6, bottom: 4}
+            // Clips the scrolling buttons just inside the popup's border, which is 2pt wide.
+            padding: Inset{left: 2, right: 2, bottom: 4}
 
-            category_bar := View {
-                width: Fill, height: Fit
+            // Scrolls sideways when the picker's too narrow to fit all of its buttons.
+            category_bar := ScrollXView {
+                width: Fill, height: #(TABS_HEIGHT)
                 flow: Right
+                align: Align{x: 0.5}
+                padding: Inset{left: 5}
+                scroll_bars +: {
+                    scroll_bar_x +: {
+                        show_handle: false
+                        smoothing: 0.15
+                        // Lets a mouse wheel scroll it sideways.
+                        use_vertical_finger_scroll: true
+                    }
+                }
                 frequently_used := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_HISTORY) } }
                 smileys_and_emotion := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_EMOJI) } }
                 people_and_body := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_HAND_WAVE) } }
@@ -154,12 +183,13 @@ script_mod! {
                 activities := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_SPORT_SOCCER) } }
                 objects := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_LIGHTBULB) } }
                 symbols := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_SYMBOLS) } }
-                flags := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_FLAG) } }
+                // A scroll view's right padding doesn't count towards how far it scrolls, but this does.
+                flags := mod.widgets.EmojiCategoryButton { margin: Inset{right: 5}, draw_icon +: { svg: (ICON_FLAG) } }
             }
 
             skin_tones := View {
                 visible: false
-                width: Fill, height: Fit
+                width: Fill, height: #(TABS_HEIGHT)
                 flow: Right, spacing: 4
                 align: Align{x: 0.5, y: 0.5}
                 skin_tone_0 := mod.widgets.EmojiButton {}
@@ -411,6 +441,7 @@ pub struct EmojiPicker {
     #[rust] was_search_focused_at_press: bool,
     /// Highlights the section that the grid scrolled to, since the category bar gets drawn before the grid.
     #[rust] highlight_section_frame: NextFrame,
+    #[rust] tooltip: RoomActionTooltip,
     #[rust] child_refs: Option<ChildRefs>,
 }
 
@@ -433,6 +464,18 @@ impl ScriptHook for EmojiPicker {
 impl Widget for EmojiPicker {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let search_input = self.child_refs(cx).search_input.clone();
+        // This must come before the buttons handle the event, else they'd claim the hover first.
+        if let Some(refs) = &self.child_refs {
+            let buttons = refs.category_buttons.iter()
+                .chain(&refs.skin_tone_buttons)
+                .chain([&refs.skin_tone_button])
+                .map(|button| (**button).clone());
+            let tooltips = CATEGORY_SECTIONS.iter()
+                .map(|section| section.title())
+                .chain(SKIN_TONE_TOOLTIPS)
+                .chain(["Choose a skin tone"]);
+            self.tooltip.handle_event_with_text_buttons(cx, event, buttons.zip(tooltips), TooltipPosition::Top);
+        }
         if self.highlight_section_frame.is_event(event).is_some() {
             let section = self.find_current_section(cx);
             self.highlight_section(cx, section);
@@ -969,9 +1012,10 @@ impl EmojiPicker {
         skin_tone_button.set_text(cx, with_skin_tone(raised_hand, current_skin_tone).as_str());
     }
 
-    /// Highlights the button for the given section in the category bar, and only that one.
+    /// Highlights the button for the given section in the category bar, and only that one,
+    /// scrolling the bar to show it.
     fn highlight_section(&mut self, cx: &mut Cx, section: Option<Section>) {
-        let ChildRefs { category_buttons, .. } = self.child_refs(cx).clone();
+        let ChildRefs { category_bar, category_buttons, .. } = self.child_refs(cx).clone();
         for (button, button_section) in category_buttons.iter().zip(CATEGORY_SECTIONS) {
             let was_active = self.active_section == Some(button_section);
             let is_active = section == Some(button_section);
@@ -988,6 +1032,9 @@ impl EmojiPicker {
                 draw_icon +: { color: #(icon_color) }
                 draw_bg +: { color: #(bg_color) }
             });
+            if is_active {
+                cx.send_trigger(category_bar.area(), Trigger { id: live_id!(scroll_focus_nav), from: button.area() });
+            }
         }
         self.active_section = section;
     }
@@ -1043,6 +1090,7 @@ impl EmojiPickerRef {
         inner.populate_skin_tone_buttons(cx);
         skin_tones.set_visible(cx, false);
         category_bar.set_visible(cx, true);
+        category_bar.set_scroll_pos(cx, dvec2(0.0, 0.0));
         // The mouse may have been over a button when the picker last closed.
         for button in category_buttons.iter().chain(&skin_tone_buttons).chain([&skin_tone_button]) {
             button.reset_hover(cx);
@@ -1069,18 +1117,18 @@ impl EmojiPickerRef {
         inner.redraw(cx);
     }
 
+    /// Hides the tooltip of any of this picker's buttons, since we stop getting events once we're closed.
+    pub fn hide_tooltip(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.tooltip.hide(cx);
+    }
+
     pub fn has_search_focus(&self, cx: &mut Cx) -> bool {
         let Some(mut inner) = self.borrow_mut() else { return false };
         let search_input = inner.child_refs(cx).search_input.clone();
         cx.has_key_focus(search_input.area())
     }
 
-    /// Clears the search text, which also ends any dictation into it.
-    pub fn clear_search(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        let search_bar = inner.child_refs(cx).search_bar.clone();
-        search_bar.clear(cx);
-    }
 }
 
 /// Returns the emoji (or text) that the user picked in the picker with the given `widget_uid`, or that the
