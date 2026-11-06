@@ -2,14 +2,14 @@
 //! or long-presses on a message/event in a room timeline.
 
 use bitflags::bitflags;
-use makepad_widgets::*;
+use makepad_widgets::{makepad_platform::event::finger::TouchState, *};
 use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
-use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeContent, MsgLikeKind, TimelineEventItemId};
+use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, TimelineEventItemId};
 
 use crate::{
     home::{event_reaction_list::get_typed_reaction, reaction_strip::ReactionStripWidgetExt, send_status_indicator::is_send_error_retryable},
     shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside},
-    sliding_sync::UserPowerLevels,
+    sliding_sync::{TimelineKind, UserPowerLevels},
 };
 
 use super::room_screen::MessageAction;
@@ -122,7 +122,7 @@ script_mod! {
 
             copy_link_to_message_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_LINK) }
-                text: "Copy Link to Message"
+                text: "" // set dynamically to "Copy Link to Message" or "Copy Link to Event"
             }
 
             view_source_button := mod.widgets.ContextMenuButton {
@@ -184,31 +184,33 @@ bitflags! {
         const HasEventId = 1 << 10;
         /// Whether the user can report this message to their homeserver's admins.
         const CanReport = 1 << 11;
+        /// Whether this is a message-like event (e.g., a message, sticker, or poll) rather than a state event.
+        const IsMessage = 1 << 12;
     }
 }
 impl MessageAbilities {
-    pub fn from_user_power_and_event(
+    /// Only message-like events can be deleted, pinned, reacted to, or replied to in a thread.
+    fn from_user_power_and_event(
         user_power_levels: &UserPowerLevels,
         event_tl_item: &EventTimelineItem,
-        message: &MsgLikeContent,
         pinned_events: &[OwnedEventId],
         has_html: bool,
         is_thread_timeline: bool,
     ) -> Self {
         let mut abilities = Self::empty();
+        let content = event_tl_item.content();
+        let is_message = content.as_msglike().is_some();
         let is_local_echo = event_tl_item.is_local_echo();
         // The SDK doesn't support editing a queued file upload, only its caption
-        let is_unsent_upload = is_local_echo && matches!(
-            &message.kind,
-            MsgLikeKind::Message(msg) if matches!(
-                msg.msgtype(),
-                MessageType::Image(_) | MessageType::Video(_) | MessageType::File(_) | MessageType::Audio(_),
-            )
-        );
-        let is_redacted = matches!(message.kind, MsgLikeKind::Redacted);
+        let is_unsent_upload = is_local_echo && content.as_message().is_some_and(|msg| matches!(
+            msg.msgtype(),
+            MessageType::Image(_) | MessageType::Video(_) | MessageType::File(_) | MessageType::Audio(_),
+        ));
+        let is_redacted = content.is_redacted();
+        abilities.set(Self::IsMessage, is_message);
         abilities.set(Self::CanEdit, event_tl_item.is_editable() && !is_unsent_upload);
         // For unsent messages, we show "Cancel Sending" instead of "Delete".
-        if !is_local_echo && !is_redacted {
+        if is_message && !is_local_echo && !is_redacted {
             abilities.set(Self::CanDelete, if event_tl_item.is_own() {
                 user_power_levels.can_redact_own()
             } else {
@@ -228,8 +230,11 @@ impl MessageAbilities {
         let can_reply_to = event_tl_item.can_be_replied_to();
         abilities.set(Self::CanReplyTo, can_reply_to);
         // No point offering "reply in thread" from within a thread, since the message is already in one.
-        abilities.set(Self::CanReplyInThread, can_reply_to && !is_thread_timeline);
-        if let Some(event_id) = event_tl_item.event_id() && user_power_levels.can_pin() {
+        abilities.set(Self::CanReplyInThread, can_reply_to && is_message && !is_thread_timeline);
+        if is_message
+            && let Some(event_id) = event_tl_item.event_id()
+            && user_power_levels.can_pin()
+        {
             if pinned_events.iter().any(|ev| ev == event_id) {
                 abilities.set(Self::CanUnpin, true);
             } else {
@@ -239,7 +244,7 @@ impl MessageAbilities {
         abilities.set(
             Self::CanReact,
             // don't let the user react to unsent messages, that doesn't make sense
-            user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some() && !is_redacted,
+            is_message && user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some() && !is_redacted,
         );
         abilities.set(Self::HasHtml, has_html);
         abilities
@@ -270,10 +275,120 @@ pub struct MessageDetails {
 }
 
 impl MessageDetails {
+    /// Returns the details of the given event, which is at `item_id` in its timeline.
+    pub fn new(
+        event_tl_item: &EventTimelineItem,
+        item_id: usize,
+        timeline_kind: &TimelineKind,
+        user_power_levels: &UserPowerLevels,
+        pinned_events: &[OwnedEventId],
+        has_html: bool,
+        has_room_mention: bool,
+        room_screen_widget_uid: WidgetUid,
+    ) -> Self {
+        let msg_like = event_tl_item.content().as_msglike();
+        Self {
+            item_id,
+            timeline_event_id: event_tl_item.identifier(),
+            related_event_id: msg_like.and_then(|m| m.in_reply_to.as_ref()).map(|r| r.event_id.clone()),
+            thread_root_event_id: msg_like.and_then(|m| m.thread_root.clone().or_else(||
+                m.thread_summary.as_ref().and_then(|_| event_tl_item.event_id().map(|id| id.to_owned()))
+            )),
+            room_screen_widget_uid,
+            should_be_highlighted: event_tl_item.is_highlighted() || has_room_mention,
+            abilities: MessageAbilities::from_user_power_and_event(
+                user_power_levels,
+                event_tl_item,
+                pinned_events,
+                has_html,
+                timeline_kind.thread_root_event_id().is_some(),
+            ),
+        }
+    }
+
     pub fn event_id(&self) -> Option<&OwnedEventId> {
         match &self.timeline_event_id {
             TimelineEventItemId::EventId(id) => Some(id),
             TimelineEventItemId::TransactionId(_) => None,
+        }
+    }
+}
+
+/// Opens the context menu for a timeline item (a message or a small event)
+/// when the user right-clicks or long-presses anywhere on it.
+#[derive(Default)]
+pub struct ContextMenuTrigger {
+    /// The UID of the touch that was claimed by the item or one of its children.
+    /// This is used to determine if a future long press was on the item.
+    pressed_touch_uid: Option<u64>,
+    /// `true` while a context menu that we opened is being shown.
+    pub is_menu_open: bool,
+}
+
+impl ContextMenuTrigger {
+    /// Handles a right-click or long press within `area`, returning where it happened.
+    ///
+    /// We check the raw events instead of hits, so a press on a child counts too,
+    /// unless `is_excluded(cx, abs, is_long_press)` says that child has its own hit behavior.
+    pub fn handle_press(
+        &self,
+        cx: &mut Cx,
+        event: &Event,
+        area: Area,
+        is_excluded: impl Fn(&mut Cx, DVec2, bool) -> bool,
+    ) -> Option<DVec2> {
+        match event {
+            Event::MouseDown(mde) if mde.button.is_secondary()
+                && mde.handled.get().is_empty()
+                && area.clipped_rect(cx).contains(mde.abs)
+                && !is_excluded(cx, mde.abs, false) =>
+            {
+                mde.handled.set(area);
+                Some(mde.abs)
+            }
+            // The long press must've been claimed by us or a descendant on touch-down,
+            // which also rules out presses owned by an open context menu overlay.
+            Event::LongPress(lpe) if self.pressed_touch_uid == Some(lpe.uid)
+                && area.clipped_rect(cx).contains(lpe.abs)
+                && !is_excluded(cx, lpe.abs, true) => Some(lpe.abs),
+            _ => None,
+        }
+    }
+
+    pub fn open_menu(&mut self, cx: &mut Cx, details: MessageDetails, abs_pos: DVec2, own_reactions: Vec<String>) {
+        self.is_menu_open = true;
+        cx.widget_action(
+            details.room_screen_widget_uid,
+            MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions },
+        );
+    }
+
+    /// Returns whether the given action closed the context menu that we opened.
+    pub fn handle_menu_closed(&mut self, action: &Action) -> bool {
+        let was_closed = self.is_menu_open && action.downcast_ref::<ContextMenuClosed>().is_some();
+        if was_closed {
+            self.is_menu_open = false;
+        }
+        was_closed
+    }
+
+    /// Remembers whether a new touch was claimed by the item or one of its children, for [`Self::handle_press()`].
+    ///
+    /// This must run after all of the item's hit tests, given the area that had claimed the pointer before them.
+    pub fn track_touches(&mut self, event: &Event, claim_before: Area) {
+        let Event::TouchUpdate(tue) = event else { return };
+        for touch in &tue.touches {
+            match touch.state {
+                TouchState::Start => {
+                    self.pressed_touch_uid = (claim_before.is_empty()
+                        && !touch.handled.get().is_empty())
+                        .then_some(touch.uid);
+                }
+                TouchState::Stop | TouchState::Cancel if self.pressed_touch_uid == Some(touch.uid) => {
+                    self.pressed_touch_uid = None;
+                }
+                _ => { }
+            }
         }
     }
 }
@@ -571,6 +686,11 @@ impl NewMessageContextMenu {
         }
         pin_button.set_visible(cx, show_pin);
         copy_html_button.set_visible(cx, show_copy_html);
+        copy_link_button.set_text(cx, if details.abilities.contains(MessageAbilities::IsMessage) {
+            "Copy Link to Message"
+        } else {
+            "Copy Link to Event"
+        });
         copy_link_button.set_visible(cx, show_copy_link);
         view_source_button.set_visible(cx, show_view_source);
         jump_to_related_button.set_visible(cx, show_jump_to_related);
