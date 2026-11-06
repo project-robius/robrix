@@ -446,6 +446,10 @@ impl LinkPreviewRef {
         // Deduplicate links and filter out matrix or invalid links.
         let mut accepted_links: Vec<url::Url> = Vec::new();
         for link in links {
+            // The homeserver can only preview web links, not `mxc://` links and such.
+            if !matches!(link.scheme(), "http" | "https") {
+                continue;
+            }
             if link.host_str().is_some_and(|host|
                 SKIPPED_DOMAINS.iter().any(|skip| host.ends_with(skip))
             ) {

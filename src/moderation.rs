@@ -25,7 +25,7 @@ use matrix_sdk::{
 use rustc_hash::FxHashMap;
 use tokio::sync::oneshot;
 
-use crate::{event_preview::UNSUPPORTED_MESSAGE_PREVIEW, remove_messages_modal::RemoveMessagesModalAction, shared::popup_list::{PopupKind, enqueue_popup_notification}, utils::{self, RoomNameId}};
+use crate::{event_preview::UNSUPPORTED_MESSAGE_PREVIEW, home::event_reaction_list::is_custom_emoji, remove_messages_modal::RemoveMessagesModalAction, shared::popup_list::{PopupKind, enqueue_popup_notification}, utils::{self, RoomNameId}};
 
 /// How long to show the popup notification for a request that succeeded, in seconds.
 const SUCCESS_POPUP_DURATION: f64 = 4.0;
@@ -410,7 +410,12 @@ fn get_event_preview(event: &AnySyncMessageLikeEvent) -> String {
     match event {
         AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Original(message)) => get_message_preview(&message.content.msgtype),
         AnySyncMessageLikeEvent::Reaction(SyncMessageLikeEvent::Original(reaction)) => {
-            format!("Reacted with {}", shorten_preview(&reaction.content.relates_to.key))
+            let key = &reaction.content.relates_to.key;
+            if is_custom_emoji(key) {
+                "Reacted with a custom emoji".to_owned()
+            } else {
+                format!("Reacted with {}", shorten_preview(key))
+            }
         }
         AnySyncMessageLikeEvent::Sticker(SyncMessageLikeEvent::Original(sticker)) => {
             format!("[Sticker] {}", shorten_preview(&sticker.content.body))

@@ -169,6 +169,7 @@ script_mod! {
         font := mod.widgets.MatrixHtmlSpan { }
         span := mod.widgets.MatrixHtmlSpan { }
         a := mod.widgets.RobrixHtmlLink { }
+        img := mod.widgets.InlineImage { }
 
         body: "[<i>HTML message placeholder</i>]",
     }
