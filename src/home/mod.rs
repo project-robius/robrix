@@ -2,6 +2,7 @@ use makepad_widgets::ScriptVm;
 
 pub mod add_room;
 mod backwards_pagination;
+pub mod create_room_modal;
 pub mod edited_indicator;
 pub mod editing_pane;
 pub mod event_source_modal;
@@ -86,6 +87,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     state_event_group::script_mod(vm);
     read_marker::script_mod(vm);
     room_creation_item::script_mod(vm);
+    create_room_modal::script_mod(vm);
     room_screen::script_mod(vm);
     rooms_sidebar::script_mod(vm);
     welcome_screen::script_mod(vm);

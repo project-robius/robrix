@@ -7,7 +7,7 @@
 use std::ops::{Deref, DerefMut};
 
 use futures_util::future::join_all;
-use makepad_widgets::Cx;
+use makepad_widgets::{Cx, Timer};
 use matrix_sdk::{Client, Room, RoomDisplayName, RoomState, room_preview::RoomPreview};
 use ruma::{
     OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, OwnedUserId, RoomAliasId, RoomId, ServerName, UInt, UserId,
@@ -20,6 +20,31 @@ use crate::{profile::user_profile::UserProfile, room::FetchedRoomPreview, settin
 
 /// How many results we ask for at a time.
 pub const SEARCH_PAGE_SIZE: u32 = 20;
+
+/// Delay after the last keystroke before we search for rooms, spaces, or people.
+const SEARCH_DELAY: f64 = 0.5;
+
+/// The text entered in a search box, and the results of searching for it.
+#[derive(Default)]
+pub struct Search<R> {
+    /// The trimmed text that these results are for.
+    pub query: String,
+    /// This is `None` if the query can't match what this search box is for, e.g., a user ID in the room search.
+    pub results: Option<R>,
+    /// The countdown to searching after the user stops typing.
+    pub timer: Timer,
+}
+impl<R: Default> Search<R> {
+    /// Searches once the user stops typing, or clears the results if the search box is now empty.
+    pub fn handle_text_changed(&mut self, cx: &mut Cx, text: &str) {
+        cx.stop_timer(self.timer);
+        if text.trim().is_empty() {
+            *self = Self::default();
+        } else {
+            self.timer = cx.start_timeout(SEARCH_DELAY);
+        }
+    }
+}
 
 /// Another server's room directory that we can search along with our own homeserver's.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

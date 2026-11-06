@@ -7,7 +7,7 @@ use std::sync::Arc;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
-    OwnedRoomId,
+    OwnedRoomId, OwnedServerName, RoomVersionId,
     events::{StateEventContentChange, room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule}},
 };
 use matrix_sdk_ui::timeline::{AnyOtherStateEventContentChange, EventTimelineItem, TimelineItem, TimelineItemContent};
@@ -69,112 +69,118 @@ script_mod! {
         label +: { draw_text +: { color: (COLOR_TEXT_SUBTLE) } }
     }
 
+    // A card with a room's avatar, name, alias, topic and settings, shown at the very beginning of its timeline.
+    mod.widgets.RoomIntroCard = set_type_default() do #(RoomIntroCard::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+        width: Fill, height: Fit
+        flow: Down
+        align: Align{x: 0.5}
+        margin: Inset{top: 10, bottom: 6, left: 10, right: 10}
+        padding: Inset{top: 18, bottom: 18, left: 16, right: 16}
+        spacing: 6
+        show_bg: true
+        draw_bg +: {
+            color: (COLOR_SECONDARY)
+            border_radius: 8.0
+        }
+
+        room_avatar := Avatar {
+            width: 48, height: 48
+            margin: Inset{bottom: 4}
+            cursor: MouseCursor.Default
+            text_view +: {
+                text +: {
+                    draw_text +: { text_style: TITLE_TEXT {font_size: 16} }
+                }
+            }
+        }
+
+        room_name := Label {
+            width: Fill, height: Fit
+            flow: Flow.Right{wrap: true}
+            align: Align{x: 0.5}
+            draw_text +: {
+                text_style: TITLE_TEXT {font_size: 14}
+                color: (ROOM_NAME_TEXT_COLOR)
+            }
+            text: ""
+        }
+
+        room_alias := Label {
+            visible: false
+            width: Fill, height: Fit
+            flow: Flow.Right{wrap: true}
+            align: Align{x: 0.5}
+            margin: Inset{top: -4}
+            draw_text +: {
+                text_style: TITLE_TEXT {font_size: 10}
+                color: (COLOR_TEXT_FAINT)
+            }
+            text: ""
+        }
+
+        room_topic := CollapsibleHtml {
+            visible: false
+            collapsed_lines: 3
+            align: Align{x: 0.5, y: 0}
+            html +: {
+                align: Align{x: 0.5, y: 0.5}
+                font_size: 10.5
+                font_color: (MESSAGE_TEXT_COLOR)
+            }
+        }
+
+        description := Label {
+            width: Fill, height: Fit
+            flow: Flow.Right{wrap: true}
+            align: Align{x: 0.5}
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 10}
+                color: (COLOR_TEXT_SUBTLE)
+            }
+            text: "This is the beginning of the room."
+        }
+
+        older_room_button := mod.widgets.OlderRoomButton {
+            visible: false
+            margin: Inset{bottom: 6}
+            // Only a tap opens the older room, not a press that scrolls the timeline it's in.
+            enable_long_press: true
+            reset_hover_on_click: true
+        }
+
+        settings := View {
+            width: Fill, height: Fit
+            flow: Flow.Right{wrap: true}
+            align: Align{x: 0.5}
+            margin: Inset{top: 6}
+            spacing: 6
+            wrap_spacing: 6
+
+            encrypted := GreenPill { label +: { text: "🔒 End-to-end encrypted" } }
+            not_encrypted := OrangePill { label +: { text: "🔓 Not encrypted" } }
+            invite_only := GreenPill { label +: { text: "📩 Invite only" } }
+            space_members_can_join := BluePill { label +: { text: "🧩 Space members can join" } }
+            ask_to_join := BluePill { label +: { text: "🙋 Ask to join" } }
+            anyone_can_join := BluePill { label +: { text: "🌐 Anyone can join" } }
+            in_room_directory := BluePill { label +: { text: "🔎 In room directory" } }
+            anyone_can_read := OrangePill { label +: { text: "👀 Anyone can read" } }
+            full_history := BluePill { label +: { text: "📜 Members see all history" } }
+            history_since_invite := GreenPill { label +: { text: "📜 History since invite" } }
+            history_since_joining := GreenPill { label +: { text: "📜 History since joining" } }
+            guests_allowed := OrangePill { label +: { text: "🧳 Guests allowed" } }
+            limited_posting := PurplePill { label +: { text: "📣 Limited posting" } }
+            local_only := GrayPill {}
+            room_version := GrayPill {}
+        }
+    }
+
     mod.widgets.RoomCreationItem = #(RoomCreationItem::register_widget(vm)) {
         width: Fill,
         height: Fit,
         flow: Down,
 
-        intro := RoundedView {
-            width: Fill, height: Fit
-            flow: Down
-            align: Align{x: 0.5}
-            margin: Inset{top: 10, bottom: 6, left: 10, right: 10}
-            padding: Inset{top: 18, bottom: 18, left: 16, right: 16}
-            spacing: 6
-            show_bg: true
-            draw_bg +: {
-                color: (COLOR_SECONDARY)
-                border_radius: 8.0
-            }
-
-            room_avatar := Avatar {
-                width: 48, height: 48
-                margin: Inset{bottom: 4}
-                cursor: MouseCursor.Default
-                text_view +: {
-                    text +: {
-                        draw_text +: { text_style: TITLE_TEXT {font_size: 16} }
-                    }
-                }
-            }
-
-            room_name := Label {
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true}
-                align: Align{x: 0.5}
-                draw_text +: {
-                    text_style: TITLE_TEXT {font_size: 14}
-                    color: (ROOM_NAME_TEXT_COLOR)
-                }
-                text: ""
-            }
-
-            room_alias := Label {
-                visible: false
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true}
-                align: Align{x: 0.5}
-                margin: Inset{top: -4}
-                draw_text +: {
-                    text_style: TITLE_TEXT {font_size: 10}
-                    color: (COLOR_TEXT_FAINT)
-                }
-                text: ""
-            }
-
-            room_topic := CollapsibleHtml {
-                visible: false
-                collapsed_lines: 3
-                align: Align{x: 0.5, y: 0}
-                html +: {
-                    align: Align{x: 0.5, y: 0.5}
-                    font_size: 10.5
-                    font_color: (MESSAGE_TEXT_COLOR)
-                }
-            }
-
-            description := Label {
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true}
-                align: Align{x: 0.5}
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 10}
-                    color: (COLOR_TEXT_SUBTLE)
-                }
-                text: "This is the beginning of the room."
-            }
-
-            older_room_button := mod.widgets.OlderRoomButton {
-                margin: Inset{bottom: 6}
-                // Only a tap opens the older room, not a press that scrolls the timeline it's in.
-                enable_long_press: true
-                reset_hover_on_click: true
-            }
-
-            settings := View {
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true}
-                align: Align{x: 0.5}
-                margin: Inset{top: 6}
-                spacing: 6
-                wrap_spacing: 6
-
-                encrypted := GreenPill { label +: { text: "🔒 End-to-end encrypted" } }
-                not_encrypted := OrangePill { label +: { text: "🔓 Not encrypted" } }
-                invite_only := GreenPill { label +: { text: "📩 Invite only" } }
-                space_members_can_join := BluePill { label +: { text: "🧩 Space members can join" } }
-                ask_to_join := BluePill { label +: { text: "🙋 Ask to join" } }
-                anyone_can_join := BluePill { label +: { text: "🌐 Anyone can join" } }
-                anyone_can_read := OrangePill { label +: { text: "👀 Anyone can read" } }
-                full_history := BluePill { label +: { text: "📜 Members see all history" } }
-                history_since_invite := GreenPill { label +: { text: "📜 History since invite" } }
-                history_since_joining := GreenPill { label +: { text: "📜 History since joining" } }
-                guests_allowed := OrangePill { label +: { text: "🧳 Guests allowed" } }
-                limited_posting := PurplePill { label +: { text: "📣 Limited posting" } }
-                local_only := GrayPill {}
-                room_version := GrayPill {}
-            }
-        }
+        intro := mod.widgets.RoomIntroCard {}
 
         header := mod.widgets.StateEventGroupHeader {}
 
@@ -182,6 +188,98 @@ script_mod! {
             visible: false
             margin: Inset{ top: 0.0, bottom: 4.0 }
         }
+    }
+}
+
+/// The settings of a room that a [`RoomIntroCard`] shows as pills.
+#[derive(Clone, Debug)]
+pub struct RoomSettings {
+    pub is_encrypted: bool,
+    /// A room without a join rule is invite only.
+    pub join_rule: Option<JoinRule>,
+    /// A room without a history visibility shares all of its history with its members.
+    pub history_visibility: Option<HistoryVisibility>,
+    pub guest_access: Option<GuestAccess>,
+    /// Whether only some of its members can send messages, e.g., just its moderators.
+    pub is_posting_limited: bool,
+    /// Whether it's listed in its server's room directory, which we only know for a room that we're creating.
+    pub is_in_room_directory: bool,
+    /// The server whose users are the only ones who can join it, if it doesn't federate.
+    pub local_only_server: Option<OwnedServerName>,
+    pub room_version: Option<RoomVersionId>,
+}
+
+#[derive(Script, ScriptHook, Widget)]
+pub struct RoomIntroCard {
+    #[deref] view: View,
+}
+
+impl Widget for RoomIntroCard {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl RoomIntroCardRef {
+    /// Shows the given alias, topic and settings of a room, hiding the alias and topic if they're `None`.
+    pub fn show_details(&self, cx: &mut Cx, alias: Option<&str>, topic: Option<&str>, settings: &RoomSettings) {
+        let Some(inner) = self.borrow() else { return };
+        let room_alias = inner.view.label(cx, ids!(room_alias));
+        room_alias.set_text(cx, alias.unwrap_or_default());
+        room_alias.set_visible(cx, alias.is_some());
+        let room_topic = inner.view.widget(cx, ids!(room_topic));
+        room_topic.set_text(cx, topic.unwrap_or_default());
+        room_topic.set_visible(cx, topic.is_some());
+
+        let RoomSettings {
+            is_encrypted,
+            join_rule,
+            history_visibility,
+            guest_access,
+            is_posting_limited,
+            is_in_room_directory,
+            local_only_server,
+            room_version,
+        } = settings;
+        let pills = inner.view.widget(cx, ids!(settings));
+        // A room without these settings uses the defaults, which are invite-only with shared history.
+        for (pill, is_shown) in [
+            (id!(encrypted), *is_encrypted),
+            (id!(not_encrypted), !is_encrypted),
+            (id!(invite_only), matches!(join_rule, None | Some(JoinRule::Invite | JoinRule::Private))),
+            (id!(space_members_can_join), matches!(join_rule, Some(JoinRule::Restricted(_) | JoinRule::KnockRestricted(_)))),
+            (id!(ask_to_join), matches!(join_rule, Some(JoinRule::Knock | JoinRule::KnockRestricted(_)))),
+            (id!(anyone_can_join), matches!(join_rule, Some(JoinRule::Public))),
+            (id!(in_room_directory), *is_in_room_directory),
+            (id!(anyone_can_read), matches!(history_visibility, Some(HistoryVisibility::WorldReadable))),
+            (id!(full_history), matches!(history_visibility, None | Some(HistoryVisibility::Shared))),
+            (id!(history_since_invite), matches!(history_visibility, Some(HistoryVisibility::Invited))),
+            (id!(history_since_joining), matches!(history_visibility, Some(HistoryVisibility::Joined))),
+            (id!(guests_allowed), matches!(guest_access, Some(GuestAccess::CanJoin))),
+            (id!(limited_posting), *is_posting_limited),
+            (id!(local_only), local_only_server.is_some()),
+            (id!(room_version), room_version.is_some()),
+        ] {
+            pills.child(pill).set_visible(cx, is_shown);
+        }
+        if let Some(server) = local_only_server {
+            inner.view.label(cx, ids!(local_only.label)).set_text(cx, &format!("🏠 {server} users only"));
+        }
+        if let Some(room_version) = room_version {
+            inner.view.label(cx, ids!(room_version.label)).set_text(cx, &format!("🔢 Room {}", format_room_version(room_version)));
+        }
+    }
+}
+
+/// Returns a room version as we show it, e.g., "v11", or the whole ID of an unstable version.
+pub fn format_room_version(room_version: &RoomVersionId) -> String {
+    match room_version.as_str().parse::<u32>() {
+        Ok(number) => format!("v{number}"),
+        Err(_) => room_version.to_string(),
     }
 }
 
@@ -285,39 +383,23 @@ impl RoomCreationItem {
             }
         }
 
-        let alias = alias.flatten();
-        let room_alias = self.view.label(cx, ids!(room_alias));
-        room_alias.set_text(cx, alias.map_or("", |alias| alias.as_str()));
-        room_alias.set_visible(cx, alias.is_some());
-        let topic = topic.filter(|topic| !topic.is_empty());
-        let room_topic = self.view.widget(cx, ids!(room_topic));
-        room_topic.set_text(cx, topic.unwrap_or_default());
-        room_topic.set_visible(cx, topic.is_some());
-
-        let settings = self.view.widget(cx, ids!(settings));
-        // A room without these settings uses the defaults, which are invite-only with shared history.
-        for (pill, is_shown) in [
-            (id!(encrypted), is_encrypted),
-            (id!(not_encrypted), !is_encrypted),
-            (id!(invite_only), matches!(join_rule, None | Some(JoinRule::Invite | JoinRule::Private))),
-            (id!(space_members_can_join), matches!(join_rule, Some(JoinRule::Restricted(_) | JoinRule::KnockRestricted(_)))),
-            (id!(ask_to_join), matches!(join_rule, Some(JoinRule::Knock | JoinRule::KnockRestricted(_)))),
-            (id!(anyone_can_join), matches!(join_rule, Some(JoinRule::Public))),
-            (id!(anyone_can_read), matches!(history_visibility, Some(HistoryVisibility::WorldReadable))),
-            (id!(full_history), matches!(history_visibility, None | Some(HistoryVisibility::Shared))),
-            (id!(history_since_invite), matches!(history_visibility, Some(HistoryVisibility::Invited))),
-            (id!(history_since_joining), matches!(history_visibility, Some(HistoryVisibility::Joined))),
-            (id!(guests_allowed), matches!(guest_access, Some(GuestAccess::CanJoin))),
-            (id!(limited_posting), only_some_can_send == Some(true)),
-            (id!(local_only), create_content.is_some_and(|content| !content.federate)),
-            (id!(room_version), create_content.is_some()),
-        ] {
-            settings.child(pill).set_visible(cx, is_shown);
-        }
-        if let Some(content) = create_content {
-            self.view.label(cx, ids!(local_only.label)).set_text(cx, &format!("🏠 {} users only", create_event.sender().server_name()));
-            self.view.label(cx, ids!(room_version.label)).set_text(cx, &format!("🔢 Room v{}", content.room_version));
-        }
+        self.view.room_intro_card(cx, ids!(intro)).show_details(
+            cx,
+            alias.flatten().map(|alias| alias.as_str()),
+            topic.filter(|topic| !topic.is_empty()),
+            &RoomSettings {
+                is_encrypted,
+                join_rule: join_rule.cloned(),
+                history_visibility: history_visibility.cloned(),
+                guest_access: guest_access.cloned(),
+                is_posting_limited: only_some_can_send == Some(true),
+                is_in_room_directory: false,
+                local_only_server: create_content
+                    .filter(|content| !content.federate)
+                    .map(|_| create_event.sender().server_name().to_owned()),
+                room_version: create_content.map(|content| content.room_version.clone()),
+            },
+        );
     }
 
     fn show_room(&mut self, cx: &mut Cx) {

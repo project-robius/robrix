@@ -38,7 +38,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::{stringify_send_error, upload_percent}, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, create_room_modal::{CreateRoomAction, NewRoomDetails, create_room}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::{stringify_send_error, upload_percent}, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, moderation::{self, MemberModeration, ReportTarget, UserMessage}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -627,6 +627,7 @@ pub enum MatrixRequest {
     /// Request to load the given room if it's outdated, i.e., replaced by a newer room that we've joined.
     ///
     /// This posts `AppStateAction::RoomLoadedSuccessfully` once it's loaded, or else an [`OutdatedRoomNotLoaded`] action.
+    /// For a joined room that the rooms list just hasn't loaded yet, the rooms list posts the former once it does.
     LoadOutdatedRoom {
         room_id: OwnedRoomId,
     },
@@ -645,6 +646,15 @@ pub enum MatrixRequest {
         user_profile: UserProfile,
         allow_create: bool,
     },
+    /// Request to create a new room with the given details, and then invite people to it.
+    ///
+    /// The result is posted as a [`CreateRoomAction`](crate::home::create_room_modal::CreateRoomAction).
+    CreateRoom {
+        details: NewRoomDetails,
+    },
+    /// Request to fetch the room versions that our homeserver supports,
+    /// which are posted as a [`CreateRoomAction::RoomVersions`](crate::home::create_room_modal::CreateRoomAction::RoomVersions).
+    GetRoomVersions,
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
         user_id: OwnedUserId,
@@ -1666,11 +1676,13 @@ async fn matrix_worker_task(
             MatrixRequest::LoadOutdatedRoom { room_id } => {
                 let Some(client) = get_client() else { continue };
                 let _load_outdated_room_task = Handle::current().spawn(async move {
-                    let is_loaded = match client.get_room(&room_id) {
+                    let will_be_loaded = match client.get_room(&room_id) {
+                        // The rooms list will load a room we just joined or created, it just hasn't yet.
+                        Some(room) if room.state() == RoomState::Joined && !room.is_space() && !is_outdated_room(&room) => true,
                         Some(room) => load_outdated_room(&room).await,
                         None => false,
                     };
-                    if !is_loaded {
+                    if !will_be_loaded {
                         Cx::post_action(OutdatedRoomNotLoaded { room_id });
                     }
                 });
@@ -1730,6 +1742,21 @@ async fn matrix_worker_task(
                                 error,
                             });
                         }
+                    }
+                });
+            }
+
+            MatrixRequest::CreateRoom { details } => {
+                let Some(client) = get_client() else { continue };
+                let _create_room_task = Handle::current().spawn(create_room(client, details));
+            }
+
+            MatrixRequest::GetRoomVersions => {
+                let Some(client) = get_client() else { continue };
+                let _room_versions_task = Handle::current().spawn(async move {
+                    match client.homeserver_capabilities().room_versions().await {
+                        Ok(room_versions) => Cx::post_action(CreateRoomAction::RoomVersions(room_versions)),
+                        Err(e) => warning!("Failed to fetch the room versions that our homeserver supports: {e}"),
                     }
                 });
             }
@@ -2014,23 +2041,11 @@ async fn matrix_worker_task(
             MatrixRequest::UploadAvatar { file_data } => {
                 let Some(client) = get_client() else { continue };
                 let _upload_avatar_task = Handle::current().spawn(async move {
-                    let name = file_data.file_name();
-                    let size = utils::format_decimal_file_size(file_data.size);
-                    log!("Uploading new avatar image {name} ({} bytes)...", file_data.size);
-                    let content_type: Mime = file_data.mime_type.parse()
-                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
-
-                    let result = match exceeds_upload_limit(file_data.size, "the new avatar").await {
-                        Some(max_size) => Err(format!(
-                            "\"{name}\" is {size}, over your homeserver's {} upload limit. \
-                             Please choose a smaller image.",
-                            utils::format_decimal_file_size(max_size),
-                        )),
-                        None => match tokio::fs::read(file_data.path()).await {
-                            Err(e) => Err(format!("Couldn't read \"{name}\": {e}")),
-                            Ok(data) => client.account().upload_avatar(&content_type, data).await
-                                .map_err(|e| avatar_rejection_message(&e, &size, &file_data.mime_type)),
-                        },
+                    let result = match upload_avatar_image(&client, &file_data).await {
+                        Ok(avatar_url) => client.account().set_avatar_url(Some(&avatar_url)).await
+                            .map(|_| avatar_url)
+                            .map_err(|e| avatar_rejection_message(&e, &utils::format_decimal_file_size(file_data.size), &file_data.mime_type)),
+                        Err(err_msg) => Err(err_msg),
                     };
                     match result {
                         Ok(avatar_url) => {
@@ -3801,8 +3816,8 @@ pub struct TimelineEndpointsRecreated {
     pub room_id: OwnedRoomId,
 }
 
-/// A [`MatrixRequest::LoadOutdatedRoom`] request didn't load its room,
-/// e.g., because we're not in that room, or it isn't outdated.
+/// A [`MatrixRequest::LoadOutdatedRoom`] request's room didn't get loaded and won't be,
+/// e.g., because we're not in that room.
 ///
 /// This is *NOT* a widget action.
 #[derive(Debug)]
@@ -6217,6 +6232,28 @@ async fn exceeds_upload_limit(size: u64, context: impl std::fmt::Display) -> Opt
         .map(|size| size > max_upload_size)
         .unwrap_or(true)
         .then(|| max_upload_size.into())
+}
+
+/// Uploads the given image so that it can be used as an avatar, returning its MXC URI.
+///
+/// Upon failure, this returns a message that explains why, e.g., if it's over the homeserver's upload limit.
+pub async fn upload_avatar_image(client: &Client, file_data: &FileUploadMetadata) -> Result<OwnedMxcUri, String> {
+    let name = file_data.file_name();
+    let size = utils::format_decimal_file_size(file_data.size);
+    log!("Uploading avatar image {name} ({} bytes)...", file_data.size);
+    if let Some(max_size) = exceeds_upload_limit(file_data.size, "the new avatar").await {
+        return Err(format!(
+            "\"{name}\" is {size}, over your homeserver's {} upload limit. \
+             Please choose a smaller image.",
+            utils::format_decimal_file_size(max_size),
+        ));
+    }
+    let data = tokio::fs::read(file_data.path()).await
+        .map_err(|e| format!("Couldn't read \"{name}\": {e}"))?;
+    let content_type: Mime = file_data.mime_type.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    client.media().upload(&content_type, data, None).await
+        .map(|response| response.content_uri)
+        .map_err(|e| avatar_rejection_message(&e, &size, &file_data.mime_type))
 }
 
 /// Returns human-readable errors explaining why the homeserver refused an avatar upload.

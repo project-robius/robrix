@@ -4,7 +4,7 @@ use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::encryption::{identities::Device, VerificationState};
 use url::Url;
 
-use crate::{app::ConfirmDeleteAction, home::navigation_tab_bar::get_own_profile, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache::UserProfilesUpdated}, settings::{PopulateMode, is_settings_screen_shown}, shared::{avatar::{AvatarState, TextAvatarBgColor, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
+use crate::{app::ConfirmDeleteAction, home::navigation_tab_bar::get_own_profile, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache::UserProfilesUpdated}, settings::{PopulateMode, is_settings_screen_shown}, shared::{avatar::{AvatarState, TextAvatarBgColor, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{PendingUpload, handle_picked_file, handle_picker_launch_errors, validate_avatar_image}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -622,7 +622,7 @@ impl WidgetMatchEvent for AccountSettings {
                 robius_file_picker::FileDialog::new()
                     .add_filter("Images", utils::AVATAR_IMAGE_EXTENSIONS)
                     .set_media_representation(robius_file_picker::MediaRepresentation::Compatible)
-                    .pick_image(|result| handle_picked_file(result, validate_avatar_image))
+                    .pick_image(|result| handle_picked_file(result, |file_data| validate_avatar_image(file_data).map(PendingUpload::Avatar)))
             );
         }
 
@@ -955,21 +955,6 @@ impl AccountSettingsRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.restore_after_reapply(cx);
     }
-}
-
-/// Validates that a picked file is an acceptable avatar image format and size.
-fn validate_avatar_image(file_data: FileUploadMetadata) -> Result<PendingUpload, String> {
-    let name = file_data.file_name();
-    if !utils::is_supported_avatar_mimetype(&file_data.mime_type) {
-        return Err(format!(
-            "\"{name}\" isn't an image type that Matrix avatars support. \
-             Please choose a PNG, JPEG, GIF, WebP, or AVIF image."
-        ));
-    }
-    if file_data.size == 0 {
-        return Err(format!("\"{name}\" is empty (0 bytes). Please choose a different image."));
-    }
-    Ok(PendingUpload::Avatar(file_data))
 }
 
 /// Actions that are handled by the AccountSettings widget.
