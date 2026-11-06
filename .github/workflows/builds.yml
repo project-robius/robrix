@@ -66,10 +66,36 @@ jobs:
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: "-D warnings"
+      LINUX_DEPS: libssl-dev pkg-config libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev
     steps:
       - uses: actions/checkout@v5
 
-      - uses: ./.github/actions/install-linux-deps
+      ## These come from GitHub's cache, since Azure's Ubuntu mirror sometimes slows to a crawl.
+      - name: Get system dependencies cache key
+        id: linux-deps-key
+        run: echo "key=linux-deps-$ImageOS-$(md5sum <<< "$LINUX_DEPS" | head -c 8)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache system dependencies
+        id: linux-deps
+        uses: actions/cache@v5
+        with:
+          path: ~/linux-deps
+          key: ${{ steps.linux-deps-key.outputs.key }}
+
+      - name: Download system dependencies
+        if: steps.linux-deps.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          mkdir -p ~/linux-deps && cd ~/linux-deps
+          apt-get download $(apt-get install -s --no-install-recommends $LINUX_DEPS | awk '/^Inst /{print $2}')
+
+      ## Unpacking skips dpkg's checks, so the cached packages keep working after runner image updates.
+      - name: Install system dependencies
+        run: |
+          for deb in ~/linux-deps/*.deb; do
+            dpkg-deb --fsys-tarfile "$deb" | sudo tar -x --keep-directory-symlink -C /
+          done
+          sudo ldconfig
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
