@@ -14,13 +14,12 @@ use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
 use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
-use ruma::{OwnedRoomAliasId, room::JoinRuleSummary};
+use ruma::room::JoinRuleSummary;
 use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::{AvatarImage, AvatarState};
 use crate::shared::expand_arrow::ExpandArrow;
 use crate::shared::hover_highlight::handle_hover_hit_with_test;
-use crate::utils::replace_linebreaks_separators;
 /// The horizontal indent width (in pixels) per tree level.
 const TREE_INDENT_WIDTH: f64 = 44.0;
 
@@ -31,6 +30,7 @@ use crate::{
         invite_modal::InviteModalAction,
         leave_space_modal::LeaveSpaceModalAction,
         rooms_list::RoomsListRef,
+        space_tree::{SpaceRoomInfo, TreeEntry, TreeFilter, build_filtered_tree, build_tree_for_space, set_tree_row_position},
     },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     room::BasicRoomDetails,
@@ -39,7 +39,7 @@ use crate::{
         html_or_plaintext::RobrixHtmlLinkAction,
         room_filter_input_bar::RoomFilterInputBarWidgetExt,
     },
-    space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
+    space_service_sync::{SpaceRequest, SpaceRoomListAction},
     utils::{self, RoomNameId, open_url},
 };
 
@@ -192,90 +192,6 @@ script_mod! {
                         icon: { draw_icon: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
                     }
                 }
-            }
-        }
-    }
-
-    // A view that draws the hierarchical tree structure lines.
-    let DrawTreeLine = set_type_default() do #(DrawTreeLine::script_shader(vm)){
-        ..mod.draw.DrawQuad
-    }
-
-    mod.widgets.TreeLines = #(TreeLines::register_widget(vm)) {
-        width: Fill, height: Fill { min: 32 }
-
-        draw_bg: DrawTreeLine {
-            indent_width: 44.0
-            level: 0.0
-            is_last: 0.0
-            parent_mask: 0.0
-            line_color: (COLOR_SPACE_LOBBY_TREE_LINES)
-
-            pixel: fn() {
-                let pos = self.pos * self.rect_size;
-                let indent = self.indent_width;
-                // Offset to center each vertical line under the parent-level avatar.
-                // Derived from: main_entry left padding (8) + expand_icon space (14)
-                // + half avatar width (16) = 38.
-                let half_indent = 38.0;
-
-                // `pos` is in logical points, so one device pixel is 1/dpi of it.
-                let dpi = max(self.draw_pass.dpi_factor, 0.0001);
-                let px = 1.0 / dpi;
-                let hp = px * 0.5;
-                // Line thickness in whole device pixels, never less than one.
-                let lw = max(floor(dpi + 0.5), 1.0);
-
-                // Snap each line onto the device pixel grid, then measure how much of it
-                // covers the sample's footprint. The old `abs(pos - k) < 0.5` test landed
-                // exactly between two sample centers and lit neither whenever a row
-                // started on a whole pixel, which is why these lines came and went.
-
-                // Horizontal arm of the elbow, centered vertically in the row.
-                let ay = floor((self.rect_size.y * 0.5 - 0.5 + self.rect_pos.y) * dpi + 0.5);
-                let arm_top = ay / dpi - self.rect_pos.y;
-                let arm_bot = (ay + lw) / dpi - self.rect_pos.y;
-                let arm_y = clamp((min(arm_bot, pos.y + hp) - max(arm_top, pos.y - hp)) / px, 0.0, 1.0);
-
-                // A last child's stem stops at the arm; everyone else runs off the
-                // bottom edge so it meets the next row's stem with no seam.
-                let stem_bot = mix(self.rect_size.y + px, arm_bot, self.is_last);
-                let stem_y = clamp((min(stem_bot, pos.y + hp) - max(-px, pos.y - hp)) / px, 0.0, 1.0);
-
-                let mut cov = 0.0;
-
-                // Dumb approach, but it works.
-                for i in 0..20 {
-                    if f32(i) > self.level { break; }
-
-                    // This level's vertical line, snapped to the pixel grid.
-                    let vx = floor((f32(i) * indent + half_indent - 0.5 + self.rect_pos.x) * dpi + 0.5);
-                    let stem_l = vx / dpi - self.rect_pos.x;
-                    let stem_r = (vx + lw) / dpi - self.rect_pos.x;
-                    let stem_x = clamp((min(stem_r, pos.x + hp) - max(stem_l, pos.x - hp)) / px, 0.0, 1.0);
-
-                    if f32(i) < self.level {
-                        // Check mask for parent levels
-                        let mask_bit = modf(floor(self.parent_mask / pow(2.0, f32(i))), 2.0);
-                        if mask_bit > 0.5 {
-                            // Full-height continuation line
-                            cov = max(cov, stem_x);
-                        }
-                    } else {
-                        // Current level: connection to self.
-                        // Extend horizontal line to the center of the expand_icon:
-                        // spacer_end + left_padding(8) - expand_margin_left(6) + expand_width(16)/2 = +10
-                        let arm_end = (f32(i) + 1.0) * indent + 10.0;
-                        let arm_x = clamp((min(arm_end, pos.x + hp) - max(stem_l, pos.x - hp)) / px, 0.0, 1.0);
-                        // max() rather than first-hit-wins, so the corner pixel doesn't
-                        // get whichever arm we happened to test first.
-                        cov = max(cov, max(stem_x * stem_y, arm_x * arm_y));
-                    }
-                }
-
-                // Premultiplied, since the blend is ONE / 1-SRC_ALPHA. cov 0 leaves the
-                // row's hover background alone.
-                return vec4(self.line_color.rgb * cov, cov);
             }
         }
     }
@@ -747,48 +663,6 @@ pub enum SpaceLobbyAction {
     SpaceLobbyEntryClicked,
 }
 
-#[derive(Script, ScriptHook)]
-#[repr(C)]
-pub struct DrawTreeLine {
-    #[deref] draw_super: DrawQuad,
-    #[live] indent_width: f32,
-    #[live] level: f32,
-    #[live] is_last: f32,
-    #[live] parent_mask: f32,
-    #[live] line_color: Vec4f,
-}
-
-#[derive(Script, ScriptHook, Widget)]
-pub struct TreeLines {
-    #[uid] uid: WidgetUid,
-    #[redraw] #[live] draw_bg: DrawTreeLine,
-    #[walk] walk: Walk,
-}
-
-impl Widget for TreeLines {
-    fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) { }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mut walk = walk;
-        // When used in a non-Overlay flow (e.g., SubspaceLoadingEntry's Right flow),
-        // set the width to the indent area. When width is Fill (Overlay case),
-        // the shader handles clipping via indent_width.
-        if !walk.width.is_fill() {
-            let indent_pixel = (self.draw_bg.level + 1.0) * self.draw_bg.indent_width;
-            walk.width = Size::Fixed(indent_pixel as f64);
-        }
-        // Use the parent's resolved height so tree lines span the full row,
-        // even when our height is Fill inside a Fit parent.
-        let parent_h = cx.turtle().height();
-        if parent_h.is_finite() && parent_h > 0.0 {
-            walk.height = Size::Fixed(parent_h);
-        }
-        self.draw_bg.draw_walk(cx, walk);
-        DrawStep::done()
-    }
-}
-
-
 /// A clickable entry for a child subspace.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SubspaceEntry {
@@ -989,88 +863,6 @@ impl SubspaceEntry {
             self.redraw(cx);
         }
     }
-}
-
-/// The subset of info in [`SpaceRoom`] that we display for each room/space.
-#[derive(Debug)]
-struct SpaceRoomInfo {
-    id: OwnedRoomId,
-    name: String,
-    canonical_alias: Option<OwnedRoomAliasId>,
-    topic: Option<String>,
-    avatar: AvatarState,
-    num_joined_members: u64,
-    state: Option<RoomState>,
-    #[allow(unused)]
-    join_rule: Option<JoinRuleSummary>,
-    /// If `Some`, this is a space. If `None`, it's a room.
-    children_count: Option<u64>,
-    /// Whether the room is suggested by the space administrators.
-    suggested: bool,
-}
-impl SpaceRoomInfo {
-    fn is_space(&self) -> bool {
-        self.children_count.is_some()
-    }
-}
-impl From<&SpaceRoom> for SpaceRoomInfo {
-    fn from(space_room: &SpaceRoom) -> Self {
-        SpaceRoomInfo {
-            id: space_room.room_id.clone(),
-            name: space_room.display_name.clone(),
-            canonical_alias: space_room.canonical_alias.clone(),
-            topic: space_room.topic.as_ref().map(|t| {
-                replace_linebreaks_separators(t.trim(), false).into_owned()
-            }),
-            avatar: AvatarState::Known(space_room.avatar_url.clone()),
-            num_joined_members: space_room.num_joined_members,
-            state: space_room.state,
-            join_rule: space_room.join_rule.clone(),
-            children_count: space_room.is_space().then_some(space_room.children_count),
-            suggested: space_room.suggested,
-        }
-    }
-}
-impl From<SpaceRoom> for SpaceRoomInfo {
-    fn from(space_room: SpaceRoom) -> Self {
-        SpaceRoomInfo {
-            children_count: space_room.is_space().then_some(space_room.children_count),
-            canonical_alias: space_room.canonical_alias,
-            id: space_room.room_id,
-            name: space_room.display_name,
-            topic: space_room.topic.map(|t| {
-                replace_linebreaks_separators(t.trim(), false).into_owned()
-            }),
-            avatar: AvatarState::Known(space_room.avatar_url),
-            num_joined_members: space_room.num_joined_members,
-            state: space_room.state,
-            join_rule: space_room.join_rule,
-            suggested: space_room.suggested,
-        }
-    }
-}
-
-/// An entry in the tree to be displayed.
-#[allow(clippy::large_enum_variant)]
-enum TreeEntry {
-    /// A regular space or room entry.
-    Item {
-        /// The info needed to display this space or room.
-        info: SpaceRoomInfo,
-        /// The nesting level (0 = direct child of the displayed space).
-        level: usize,
-        /// Whether this entry is the last child of its parent.
-        is_last: bool,
-        /// Bitmask of which parent levels need continuation lines.
-        parent_mask: u32,
-    },
-    /// A loading indicator for a subspace that's still loading.
-    Loading {
-        /// The nesting level for proper indentation.
-        level: usize,
-        /// Bitmask of which parent levels need continuation lines.
-        parent_mask: u32,
-    },
 }
 
 /// The view showing the lobby/homepage for a given space.
@@ -1398,18 +1190,15 @@ impl Widget for SpaceLobbyScreen {
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                             }
 
-                            let indent_width = TREE_INDENT_WIDTH as f32;
-                            if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
-                                lines.draw_bg.level = *level as f32;
-                                lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
-                                lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = indent_width;
-                            }
-                            // Set the indent spacer width to match the tree indentation.
-                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
-                            if let Some(mut spacer) = item.child_by_path(ids!(main_entry.indent_spacer)).borrow_mut::<View>() {
-                                spacer.walk.width = Size::Fixed(indent_pixel);
-                            }
+                            set_tree_row_position(
+                                &item,
+                                ids!(main_entry.indent_spacer),
+                                *level as isize,
+                                *is_last,
+                                *parent_mask,
+                                TREE_INDENT_WIDTH,
+                                (*level as f64 + 1.0) * TREE_INDENT_WIDTH,
+                            );
 
                             // Show "Suggested" tag if recommended and not already joined
                             let show_suggested = info.suggested
@@ -1460,19 +1249,15 @@ impl Widget for SpaceLobbyScreen {
                         TreeEntry::Loading { level, parent_mask } => {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
-                            let indent_width = TREE_INDENT_WIDTH as f32;
-                            // Configure tree lines
-                            if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
-                                lines.draw_bg.level = *level as f32;
-                                lines.draw_bg.is_last = 1.0;
-                                lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = indent_width;
-                            }
-                            // Set the indent spacer width to match the tree indentation.
-                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
-                            if let Some(mut spacer) = item.child_by_path(ids!(loading_content.indent_spacer)).borrow_mut::<View>() {
-                                spacer.walk.width = Size::Fixed(indent_pixel);
-                            }
+                            set_tree_row_position(
+                                &item,
+                                ids!(loading_content.indent_spacer),
+                                *level as isize,
+                                true,
+                                *parent_mask,
+                                TREE_INDENT_WIDTH,
+                                (*level as f64 + 1.0) * TREE_INDENT_WIDTH,
+                            );
                             item
                         }
                     }
@@ -1552,11 +1337,12 @@ impl SpaceLobbyScreen {
 
         if self.filter_keywords.is_empty() {
             // No filter: build tree respecting expansion state.
-            Self::build_tree_for_space(
+            build_tree_for_space(
                 &self.children_cache,
                 &self.expanded_spaces,
                 &self.loading_subspaces,
                 &mut new_tree_entries,
+                &mut Vec::new(),
                 &root_space_id,
                 0,
                 0,
@@ -1565,11 +1351,15 @@ impl SpaceLobbyScreen {
             // Filter active: build tree showing all matching entries
             // plus their ancestor spaces to preserve hierarchy context.
             let kw = self.filter_keywords.to_lowercase();
-            Self::build_filtered_tree(
+            build_filtered_tree(
                 &self.children_cache,
                 &mut new_tree_entries,
+                &mut Vec::new(),
                 &root_space_id,
-                &kw,
+                &TreeFilter {
+                    matches: &|info| Self::matches_filter(info, &kw),
+                    shows_all_within_matches: true,
+                },
                 0,
                 0,
             );
@@ -1586,240 +1376,6 @@ impl SpaceLobbyScreen {
                 .is_some_and(|a| a.as_str().to_lowercase().contains(keywords))
             || info.topic.as_ref()
                 .is_some_and(|t| t.to_lowercase().contains(keywords))
-    }
-
-    /// Recursively build a filtered tree that includes only entries matching
-    /// the keywords, plus any ancestor spaces needed to preserve the hierarchy.
-    ///
-    /// Returns `true` if any matching entry was added within this subtree.
-    fn build_filtered_tree(
-        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
-        tree_entries: &mut Vec<TreeEntry>,
-        space_id: &OwnedRoomId,
-        keywords: &str,
-        level: usize,
-        parent_mask: u32,
-    ) -> bool {
-        let Some(children) = children_cache.get(space_id) else { return false };
-
-        // Sort identically to the unfiltered tree: spaces first, then rooms, both alphabetically.
-        let mut sorted_children: Vec<_> = children.iter().collect();
-        sorted_children.sort_by(|a, b| {
-            match (a.is_space(), b.is_space()) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
-            }
-        });
-
-        // First pass: determine which children have matches (self or descendants)
-        // so we can correctly compute `is_last` for tree line drawing.
-        let matched_indices: Vec<usize> = sorted_children.iter().enumerate().filter_map(|(i, child)| {
-            let info = SpaceRoomInfo::from(*child);
-            let self_matches = Self::matches_filter(&info, keywords);
-            let has_matching_descendants = child.is_space()
-                && children_cache.contains_key(&child.room_id)
-                && Self::subtree_has_match(children_cache, &child.room_id, keywords);
-            if self_matches || has_matching_descendants {
-                Some(i)
-            } else {
-                None
-            }
-        }).collect();
-
-        if matched_indices.is_empty() {
-            return false;
-        }
-
-        // Second pass: emit entries for matched children, preserving hierarchy.
-        for (pos, &child_idx) in matched_indices.iter().enumerate() {
-            let child = sorted_children[child_idx];
-            let is_last = pos == matched_indices.len() - 1;
-            let info = SpaceRoomInfo::from(child);
-            let self_matches = Self::matches_filter(&info, keywords);
-
-            let child_mask = if is_last {
-                parent_mask
-            } else {
-                parent_mask | (1 << level)
-            };
-
-            if child.is_space() && children_cache.contains_key(&child.room_id) {
-                // For spaces: always include if self matches or descendants match.
-                tree_entries.push(TreeEntry::Item {
-                    info,
-                    level,
-                    is_last,
-                    parent_mask,
-                });
-                // Recurse into child space: if the space itself matches,
-                // show ALL of its children (unfiltered); otherwise show only
-                // the matching descendants.
-                if self_matches {
-                    // Show all children of a matching space (no further filtering).
-                    Self::build_tree_for_space_ignoring_expansion(
-                        children_cache,
-                        tree_entries,
-                        &child.room_id,
-                        level + 1,
-                        child_mask,
-                    );
-                } else {
-                    // Space doesn't match, but some descendant does — recurse with filter.
-                    Self::build_filtered_tree(
-                        children_cache,
-                        tree_entries,
-                        &child.room_id,
-                        keywords,
-                        level + 1,
-                        child_mask,
-                    );
-                }
-            } else if self_matches {
-                // Non-space room or space without cached children: include only if it matches.
-                tree_entries.push(TreeEntry::Item {
-                    info,
-                    level,
-                    is_last,
-                    parent_mask,
-                });
-            }
-        }
-
-        true
-    }
-
-    /// Returns `true` if any entry in the subtree rooted at `space_id` matches the keywords.
-    fn subtree_has_match(
-        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
-        space_id: &OwnedRoomId,
-        keywords: &str,
-    ) -> bool {
-        let Some(children) = children_cache.get(space_id) else { return false };
-        children.iter().any(|child| {
-            let info = SpaceRoomInfo::from(child);
-            Self::matches_filter(&info, keywords)
-                || (child.is_space() && Self::subtree_has_match(children_cache, &child.room_id, keywords))
-        })
-    }
-
-    /// Like [`build_tree_for_space`] but ignores expansion state — shows all children.
-    /// Used to display the full contents of a space that itself matched the filter.
-    fn build_tree_for_space_ignoring_expansion(
-        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
-        tree_entries: &mut Vec<TreeEntry>,
-        space_id: &OwnedRoomId,
-        level: usize,
-        parent_mask: u32,
-    ) {
-        let Some(children) = children_cache.get(space_id) else { return };
-
-        let mut sorted_children: Vec<_> = children.iter().collect();
-        sorted_children.sort_by(|a, b| {
-            match (a.is_space(), b.is_space()) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
-            }
-        });
-
-        let count = sorted_children.len();
-        for (i, child) in sorted_children.into_iter().enumerate() {
-            let is_last = i == count - 1;
-            tree_entries.push(TreeEntry::Item {
-                info: SpaceRoomInfo::from(child),
-                level,
-                is_last,
-                parent_mask,
-            });
-
-            if child.is_space() && children_cache.contains_key(&child.room_id) {
-                let child_mask = if is_last {
-                    parent_mask
-                } else {
-                    parent_mask | (1 << level)
-                };
-                Self::build_tree_for_space_ignoring_expansion(
-                    children_cache,
-                    tree_entries,
-                    &child.room_id,
-                    level + 1,
-                    child_mask,
-                );
-            }
-        }
-    }
-
-    /// Recursively build the tree of spaces and their expanded children such that they
-    /// can be displayed in the SpaceLobbyScreen's PortalList.
-    //
-    // Note: this is intentionally *not* a method (it doesn't take &mut self),
-    // in order to make it possible to recursively call it while immutably borrowing
-    // only select fields of `Self`.
-    fn build_tree_for_space(
-        children_cache: &FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
-        expanded_spaces: &FxHashSet<OwnedRoomId>,
-        loading_subspaces: &FxHashSet<OwnedRoomId>,
-        tree_entries: &mut Vec<TreeEntry>,
-        space_id: &OwnedRoomId,
-        level: usize,
-        parent_mask: u32,
-    ) {
-        let Some(children) = children_cache.get(space_id) else { return };
-
-        // Sort: spaces first, then rooms, both alphabetically
-        let mut sorted_children: Vec<_> = children.iter().collect();
-        sorted_children.sort_by(|a, b| {
-            match (a.is_space(), b.is_space()) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
-            }
-        });
-
-        
-        let count = sorted_children.len();
-        for (i, child) in sorted_children.into_iter().enumerate() {
-            let is_last = i == count - 1;
-            
-            tree_entries.push(TreeEntry::Item {
-                info: SpaceRoomInfo::from(child),
-                level,
-                is_last,
-                parent_mask,
-            });
-
-            // If this is an expanded space, recursively add its children or a loading indicator
-            if child.is_space() && expanded_spaces.contains(&child.room_id) {
-                // Calculate mask for children:
-                // If we are NOT the last child, our level needs a continuation line for our children.
-                // If we ARE the last child, our level does NOT need a line.
-                // Parent levels are preserved.
-                let child_mask = if is_last {
-                    parent_mask
-                } else {
-                    parent_mask | (1 << level)
-                };
-
-                if children_cache.contains_key(&child.room_id) {
-                    Self::build_tree_for_space(
-                        children_cache,
-                        expanded_spaces,
-                        loading_subspaces,
-                        tree_entries,
-                        &child.room_id,
-                        level + 1,
-                        child_mask,
-                    );
-                } else if loading_subspaces.contains(&child.room_id) {
-                    // Show loading indicator
-                    tree_entries.push(TreeEntry::Loading { 
-                        level: level + 1,
-                        parent_mask: child_mask,
-                    });
-                }
-            }
-        }
     }
 
     /// Saves the current UI state to the cache. Call this when the screen is being hidden.
