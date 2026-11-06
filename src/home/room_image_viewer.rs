@@ -4,11 +4,33 @@ use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use matrix_sdk::{
     media::{MediaFormat, MediaRequestParameters},
-    ruma::events::room::{message::MessageType, MediaSource},
+    ruma::{MxcUri, events::room::{message::MessageType, MediaSource}},
 };
 use matrix_sdk::reqwest::StatusCode;
 
-use crate::{home::room_screen::TimelineUpdate, media_cache::{error_to_media_cache_entry, MediaCacheEntry}, shared::image_viewer::ImageViewerError, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{home::room_screen::TimelineUpdate, media_cache::{error_to_media_cache_entry, MediaCacheEntry}, shared::{attachment_download::{DownloadKind, DownloadableAttachment}, image_viewer::{ImageViewerAction, ImageViewerError, ImageViewerMetaData, LoadState}}, sliding_sync::{submit_async_request, MatrixRequest, TimelineKind}, utils::unix_time_millis_to_datetime};
+
+/// Opens the media at the given `mxc://` URI in the image viewer, e.g., when a link to it is clicked.
+///
+/// The viewer also shows who sent the given `message` and when, if there is one.
+pub fn open_mxc_media(cx: &mut Cx, mxc_uri: &MxcUri, message: Option<(TimelineKind, EventTimelineItem)>) {
+    let media_source = MediaSource::Plain(mxc_uri.to_owned());
+    cx.action(ImageViewerAction::Show(LoadState::Loading(None, Some(ImageViewerMetaData {
+        timestamp: message.as_ref().and_then(|(_, event)| unix_time_millis_to_datetime(event.timestamp())),
+        avatar_parameter: message,
+        image_name: mxc_uri.to_string(),
+        image_caption: None,
+        image_format: None,
+        image_file_size: None,
+        downloadable: Some(DownloadableAttachment {
+            media_source: media_source.clone(),
+            filename: mxc_uri.media_id().unwrap_or_default().to_owned(),
+            size: None,
+            kind: DownloadKind::File,
+        }),
+    }))));
+    fetch_full_image_for_viewer(media_source);
+}
 
 /// Fetches the full-size image for the image viewer.
 ///

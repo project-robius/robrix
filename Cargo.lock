@@ -2183,7 +2183,7 @@ name = "fxhash"
 version = "0.2.1"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
- "byteorder 1.5.0 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "byteorder 1.5.0 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
 ]
 
 [[package]]
@@ -2385,7 +2385,7 @@ name = "hashbrown"
 version = "0.16.1"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
- "foldhash 0.2.0 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "foldhash 0.2.0 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
 ]
 
 [[package]]
@@ -2873,8 +2873,8 @@ name = "indexmap"
 version = "2.13.0"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
- "equivalent 1.0.2 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
- "hashbrown 0.16.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "equivalent 1.0.2 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
+ "hashbrown 0.16.1 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
 ]
 
 [[package]]
@@ -3074,7 +3074,7 @@ name = "libloading"
 version = "0.8.9"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
- "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "windows-link 0.2.1",
 ]
 
@@ -3287,7 +3287,7 @@ dependencies = [
  "sdfer",
  "serde",
  "ttf-parser",
- "unicode-bidi 0.3.18 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "unicode-bidi 0.3.18 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "unicode-script",
  "unicode-segmentation 1.12.0",
 ]
@@ -3344,8 +3344,8 @@ name = "makepad-half"
 version = "2.7.1"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
- "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
- "crunchy 0.2.4 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
+ "crunchy 0.2.4 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "num-traits 0.2.20",
  "zerocopy 0.8.39",
 ]
@@ -3453,7 +3453,7 @@ source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_
 dependencies = [
  "ash",
  "bitflags 2.10.0",
- "foldhash 0.2.0 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "foldhash 0.2.0 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "hilog-sys",
  "makepad-android-state",
  "makepad-apple-sys",
@@ -3475,7 +3475,7 @@ dependencies = [
  "napi-derive-ohos",
  "napi-ohos",
  "ohos-sys",
- "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "wayland-client",
  "wayland-egl",
  "wayland-protocols",
@@ -3511,7 +3511,7 @@ dependencies = [
  "makepad-regex",
  "makepad-script-derive",
  "makepad-stitch",
- "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
 ]
 
 [[package]]
@@ -3708,7 +3708,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "anymap3",
  "as_variant",
@@ -3764,7 +3764,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-base"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -3791,7 +3791,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-common"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "eyeball-im",
  "futures-core",
@@ -3814,7 +3814,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-crypto"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "aes 0.9.3",
  "as_variant",
@@ -3853,7 +3853,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-indexeddb"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -3885,7 +3885,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-sqlite"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -3913,7 +3913,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "base64 0.23.1",
  "blake3",
@@ -3935,7 +3935,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-ui"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#e6a0cdd9a03d0510da552c3cf70f06735b403b41"
 dependencies = [
  "as_variant",
  "async-rx",
@@ -4099,15 +4099,15 @@ dependencies = [
  "arrayvec 0.7.6",
  "bit-set",
  "bitflags 2.10.0",
- "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
- "cfg_aliases 0.2.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
- "hashbrown 0.16.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "cfg-if 1.0.4 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
+ "cfg_aliases 0.2.1 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
+ "hashbrown 0.16.1 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "hexf-parse",
  "indexmap 2.13.0",
  "makepad-error-log",
  "makepad-half",
  "num-traits 0.2.20",
- "once_cell 1.21.3 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "once_cell 1.21.3 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "rustc-hash 1.1.0",
  "spirv",
  "thiserror 2.0.18",
@@ -4833,7 +4833,7 @@ version = "0.12.2"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
  "bitflags 2.10.0",
- "memchr 2.7.6 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "memchr 2.7.6 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "unicase 2.9.0",
 ]
 
@@ -5758,7 +5758,7 @@ dependencies = [
  "bitflags 2.10.0",
  "bytemuck 1.25.0",
  "makepad-error-log",
- "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "ttf-parser",
  "unicode-bidi-mirroring",
  "unicode-ccc",
@@ -7451,7 +7451,7 @@ version = "0.3.12"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
  "downcast-rs",
- "scoped-tls 1.0.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "scoped-tls 1.0.1 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
  "smallvec 1.15.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "wayland-sys",
 ]
@@ -7491,7 +7491,7 @@ version = "0.31.8"
 source = "git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix#758931f068b6a27a938ff6bb82b615b46e7379ab"
 dependencies = [
  "makepad-error-log",
- "pkg-config 0.3.32 (git+https://github.com/kevinaboos/makepad?branch=portal_list_shrink_range_robrix)",
+ "pkg-config 0.3.32 (git+https://github.com/kevinaboos/makepad?branch=modal_keyboard_shift_robrix)",
 ]
 
 [[package]]
