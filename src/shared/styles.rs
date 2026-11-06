@@ -234,6 +234,9 @@ script_mod! {
     mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER = #x7451D5
     mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN = #x6B46D2
 
+    // The border of a lavender button, which only stands out from its fill in the dark theme.
+    mod.widgets.COLOR_LAVENDER_BUTTON_BORDER = (mod.widgets.COLOR_BG_LAVENDER)
+
     mod.widgets.COLOR_BG_PREVIEW_HOVER = #CDEDDF
     mod.widgets.COLOR_BG_PREVIEW_DOWN = #xA8DBBF
 
@@ -612,6 +615,9 @@ pub fn apply_lavender_button_style(cx: &mut Cx, button: &mut ButtonRef, is_selec
                 color: mod.widgets.COLOR_BG_LAVENDER_SELECTED,
                 color_hover: mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER,
                 color_down: mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN,
+                border_color: mod.widgets.COLOR_BG_LAVENDER_SELECTED,
+                border_color_hover: mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER,
+                border_color_down: mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN,
             }
             draw_text +: {
                 color: mod.widgets.COLOR_TEXT_ON_ACCENT,
@@ -628,6 +634,9 @@ pub fn apply_lavender_button_style(cx: &mut Cx, button: &mut ButtonRef, is_selec
                 color: mod.widgets.COLOR_BG_LAVENDER,
                 color_hover: mod.widgets.COLOR_BG_LAVENDER_HOVER,
                 color_down: mod.widgets.COLOR_BG_LAVENDER_DOWN,
+                border_color: mod.widgets.COLOR_LAVENDER_BUTTON_BORDER,
+                border_color_hover: mod.widgets.COLOR_LAVENDER_BUTTON_BORDER,
+                border_color_down: mod.widgets.COLOR_LAVENDER_BUTTON_BORDER,
             }
             draw_text +: {
                 color: mod.widgets.ROOM_NAME_TEXT_COLOR,

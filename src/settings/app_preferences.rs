@@ -66,6 +66,9 @@ pub struct AppPreferences {
     /// The other room directories that we can search for rooms and spaces, besides our homeserver's.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub room_directories: RoomDirectories,
+    /// Whether the rooms list's Unreads and Mentions filters also show the rooms we've been invited to.
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    pub show_invites_in_unread_filters: bool,
 
     // Note: if you add a new preference here, be sure to add a new
     // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
@@ -91,6 +94,7 @@ impl Default for AppPreferences {
             send_typing_notices: true,
             show_message_shields: false,
             room_directories: RoomDirectories::default(),
+            show_invites_in_unread_filters: true,
         }
     }
 }
@@ -251,6 +255,12 @@ impl AppPreferences {
         cx.action(AppPreferencesAction::RoomDirectoriesChanged);
     }
 
+    /// Applies the current `show_invites_in_unread_filters` value.
+    pub fn on_show_invites_in_unread_filters_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.show_invites_in_unread_filters = self.show_invites_in_unread_filters;
+        cx.action(AppPreferencesAction::ShowInvitesInUnreadFiltersChanged(self.show_invites_in_unread_filters));
+    }
+
     /// Broadcasts every preference to listening widgets.
     ///
     /// Used upon app-state restore so every listener picks up the loaded
@@ -275,6 +285,7 @@ impl AppPreferences {
         self.on_send_typing_notices_changed(cx);
         self.on_show_message_shields_changed(cx);
         self.on_room_directories_changed(cx);
+        self.on_show_invites_in_unread_filters_changed(cx);
     }
 }
 
@@ -514,6 +525,7 @@ pub enum AppPreferencesAction {
     SendTypingNoticesChanged(bool),
     /// See [`AppPreferencesGlobal`] for the new room directories.
     RoomDirectoriesChanged,
+    ShowInvitesInUnreadFiltersChanged(bool),
 }
 
 /// A `Cx` global mirror of the current [`AppPreferences`].

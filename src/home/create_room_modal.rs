@@ -34,7 +34,7 @@ use crate::{
     room::BasicRoomDetails,
     shared::{
         avatar::{AvatarRef, AvatarState, AvatarWidgetExt, AvatarWidgetRefExt},
-        collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt, HeaderCategory},
+        collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt},
         file_upload_modal::{FilePreview, FileUploadMetadata, PreviewPayload, handle_picker_launch_errors, load_picked_file, validate_avatar_image},
         list_rows::{draw_flat_list_status_row, handle_row_actions},
         popup_list::{PopupKind, enqueue_popup_notification},
@@ -585,7 +585,7 @@ impl WidgetMatchEvent for CreateRoomModal {
 
         let advanced_header = self.view.collapsible_header(cx, ids!(advanced_header));
         if let Some(action) = actions.find_widget_action(advanced_header.widget_uid())
-            && let CollapsibleHeaderAction::Toggled { .. } = action.cast()
+            && let CollapsibleHeaderAction::Toggled = action.cast()
         {
             self.view.view(cx, ids!(advanced_view)).set_visible(cx, advanced_header.is_expanded());
             self.redraw(cx);
@@ -697,7 +697,7 @@ impl CreateRoomModal {
         self.view.label(cx, ids!(alias_server_label)).set_text(cx, &format!(":{own_server}"));
         self.view.check_box(cx, ids!(room_directory_toggle)).set_text(&format!("List in {own_server}'s room directory"));
         self.view.check_box(cx, ids!(local_only_toggle)).set_text(&format!("Only allow {own_server} users"));
-        self.view.collapsible_header(cx, ids!(advanced_header)).set_details(cx, false, HeaderCategory::None, 0, 0);
+        self.view.collapsible_header(cx, ids!(advanced_header)).set_expanded(cx, false);
         self.view.view(cx, ids!(advanced_view)).set_visible(cx, false);
 
         self.remove_avatar(cx);

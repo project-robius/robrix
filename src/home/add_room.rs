@@ -707,7 +707,7 @@ impl Widget for AddRoomScreen {
 
             let search_tips_header = self.view.collapsible_header(cx, ids!(search_tips_header));
             if let Some(action) = actions.find_widget_action(search_tips_header.widget_uid())
-                && let CollapsibleHeaderAction::Toggled { .. } = action.cast()
+                && let CollapsibleHeaderAction::Toggled = action.cast()
             {
                 self.view.view(cx, ids!(help_view)).set_visible(cx, search_tips_header.is_expanded());
                 self.redraw(cx);

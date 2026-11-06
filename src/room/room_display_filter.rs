@@ -16,10 +16,18 @@ pub trait FilterableRoom {
     fn room_name(&self) -> Cow<'_, str>;
     fn unread_mentions(&self) -> u64;
     fn unread_messages(&self) -> u64;
+    fn is_marked_unread(&self) -> bool;
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>>;
     fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]>;
     fn tags(&self) -> &Tags;
     fn is_direct(&self) -> bool;
+    fn is_invite(&self) -> bool;
+    fn is_space(&self) -> bool;
+
+    /// Returns whether this room has any unread messages or mentions, or is marked as unread.
+    fn has_unreads(&self) -> bool {
+        self.is_marked_unread() || self.unread_mentions() > 0 || self.unread_messages() > 0
+    }
 }
 
 impl FilterableRoom for JoinedRoomInfo {
@@ -45,6 +53,10 @@ impl FilterableRoom for JoinedRoomInfo {
         self.num_unread_messages
     }
 
+    fn is_marked_unread(&self) -> bool {
+        self.is_marked_unread
+    }
+
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
         self.canonical_alias.as_deref().map(Cow::Borrowed)
     }
@@ -59,6 +71,15 @@ impl FilterableRoom for JoinedRoomInfo {
 
     fn is_direct(&self) -> bool {
         self.is_direct
+    }
+
+    fn is_invite(&self) -> bool {
+        false
+    }
+
+    // Joined spaces aren't in the rooms list.
+    fn is_space(&self) -> bool {
+        false
     }
 }
 
@@ -85,6 +106,10 @@ impl FilterableRoom for InvitedRoomInfo {
         0
     }
 
+    fn is_marked_unread(&self) -> bool {
+        false
+    }
+
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
         self.canonical_alias.as_deref().map(Cow::Borrowed)
     }
@@ -99,6 +124,14 @@ impl FilterableRoom for InvitedRoomInfo {
 
     fn is_direct(&self) -> bool {
         self.is_direct
+    }
+
+    fn is_invite(&self) -> bool {
+        true
+    }
+
+    fn is_space(&self) -> bool {
+        self.is_space
     }
 }
 
@@ -125,6 +158,10 @@ impl FilterableRoom for JoinedSpaceInfo {
         0 // TODO: calculate unread messages for spaces
     }
 
+    fn is_marked_unread(&self) -> bool {
+        false
+    }
+
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
         self.canonical_alias.as_deref().map(Cow::Borrowed)
     }
@@ -139,6 +176,14 @@ impl FilterableRoom for JoinedSpaceInfo {
 
     fn is_direct(&self) -> bool {
         false
+    }
+
+    fn is_invite(&self) -> bool {
+        false
+    }
+
+    fn is_space(&self) -> bool {
+        true
     }
 }
 

@@ -3,9 +3,9 @@
 //! It differs in what content it includes based on the adaptive view:
 //! * On a narrow mobile view, it acts as the root_view of StackNavigation
 //!   * It only includes the RoomsList, because the `HideOnScrollView`
-//!     draws the title label and search bar over the top of it.
+//!     draws the title label, search bar, and filter bubbles over the top of it.
 //! * On a wide desktop view, it acts as a permanent tab that is on the left side of the dock.
-//!   * It only includes a title label and the RoomsList, because the SearcBar
+//!   * It only includes a title label, the filter bubbles, and the RoomsList, because the SearcBar
 //!     is at the top of the HomeScreen in Desktop view.
 
 use makepad_widgets::*;
@@ -34,6 +34,14 @@ script_mod! {
                     rooms_list_header := RoomsListHeader {}
                 }
             }
+            // Reaches out to the sidebar's left edge, so the bubbles scroll out of view right at its edge.
+            View {
+                width: Fill, height: Fit
+                margin: Inset{left: #(-SIDE_PADDING)}
+                CachedWidget {
+                    room_filter_bubbles := RoomFilterBubbles {}
+                }
+            }
             CachedWidget {
                 rooms_list := RoomsList {}
             }
@@ -55,7 +63,7 @@ script_mod! {
 /// * In the mobile view, it serves as the root view of the StackNavigation,
 ///   showing only the RoomsList (see [`HideOnScrollView`](crate::home::hide_on_scroll::HideOnScrollView)).
 /// * In the desktop view, it is a permanent tab in the dock,
-///   showing only the title label and the RoomsList
+///   showing only the title label, the filter bubbles, and the RoomsList
 ///   (because the search bar is at the top of the HomeScreen).
 #[derive(Script, Widget)]
 pub struct RoomsSideBar {

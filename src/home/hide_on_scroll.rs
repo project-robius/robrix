@@ -74,7 +74,7 @@ script_mod! {
                 }
             }
 
-            // The rooms list's title and filter bar, drawn over the top of the rooms list.
+            // The rooms list's title, filter bar, and filter bubbles, drawn over the top of the rooms list.
             header := RoundedShadowView {
                 width: Fill, height: Fit
                 margin: Inset{
@@ -162,6 +162,15 @@ script_mod! {
 
                     // Hide this until it's implemented.
                     // search_messages_button := SearchMessagesButton { }
+                }
+
+                // Reaches out to the header's edges, so the bubbles scroll out of view right at the screen's edges.
+                View {
+                    width: Fill, height: Fit
+                    margin: Inset{top: 6, left: #(-SIDE_PADDING), right: #(-SIDE_PADDING)}
+                    CachedWidget {
+                        room_filter_bubbles := RoomFilterBubbles {}
+                    }
                 }
             }
         }
