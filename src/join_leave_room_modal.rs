@@ -297,8 +297,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         let mut is_final_state = false;
         for action in actions {
             match action.downcast_ref() {
-                Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
-                    self.view.label(cx, ids!(title)).set_text(cx, "Joined room!");
+                Some(JoinRoomResultAction::Joined { room_id, is_space }) if room_id == kind.room_id() => {
+                    self.view.label(cx, ids!(title)).set_text(cx, if *is_space { "Joined space!" } else { "Joined room!" });
                     self.view.label(cx, ids!(body)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
                         kind.room_name(),

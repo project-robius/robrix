@@ -1026,9 +1026,9 @@ impl Widget for HomeScreen {
 
                 // Unlike a room, a space never gets loaded into the rooms list,
                 // so we navigate to a space as soon as we've joined it.
-                if let Some(JoinRoomResultAction::Joined { room_id }) = action.downcast_ref()
+                if let Some(JoinRoomResultAction::Joined { room_id, is_space: true }) = action.downcast_ref()
                     && let Some((space, room_to_close)) = self.waiting_to_navigate_to_room
-                        .take_if(|(dr, _)| dr.room_id() == room_id && dr.is_space())
+                        .take_if(|(dr, _)| dr.room_id() == room_id)
                 {
                     self.navigate_to_space(cx, app_state, space, room_to_close);
                 }
@@ -1467,8 +1467,8 @@ impl HomeScreen {
         if !matches!(app_state.selected_room, Some(SelectedRoom::RoomPane { .. })) {
             return;
         }
-        let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), &kind);
-        if self.return_pane_to_screen(cx, app_state, room_pane::timeline_screen(&room_name_id, &timeline_kind)) {
+        let (screen, timeline_kind) = room_pane::get_return_destination(cx, &room_name_id, &kind);
+        if self.return_pane_to_screen(cx, app_state, screen) {
             let saved = self.save_pane_screen_state(cx);
             room_pane::dock_when_shown(cx, timeline_kind, kind, saved);
         }

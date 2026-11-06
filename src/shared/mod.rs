@@ -4,7 +4,7 @@ use crate::settings::app_preferences::Appearance;
 pub mod attachment_download;
 pub mod avatar;
 pub mod collapsible_header;
-pub mod collapsible_label;
+pub mod collapsible_html;
 pub mod context_menu;
 pub mod double_tap;
 pub mod emoji_catalog;
@@ -68,7 +68,7 @@ pub fn script_mod(vm: &mut ScriptVm, appearance: Appearance) {
     avatar::script_mod(vm);
     text_or_image::script_mod(vm);
     html_or_plaintext::script_mod(vm);
-    collapsible_label::script_mod(vm);
+    collapsible_html::script_mod(vm);
     bouncing_dots::script_mod(vm);
     jump_to_bottom_button::script_mod(vm);
     popup_list::script_mod(vm);

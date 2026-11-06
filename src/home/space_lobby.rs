@@ -33,15 +33,22 @@ use crate::{
         space_tree::{SpaceRoomInfo, TreeEntry, TreeFilter, build_filtered_tree, build_tree_for_space, set_tree_row_position},
     },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
-    room::{BasicRoomDetails, room_members_list::RoomMembersChanged},
+    profile::user_profile::UserProfileSlidingPaneWidgetExt,
+    room::{
+        BasicRoomDetails,
+        pane_dock::{RoomPaneDockAction, RoomPaneDockWidgetExt, RoomPaneDockWidgetRefExt, SavedRoomPane},
+        room_members_list::{RoomMembersChanged, RoomMembersListAction, show_member_profile},
+        room_pane::RoomPaneKind,
+    },
     shared::{
         avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
-        html_or_plaintext::RobrixHtmlLinkAction,
+        collapsible_html::handle_link_clicked,
         room_filter_input_bar::RoomFilterInputBarWidgetExt,
+        styles::apply_lavender_button_style,
     },
     sliding_sync::{MatrixRequest, UserPowerLevelsUpdated, submit_async_request},
     space_service_sync::{SpaceRequest, SpaceRoomListAction},
-    utils::{self, RoomNameId, open_url},
+    utils::{self, RoomNameId},
 };
 
 
@@ -506,13 +513,36 @@ script_mod! {
                     }
                 }
 
-                // Only a definite width can wrap, so this is just wide enough for both buttons.
+                // Only a definite width can wrap, so this is just wide enough for all of these buttons.
                 parent_space_buttons := View {
-                    width: "min(172px, 100%)",
+                    width: "min(282px, 100%)",
                     height: Fit,
                     flow: Flow.Right { wrap: true },
                     spacing: 8,
                     wrap_spacing: 8,
+
+                    members_button := RobrixNeutralIconButton {
+                        width: 102
+                        height: 35
+                        align: Align{x: 0.5, y: 0.5}
+                        padding: Inset{left: 12, right: 12}
+                        draw_bg +: {
+                            color: (COLOR_BG_LAVENDER)
+                            color_hover: (COLOR_BG_LAVENDER_HOVER)
+                            color_down: (COLOR_BG_LAVENDER_DOWN)
+                        }
+                        draw_icon +: {
+                            svg: (ICON_MEMBERS)
+                            color: (ROOM_NAME_TEXT_COLOR)
+                        }
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                        draw_text +: {
+                            color: (ROOM_NAME_TEXT_COLOR)
+                            color_hover: (ROOM_NAME_TEXT_COLOR)
+                            color_down: (ROOM_NAME_TEXT_COLOR)
+                        }
+                        text: "Members"
+                    }
 
                     invite_button := RobrixPositiveIconButton {
                         width: 82
@@ -546,11 +576,6 @@ script_mod! {
                     html +: {
                         font_size: 10
                         font_color: (COLOR_TEXT_SUBTLE)
-                        text_style_normal      +: { font_size: 10, line_spacing: 1.2 }
-                        text_style_italic      +: { font_size: 10, line_spacing: 1.2 }
-                        text_style_bold        +: { font_size: 10, line_spacing: 1.2 }
-                        text_style_bold_italic +: { font_size: 10, line_spacing: 1.2 }
-                        text_style_fixed       +: { font_size: 10, line_spacing: 1.2 }
                     }
                 }
             }
@@ -563,26 +588,38 @@ script_mod! {
             }
         }
 
-        // The hierarchical tree list
-        tree_list := PortalList {
-            keep_invisible: false,
-            bounce_at_start: true,
-            bounce_at_end: true,
-            // Nothing here listens for scroll position changes.
-            emit_scroll_actions: false,
-            auto_tail: false,
+        View {
             width: Fill, height: Fill
-            flow: Down,
-            spacing: 0.0
+            flow: Overlay
 
-            subspace_entry := mod.widgets.SubspaceEntry {}
-            room_entry := mod.widgets.RoomEntry {}
-            subspace_loading := mod.widgets.SubspaceLoadingEntry {}
-            status_label := mod.widgets.SpaceLobbyStatusLabel {}
-            bottom_filler := View {
-                width: Fill,
-                height: 80.0,
+            // The hierarchical tree list, surrounded by any of this space's panes that are docked around it.
+            room_pane_dock := mod.widgets.RoomPaneDock {
+                body +: { mid +: { center +: {
+                    tree_list := PortalList {
+                        keep_invisible: false,
+                        bounce_at_start: true,
+                        bounce_at_end: true,
+                        // Nothing here listens for scroll position changes.
+                        emit_scroll_actions: false,
+                        auto_tail: false,
+                        width: Fill, height: Fill
+                        flow: Down,
+                        spacing: 0.0
+
+                        subspace_entry := mod.widgets.SubspaceEntry {}
+                        room_entry := mod.widgets.RoomEntry {}
+                        subspace_loading := mod.widgets.SubspaceLoadingEntry {}
+                        status_label := mod.widgets.SpaceLobbyStatusLabel {}
+                        bottom_filler := View {
+                            width: Fill,
+                            height: 80.0,
+                        }
+                    }
+                }}}
             }
+
+            // Shown when clicking on a member, on top of the tree list and panes.
+            user_profile_sliding_pane := mod.widgets.UserProfileSlidingPane { }
         }
     }
 }
@@ -590,7 +627,7 @@ script_mod! {
 
 thread_local! {
     /// A cache of UI states for each SpaceLobbyScreen, keyed by the space's room ID.
-    /// This allows preserving the expanded/collapsed state of subspaces across screen changes.
+    /// This allows preserving its rooms, expanded subspaces, and scroll position across screen changes.
     static SPACE_LOBBY_STATES: RefCell<BTreeMap<OwnedRoomId, SpaceLobbyUiState>> = const {
         RefCell::new(BTreeMap::new())
     };
@@ -599,8 +636,20 @@ thread_local! {
 /// The UI-side state of a SpaceLobbyScreen that should persist across hide/show cycles.
 #[derive(Default)]
 struct SpaceLobbyUiState {
+    /// The details of the space that its header shows.
+    space_details: Option<SpaceRoom>,
+    room_panes: Vec<SavedRoomPane>,
     /// The set of space IDs that are currently expanded (showing their children).
     expanded_spaces: FxHashSet<OwnedRoomId>,
+    /// The children of the space and of its expanded subspaces, so we can show them again right away.
+    children: FxHashMap<OwnedRoomId, Vector<SpaceRoom>>,
+    /// The first item shown in the tree list, and how far it was scrolled.
+    first_id_and_scroll: (usize, f64),
+}
+
+/// Forgets the saved state of every space lobby, e.g., upon logout.
+pub fn clear_space_lobby_states(_cx: &mut Cx) {
+    SPACE_LOBBY_STATES.with_borrow_mut(BTreeMap::clear);
 }
 
 
@@ -867,7 +916,7 @@ impl SubspaceEntry {
 }
 
 /// The view showing the lobby/homepage for a given space.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct SpaceLobbyScreen {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -875,6 +924,7 @@ pub struct SpaceLobbyScreen {
     /// The space that is currently being displayed.
     #[rust] space_name_id: Option<RoomNameId>,
     #[rust] space_avatar_state: AvatarState,
+    #[rust] space_details: Option<SpaceRoom>,
 
     /// The sender channel to submit space requests to the background service.
     #[rust] space_request_sender: Option<UnboundedSender<SpaceRequest>>,
@@ -895,6 +945,9 @@ pub struct SpaceLobbyScreen {
     /// Whether we are currently loading the initial data.
     #[rust] is_loading: bool,
 
+    /// Where to scroll the tree list to once the space's children have loaded.
+    #[rust] pending_scroll: Option<(usize, f64)>,
+
     /// The current filter keywords entered by the user, if any.
     #[rust] filter_keywords: String,
 }
@@ -905,20 +958,52 @@ impl Drop for SpaceLobbyScreen {
     }
 }
 
+impl ScriptHook for SpaceLobbyScreen {
+    fn on_after_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        if !apply.is_reload() {
+            return;
+        }
+        // A reload resets the size and colors that we gave the header's buttons.
+        vm.with_cx_mut(|cx| {
+            self.fit_header_buttons(cx);
+            let is_members_pane_shown = self.view.room_pane_dock(cx, ids!(room_pane_dock)).has_pane(&RoomPaneKind::Members);
+            self.highlight_members_button(cx, is_members_pane_shown);
+        });
+    }
+}
+
 impl Widget for SpaceLobbyScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Capture the actions from our child widgets so we can handle clicked links
+        let profile_pane = self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
+        // Capture the actions from our child widgets so we can handle clicked links and members
         let mut inner_actions = cx.capture_actions(|cx| {
-            self.view.handle_event(cx, event, scope);
+            // While the profile pane is shown, it gets all of the user's input.
+            if profile_pane.is_currently_shown(cx) && utils::is_interactive_hit_event(event) {
+                profile_pane.handle_event(cx, event, scope);
+            } else {
+                self.view.handle_event(cx, event, scope);
+            }
         });
         inner_actions.retain(|action| {
-            let handled = Self::handle_link_clicked(action);
-            !handled
+            if let RoomMembersListAction::MemberClicked { room_name_id, member } = action.as_widget_action().cast() {
+                show_member_profile(cx, &profile_pane, &room_name_id, member);
+                // There's no timeline here in which to jump to a read receipt.
+                profile_pane.button(cx, ids!(jump_to_read_receipt_button)).set_visible(cx, false);
+                return false;
+            }
+            !handle_link_clicked(action)
         });
         cx.extend_actions(inner_actions);
 
         if let Event::Actions(actions) = event {
+            let room_pane_dock_uid = self.view.room_pane_dock(cx, ids!(room_pane_dock)).widget_uid();
             for action in actions {
+                // Highlight the members button while the members pane is shown.
+                if let RoomPaneDockAction::ShownPanesChanged(kinds) = action.as_widget_action().widget_uid_eq(room_pane_dock_uid).cast() {
+                    self.highlight_members_button(cx, kinds.contains(&RoomPaneKind::Members));
+                    continue;
+                }
+
                 // Just like the rooms list header, handle updates to a space's name.
                 if let Some(AppStateAction::RoomNameUpdated(new_room_name)) = action.downcast_ref()
                     && self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == new_room_name.room_id())
@@ -933,6 +1018,8 @@ impl Widget for SpaceLobbyScreen {
                 {
                     self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.invite_button))
                         .set_visible(cx, user_power_levels.can_invite());
+                    self.fit_header_buttons(cx);
+                    self.redraw(cx);
                     continue;
                 }
                 // We may have been promoted or demoted in this space.
@@ -952,19 +1039,7 @@ impl Widget for SpaceLobbyScreen {
                     Some(SpaceRoomListAction::SpaceDetails(sr))
                         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) =>
                     {
-                        self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
-                        self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
-                        self.view.label(cx, ids!(header.parent_space_row.parent_space_title.parent_space_info.space_info_label)).set_text(cx, &format!(
-                            "{}  ·  {} {}",
-                            match sr.join_rule {
-                                Some(JoinRuleSummary::Public) => "🌐  Public space",
-                                _ => "🔒  Private space",
-                            },
-                            sr.num_joined_members,
-                            if sr.num_joined_members == 1 { "member" } else { "members" }
-                        ));
-                        self.set_space_topic(cx, sr.topic.as_deref());
-                        self.redraw(cx);
+                        self.show_space_details(cx, sr);
                     }
 
                     // Handle a change to the set of children in this space or any of its child subspaces.
@@ -1027,6 +1102,11 @@ impl Widget for SpaceLobbyScreen {
                     }
                     SubspaceEntryAction::None => { }
                 }
+            }
+
+            // Handle the members button being clicked in the header, which shows or hides the members pane.
+            if self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.members_button)).clicked(actions) {
+                self.view.room_pane_dock(cx, ids!(room_pane_dock)).toggle(cx, RoomPaneKind::Members);
             }
 
             // Handle the invite button being clicked in the header.
@@ -1311,6 +1391,9 @@ impl SpaceLobbyScreen {
             self.is_loading = false;
             // Auto-expand the top-level space (we don't show it, just its children)
             self.expanded_spaces.insert(space_id.clone());
+            if let Some((first_id, first_scroll)) = self.pending_scroll.take() {
+                self.view.portal_list(cx, ids!(tree_list)).set_first_id_and_scroll(first_id, first_scroll);
+            }
         }
 
         self.rebuild_tree_entries();
@@ -1397,15 +1480,70 @@ impl SpaceLobbyScreen {
     /// Saves the current UI state to the cache. Call this when the screen is being hidden.
     pub fn save_current_state(&mut self) {
         if let Some(current_space) = &self.space_name_id {
+            let tree_list = self.view.child_by_path(ids!(tree_list)).as_portal_list();
+            let first_id_and_scroll = self.pending_scroll.unwrap_or_else(|| (tree_list.first_id(), tree_list.scroll_position()));
+            // The space itself is always expanded, so these are all the children that we show.
+            let children = self.children_cache.iter()
+                .filter(|(space_id, _)| self.expanded_spaces.contains(*space_id))
+                .map(|(space_id, children)| (space_id.clone(), children.clone()))
+                .collect();
             SPACE_LOBBY_STATES.with_borrow_mut(|states| {
                 states.insert(
                     current_space.room_id().clone(),
                     SpaceLobbyUiState {
+                        space_details: self.space_details.clone(),
+                        room_panes: self.view.child_by_path(ids!(room_pane_dock)).as_room_pane_dock().save_state(),
                         expanded_spaces: self.expanded_spaces.clone(),
+                        children,
+                        first_id_and_scroll,
                     },
                 );
             });
         }
+    }
+
+    /// Makes the header's row of buttons only as wide as the buttons that are shown,
+    /// since it needs a definite width to wrap them onto more lines.
+    fn fit_header_buttons(&mut self, cx: &mut Cx) {
+        let row = self.view.view(cx, ids!(header.parent_space_row.parent_space_buttons));
+        let Some(spacing) = row.borrow().map(|row| row.layout.spacing) else { return };
+        let mut widths = Vec::new();
+        for id in [ids!(members_button), ids!(invite_button), ids!(leave_button)] {
+            let button = row.button(cx, id);
+            if button.visible() && let Some(width) = button.walk(cx).width.to_fixed() {
+                widths.push(width);
+            }
+        }
+        let width = widths.iter().sum::<f64>() + spacing * widths.len().saturating_sub(1) as f64;
+        if let Ok(SizeExprSimple::Compound(expr_id)) = cx.global::<SizeExprStore>().intern(&format!("min({width}px, 100%)"))
+            && let Some(mut row) = row.borrow_mut()
+        {
+            row.walk.width = Size::Expr(expr_id);
+        }
+    }
+
+    /// Makes the members button purple while the members pane is shown, like a room's action bar does.
+    fn highlight_members_button(&self, cx: &mut Cx, is_members_pane_shown: bool) {
+        let mut button = self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.members_button));
+        apply_lavender_button_style(cx, &mut button, is_members_pane_shown);
+    }
+
+    /// Shows the given details of our space in the header, e.g., its avatar, member count, and topic.
+    fn show_space_details(&mut self, cx: &mut Cx, sr: &SpaceRoom) {
+        self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
+        self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
+        self.view.label(cx, ids!(header.parent_space_row.parent_space_title.parent_space_info.space_info_label)).set_text(cx, &format!(
+            "{}  ·  {} {}",
+            match sr.join_rule {
+                Some(JoinRuleSummary::Public) => "🌐  Public space",
+                _ => "🔒  Private space",
+            },
+            sr.num_joined_members,
+            if sr.num_joined_members == 1 { "member" } else { "members" }
+        ));
+        self.set_space_topic(cx, sr.topic.as_deref());
+        self.space_details = Some(sr.clone());
+        self.redraw(cx);
     }
 
     /// Shows the given topic in the header as linkified HTML, or hides it if there is none.
@@ -1418,23 +1556,6 @@ impl SpaceLobbyScreen {
             }
             None => space_topic_view.set_visible(cx, false),
         }
-    }
-
-    /// Handles a link click in the space's topic and returns `true` if it was handled.
-    fn handle_link_clicked(action: &Action) -> bool {
-        let url = match action.as_widget_action().cast() {
-            HtmlLinkAction::Clicked { url, .. } => url,
-            // A matrix.to link is drawn as a pill, which emits its own action instead.
-            // TODO: navigate to the room/user in-app, like `RoomScreen` does.
-            _ => match action.as_widget_action().cast() {
-                RobrixHtmlLinkAction::ClickedMatrixLink { url, .. } => url,
-                _ => return false,
-            }
-        };
-        if !url.is_empty() {
-            open_url(&url);
-        }
-        true
     }
 
     /// Returns the name of the given space, using the parent's name for this space as a fallback
@@ -1490,28 +1611,44 @@ impl SpaceLobbyScreen {
         self.space_name_id = Some(space_name_id.clone());
         self.send_initial_space_requests(cx, space_name_id);
 
-        // Clear the main content until we receive the async space info responses.
-        self.tree_entries.clear();
-        self.view.label(cx, ids!(header.parent_space_row.parent_space_title.parent_space_info.space_info_label)).set_text(cx, "");
-        // Also clear the avatar, so we don't show the previous space's avatar.
-        self.space_avatar_state = AvatarState::Unknown;
-        self.set_space_topic(cx, None);
-        self.is_loading = true;
+        // Restore UI state if we've viewed this space before, otherwise start fresh
+        let saved_state = SPACE_LOBBY_STATES.with_borrow_mut(|states| states.remove(space_name_id.room_id()))
+            .unwrap_or_default();
+        self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
+        self.view.room_pane_dock(cx, ids!(room_pane_dock)).show_space(cx, space_name_id, saved_state.room_panes);
+
+        // We show the space's details that we already know of until we receive the async space info responses.
+        match saved_state.space_details.as_ref() {
+            Some(space_details) => self.show_space_details(cx, space_details),
+            None => {
+                self.view.label(cx, ids!(header.parent_space_row.parent_space_title.parent_space_info.space_info_label)).set_text(cx, "");
+                // Also clear the avatar, so we don't show the previous space's avatar.
+                self.space_avatar_state = AvatarState::Unknown;
+                self.set_space_topic(cx, None);
+                self.space_details = None;
+            }
+        }
         // Hide the invite button until we know whether the user can invite others to this space.
         self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.invite_button)).set_visible(cx, false);
+        self.fit_header_buttons(cx);
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: space_name_id.room_id().clone() });
 
         // Clear the filter bar when switching to a new space.
         self.filter_keywords.clear();
         self.view.room_filter_input_bar(cx, ids!(filter_bar)).clear(cx);
 
-        // Restore UI state if we've viewed this space before, otherwise start fresh
-        self.expanded_spaces = SPACE_LOBBY_STATES.with_borrow(|states| {
-            states
-                .get(space_name_id.room_id())
-                .map(|state| state.expanded_spaces.clone())
-                .unwrap_or_default()
-        });
+        self.expanded_spaces = saved_state.expanded_spaces;
+        // Children that we've received since saving them are newer.
+        for (space_id, children) in saved_state.children {
+            self.children_cache.entry(space_id).or_insert(children);
+        }
+        // We show the rooms that we already know of until the space service sends us the latest ones.
+        self.is_loading = !self.children_cache.contains_key(space_name_id.room_id());
+        self.rebuild_tree_entries();
+        let (first_id, first_scroll) = saved_state.first_id_and_scroll;
+        self.view.portal_list(cx, ids!(tree_list)).set_first_id_and_scroll(first_id, first_scroll);
+        // A loading list is too short to stay there, so we scroll there again once it's loaded.
+        self.pending_scroll = self.is_loading.then_some(saved_state.first_id_and_scroll);
 
         // TODO: move avatar setting to `draw_walk()`
         // Set parent avatar
@@ -1526,13 +1663,17 @@ impl SpaceLobbyScreen {
         self.save_current_state();
         self.space_name_id = None;
         self.space_avatar_state = AvatarState::Unknown;
+        self.space_details = None;
         self.space_request_sender = None;
         self.tree_entries.clear();
         self.loading_subspaces.clear();
         self.is_loading = false;
+        self.pending_scroll = None;
         self.filter_keywords.clear();
         self.view.room_filter_input_bar(cx, ids!(filter_bar)).clear(cx);
         self.set_space_topic(cx, None);
+        self.view.room_pane_dock(cx, ids!(room_pane_dock)).clear(cx);
+        self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
         self.redraw(cx);
     }
 }

@@ -8,7 +8,7 @@ use std::{ops::Deref, rc::Rc};
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary}};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview}, room_preview_cache::{self, CachedRoomPreview}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview}, room_preview_cache::{self, CachedRoomPreview}, shared::{avatar::AvatarWidgetRefExt, collapsible_html::handle_link_clicked, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 use super::rooms_list::{AcceptedInviteKind, InviteState, InviterInfo, RoomsListAction, get_invited_rooms, set_invite_state};
 
@@ -184,18 +184,15 @@ script_mod! {
                 room_member_count := mod.widgets.InviteRoomDetailsLabel {}
             }
 
-            room_topic := CollapsibleLabel {
+            room_topic := CollapsibleHtml {
                 width: Fill {max: 500}
                 margin: Inset{top: 16, bottom: 6}
                 padding: Inset{left: 6, right: 6}
-                label +: {
-                    align: Align{x: 0.5, y: 0}
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {
-                            font_size: 12,
-                        },
-                        color: (COLOR_INVITE_SCREEN_TOPIC_TEXT)
-                    }
+                align: Align{x: 0.5, y: 0}
+                html +: {
+                    align: Align{x: 0.5, y: 0.5}
+                    font_size: 12
+                    font_color: (COLOR_INVITE_SCREEN_TOPIC_TEXT)
                 }
             }
         }
@@ -281,6 +278,7 @@ pub enum JoinRoomResultAction {
     /// The user has successfully joined the room.
     Joined {
         room_id: OwnedRoomId,
+        is_space: bool,
     },
     /// There was an error attempting to join the room.
     Failed {
@@ -356,7 +354,10 @@ impl Widget for InviteScreen {
             }
         }
 
-        self.view.handle_event(cx, event, scope);
+        // We only open the links that were clicked within this screen.
+        let mut inner_actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
+        inner_actions.retain(|action| !handle_link_clicked(action));
+        cx.extend_actions(inner_actions);
 
         let orig_state = self.invite_state;
 
@@ -436,7 +437,7 @@ impl Widget for InviteScreen {
                 match action.downcast_ref() {
                     // The success/failure popups are shown by the backend task, which is
                     // more consistent than doing it here since the user may have left this screen already.
-                    Some(JoinRoomResultAction::Joined { room_id }) if room_id == info.room_id() => {
+                    Some(JoinRoomResultAction::Joined { room_id, .. }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         continue;
                     }

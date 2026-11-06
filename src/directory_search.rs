@@ -317,7 +317,10 @@ impl RoomSearchResult {
             avatar_url: public_room.avatar_url.filter(|url| url.is_valid()),
             num_joined_members: public_room.num_joined_members.into(),
             num_active_members: None,
-            room_type: public_room.room_type,
+            // A room directory might not say which rooms are spaces, but our own copy of a room does.
+            room_type: known_room.as_ref()
+                .and_then(|room| room.create_content())
+                .map_or(public_room.room_type, |create| create.room_type),
             join_rule: Some(public_room.join_rule.into()),
             is_world_readable: Some(public_room.world_readable),
             state,
@@ -506,12 +509,13 @@ pub async fn search_room_directory(client: Client, query: String, kind: RoomKind
     let (rooms, next_batch, error) = match result {
         Ok((public_rooms, next_batch)) => {
             let mut rooms = Vec::with_capacity(public_rooms.len());
-            // Not every room directory filters by room type, so we make sure.
-            let public_rooms = public_rooms.into_iter()
-                .filter(|public_room| (public_room.room_type == Some(RoomType::Space)) == (kind == RoomKind::Space));
             for public_room in public_rooms {
                 let known_room = client.get_room(&public_room.room_id);
-                rooms.push(RoomSearchResult::from_directory(public_room, directory_server.as_deref(), known_room, lowercase_term.as_deref()).await);
+                let room = RoomSearchResult::from_directory(public_room, directory_server.as_deref(), known_room, lowercase_term.as_deref()).await;
+                // Not every room directory filters by room type, so we make sure.
+                if room.is_space() == (kind == RoomKind::Space) {
+                    rooms.push(room);
+                }
             }
             (rooms, next_batch, None)
         }
