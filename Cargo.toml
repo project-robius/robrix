@@ -181,7 +181,8 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
-## Our PR <https://github.com/matrix-org/matrix-rust-sdk/pull/7198> plus more thread fixes and pagination completion fixes.
+## Our PR <https://github.com/matrix-org/matrix-rust-sdk/pull/7198> plus more thread fixes, pagination completion fixes,
+## and support for replying to state events.
 ## Remove this once they're all merged upstream.
 [patch."https://github.com/matrix-org/matrix-rust-sdk"]
 matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "robrix_pagination_completion" }

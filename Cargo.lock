@@ -3708,7 +3708,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "anymap3",
  "as_variant",
@@ -3764,7 +3764,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-base"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -3791,7 +3791,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-common"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "eyeball-im",
  "futures-core",
@@ -3814,7 +3814,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-crypto"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "aes 0.9.3",
  "as_variant",
@@ -3853,7 +3853,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-indexeddb"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -3885,7 +3885,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-sqlite"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -3913,7 +3913,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "base64 0.23.1",
  "blake3",
@@ -3935,7 +3935,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-ui"
 version = "0.19.1"
-source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#3d1723f0dcda80ea4fda9ec2336b83bfd00e0047"
+source = "git+https://github.com/project-robius/matrix-rust-sdk?branch=robrix_pagination_completion#5fa60979b96386b329b63c2a12578ffcdd9f8441"
 dependencies = [
  "as_variant",
  "async-rx",

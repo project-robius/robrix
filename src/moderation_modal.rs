@@ -242,6 +242,12 @@ impl ModerationModal {
                 "Report",
                 &self.icon_report,
             ),
+            ModerationRequest::Report(ReportTarget::Event { .. }) => (
+                "Report this event?",
+                String::from("Are you sure you want to report this event to your homeserver's admins?"),
+                "Report",
+                &self.icon_report,
+            ),
             ModerationRequest::Report(ReportTarget::Room(room_name_id)) => (
                 "Report this room?",
                 format!("Are you sure you want to report \"{room_name_id}\" to your homeserver's admins?"),

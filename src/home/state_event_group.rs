@@ -15,7 +15,11 @@ use matrix_sdk::ruma::{EventId, OwnedEventId, OwnedUserId, UserId};
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails};
 use crate::{
     LivePtr, widget_ref_from_live_ptr,
-    home::room_read_receipt::{AvatarRowRef, AvatarRowWidgetRefExt},
+    home::{
+        new_message_context_menu::{ContextMenuTrigger, MessageAbilities, MessageDetails},
+        room_read_receipt::{AvatarRowRef, AvatarRowWidgetRefExt},
+        room_screen::MessageAction,
+    },
     shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, expand_arrow::ExpandArrow, hover_highlight::handle_hover_hit},
     sliding_sync::TimelineKind,
 };
@@ -115,19 +119,24 @@ script_mod! {
         width: Fill,
         height: Fit,
         flow: Down,
-        margin: Inset{ top: 4.0, bottom: 4.0}
         spacing: 0.0
         cursor: MouseCursor.Default
 
-        // See-through, except for a blue flash (like a message's) after a jump to it.
+        // See-through, except for a gray hover and a blue flash after a jump to it, like a message's.
         show_bg: true
         draw_bg +: {
+            hover: instance(0.0)
             highlight: instance(0.0)
+            color: instance((COLOR_PRIMARY))
+            color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
             color_highlight: instance((COLOR_TIMELINE_ITEM_BG_HIGHLIGHT))
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(4.0, 0.0, 4.0, 0.0))
 
             pixel: fn() {
+                if self.hover + self.highlight <= 0.0 {
+                    return vec4(0.0)
+                }
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.border_inset.x,
@@ -136,7 +145,7 @@ script_mod! {
                     self.rect_size.y - (self.border_inset.y + self.border_inset.w),
                     self.border_radius
                 )
-                sdf.fill(vec4(self.color_highlight.xyz, self.color_highlight.w * self.highlight))
+                sdf.fill(mix(mix(self.color, self.color_hover, self.hover), self.color_highlight, self.highlight))
                 return sdf.result
             }
         }
@@ -155,6 +164,19 @@ script_mod! {
                     from: { all: Forward {duration: 0.5} }
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
                     apply: { draw_bg: {highlight: 1.0} }
+                }
+            }
+            bg_hover: {
+                default: @off
+                off: AnimatorState{
+                    redraw: true,
+                    from: { all: Snap }
+                    apply: { draw_bg: {hover: 0.0} }
+                }
+                on: AnimatorState{
+                    redraw: true,
+                    from: { all: Snap }
+                    apply: { draw_bg: {hover: 1.0} }
                 }
             }
         }
@@ -221,6 +243,16 @@ script_mod! {
 
             avatar_row := mod.widgets.AvatarRow {}
         }
+    }
+
+    // A small state event shown as its own timeline item.
+    mod.widgets.SmallStateEventItem = View {
+        width: Fill,
+        height: Fit,
+        flow: Down,
+        margin: Inset{ top: 4.0, bottom: 4.0}
+
+        event := mod.widgets.SmallStateEvent {}
 
         // We also show a line with just the collapse button after the last event in a group,
         // (when it's expanded).
@@ -1315,12 +1347,16 @@ impl GroupToggleLineRef {
 
 /// A small state event in the timeline, e.g., a membership, profile, or room setting change.
 ///
-/// It can flash a highlight, e.g., after a jump to it.
+/// Like a message, it opens a context menu when right-clicked or long-pressed,
+/// and it can flash a highlight, e.g., after a jump to it.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SmallStateEvent {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+
+    #[rust] details: Option<MessageDetails>,
+    #[rust] context_menu_trigger: ContextMenuTrigger,
 }
 
 impl Widget for SmallStateEvent {
@@ -1332,7 +1368,47 @@ impl Widget for SmallStateEvent {
         if !self.animator.is_track_animating(id!(highlight)) && self.animator_in_state(cx, ids!(highlight.on)) {
             self.animator_play(cx, ids!(highlight.off));
         }
+        if !self.view.visible && event.requires_visibility() {
+            return;
+        }
+
+        let claim_before = event.pointer_claimed_area();
+        let area = self.view.area();
+        if let Some(details) = self.details.as_ref()
+            && let Some(abs_pos) = self.context_menu_trigger.handle_press(
+                cx,
+                event,
+                area,
+                |cx, abs, is_long_press| self.is_within_excluded_child(cx, abs, is_long_press),
+            )
+        {
+            let details = details.clone();
+            self.animator_play(cx, ids!(bg_hover.on));
+            self.context_menu_trigger.open_menu(cx, details, abs_pos, Vec::new());
+        }
+
         self.view.handle_event(cx, event, scope);
+        handle_hover_hit(self, cx, event, area, claim_before, self.context_menu_trigger.is_menu_open);
+        self.context_menu_trigger.track_touches(event, claim_before);
+
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if self.context_menu_trigger.handle_menu_closed(action) {
+                    continue;
+                }
+                if let Some(details) = self.details.as_ref()
+                    && let MessageAction::HighlightMessage(item_id) = action.as_widget_action()
+                        .widget_uid_eq(details.room_screen_widget_uid)
+                        .cast_ref()
+                    && *item_id == details.item_id
+                {
+                    // Always start the highlight animation sequence from the beginning.
+                    self.animator_cut(cx, ids!(highlight.off));
+                    self.animator_play(cx, ids!(highlight.on));
+                    self.redraw(cx);
+                }
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -1344,6 +1420,17 @@ impl Widget for SmallStateEvent {
     }
 }
 
+impl SmallStateEvent {
+    /// Whether a right-click or long press at `abs` is within a child that has its own hit behavior.
+    ///
+    /// That's the invite button or the read receipts row, plus the timestamp on a long press.
+    fn is_within_excluded_child(&self, cx: &mut Cx, abs: DVec2, is_long_press: bool) -> bool {
+        self.view.widget(cx, ids!(invite_user_button)).area().clipped_rect(cx).contains(abs)
+            || self.view.widget(cx, ids!(avatar_row)).area().clipped_rect(cx).contains(abs)
+            || (is_long_press && self.view.widget(cx, ids!(timestamp)).area().clipped_rect(cx).contains(abs))
+    }
+}
+
 impl SmallStateEventRef {
     /// Shows or hides this event without redrawing anything.
     pub fn set_shown(&self, shown: bool) {
@@ -1352,13 +1439,18 @@ impl SmallStateEventRef {
         }
     }
 
-    /// Flashes this event's highlight, like a message's after a jump to it.
-    pub fn highlight(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
+    /// Sets the details of the event shown here, which its context menu and highlight need.
+    pub fn set_details(&self, cx: &mut Cx, mut details: MessageDetails) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        // A small event doesn't show reactions or a thread summary.
+        details.abilities.remove(MessageAbilities::CanReact | MessageAbilities::CanReplyInThread);
+        // Reset any UI state that belonged to a different event.
+        if inner.details.as_ref().is_none_or(|d| d.timeline_event_id != details.timeline_event_id) {
+            inner.context_menu_trigger = ContextMenuTrigger::default();
+            inner.animator_cut(cx, ids!(bg_hover.off));
             inner.animator_cut(cx, ids!(highlight.off));
-            inner.animator_play(cx, ids!(highlight.on));
-            inner.redraw(cx);
         }
+        inner.details = Some(details);
     }
 }
 
@@ -1376,15 +1468,6 @@ pub fn group_toggled(cx: &mut Cx, item: &WidgetRef, actions: &Actions) -> bool {
 /// which only shows once the group is expanded. For any other item, the second one is an empty ref.
 pub fn avatar_rows(cx: &mut Cx, item: &WidgetRef) -> [AvatarRowRef; 2] {
     [item.avatar_row(cx, ids!(avatar_row)), item.avatar_row(cx, ids!(first_event.avatar_row))]
-}
-
-/// Flashes the highlight on the given timeline item, if it's a small state event.
-///
-/// For a group's summary item, this flashes the group's first event.
-pub fn highlight_small_state_event(cx: &mut Cx, item: &WidgetRef) {
-    let first_event = item.small_state_event(cx, ids!(first_event));
-    let event = if first_event.is_empty() { item.as_small_state_event() } else { first_event };
-    event.highlight(cx);
 }
 
 #[cfg(test)]

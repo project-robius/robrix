@@ -34,7 +34,7 @@ use crate::{
     },
     room::{reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, emoji_picker_popup::get_emoji_picker_popup, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonRef, JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, lazy_view::{LazyViewRef, LazyViewWidgetExt, LazyViewWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, emoji_picker_popup::get_emoji_picker_popup, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonRef, JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, lazy_view::{LazyViewRef, LazyViewWidgetExt, LazyViewWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::set_view_bg_color, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt, verification_badge::UserVerificationBadgeWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, ANIMATED_MEDIA_THUMBNAIL_FORMAT, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -61,7 +61,7 @@ use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGloba
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::{ReactionData, toggle_reaction}, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, quick_reaction::QuickReactionTaps, room_read_receipt::{self, populate_read_receipts}};
+use super::{event_reaction_list::{ReactionData, toggle_reaction}, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails, ContextMenuTrigger}, quick_reaction::QuickReactionTaps, room_read_receipt::{self, populate_read_receipts}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -633,7 +633,7 @@ script_mod! {
             ServerNoticeMessage := mod.widgets.ServerNoticeMessage {}
             RedactedMessage := mod.widgets.RedactedMessage {}
             CondensedRedactedMessage := mod.widgets.CondensedRedactedMessage {}
-            SmallStateEvent := mod.widgets.SmallStateEvent {}
+            SmallStateEventItem := mod.widgets.SmallStateEventItem {}
             GroupSummaryItem := mod.widgets.GroupSummaryItem {}
             RoomCreationItem := mod.widgets.RoomCreationItem {}
             ZeroHeightItem := mod.widgets.ZeroHeightItem {}
@@ -1297,12 +1297,6 @@ impl Widget for RoomScreen {
                             room_screen_widget_uid, 
                             MessageAction::HighlightMessage(item_id),
                         );
-                        // State events aren't yet treated as regular events, so just handle their highlight here and now.
-                        // TODO: treat messages and events similarly so you can do things like:
-                        //       reply to an event, jump to an event, right-click on an event, etc
-                        if let Some((_, item)) = portal_list.get_item(item_id) {
-                            state_event_group::highlight_small_state_event(cx, &item);
-                        }
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
                     }
                 }
@@ -1585,6 +1579,17 @@ impl Widget for RoomScreen {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
+                    // A small event never has HTML content or a room mention.
+                    let small_event_details = |event: &EventTimelineItem| MessageDetails::new(
+                        event,
+                        item_id,
+                        &tl_state.kind,
+                        &tl_state.user_power,
+                        &self.pinned_events,
+                        false,
+                        false,
+                        room_screen_widget_uid,
+                    );
                     let (item, item_new_draw_status) = match draw {
                         ItemDraw::SummaryItem { group, event, content } => populate_group_summary_item(
                             cx,
@@ -1594,6 +1599,7 @@ impl Widget for RoomScreen {
                             group,
                             event,
                             &content,
+                            small_event_details(event),
                             item_drawn_status,
                         ),
                         ItemDraw::RoomCreation { group, event, content } => populate_room_creation_item(
@@ -1604,6 +1610,7 @@ impl Widget for RoomScreen {
                             group,
                             event,
                             &content,
+                            small_event_details(event),
                             self.room_name_id.as_ref(),
                             item_drawn_status,
                         ),
@@ -1641,6 +1648,7 @@ impl Widget for RoomScreen {
                             &tl_state.kind,
                             event,
                             &content,
+                            small_event_details(event),
                             item_drawn_status,
                             shows_collapse_line,
                             shows_invite_button && tl_state.user_power.can_invite(),
@@ -3004,10 +3012,13 @@ impl RoomScreen {
                 MessageAction::Report(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     let Some(event_id) = details.event_id() else { continue };
-                    cx.action(ModerationModalAction::Open(ModerationRequest::Report(ReportTarget::Message {
-                        room_id: tl.kind.room_id().clone(),
-                        event_id: event_id.clone(),
-                    })));
+                    let (room_id, event_id) = (tl.kind.room_id().clone(), event_id.clone());
+                    let target = if details.abilities.contains(MessageAbilities::IsMessage) {
+                        ReportTarget::Message { room_id, event_id }
+                    } else {
+                        ReportTarget::Event { room_id, event_id }
+                    };
+                    cx.action(ModerationModalAction::Open(ModerationRequest::Report(target)));
                 }
                 MessageAction::DownloadAttachment(info) => {
                     self.begin_media_transfer(cx, portal_list, info, TransferKind::Download, start_attachment_download);
@@ -5202,13 +5213,25 @@ fn populate_message_view(
         }
     };
 
-    let timeline_event_id = event_tl_item.identifier();
+    // Re-set even for cached items: the portal list recycles widgets, so
+    // the same template might now be showing a totally different message.
+    let message_details = MessageDetails::new(
+        event_tl_item,
+        item_id,
+        timeline_kind,
+        user_power_levels,
+        pinned_events,
+        has_html_body,
+        has_room_mention,
+        room_screen_widget_uid,
+    );
+    let timeline_event_id = &message_details.timeline_event_id;
 
     // If we didn't use a cached item, we need to draw all other message content:
     // the reactions, the read receipts avatar row, the reply preview.
     if !used_cached_item {
         item.link_preview(cx, ids!(content.link_preview_view))
-            .set_expanded(cx, expanded_link_previews.contains(&timeline_event_id));
+            .set_expanded(cx, expanded_link_previews.contains(timeline_event_id));
         // Redacted messages must never show reactions, even if the SDK still reports some.
         let reactions = (!matches!(msg_like_content.kind, MsgLikeKind::Redacted))
             .then(|| event_tl_item.reactions());
@@ -5216,7 +5239,7 @@ fn populate_message_view(
             cx,
             reactions,
             timeline_kind,
-            &timeline_event_id,
+            timeline_event_id,
             item_id,
         );
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
@@ -5245,28 +5268,6 @@ fn populate_message_view(
         new_drawn_status.content_drawn &= is_thread_summary_fully_drawn;
     }
 
-
-    // Re-set even for cached items: the portal list recycles widgets, so
-    // the same template might now be showing a totally different message.
-    let message_details = MessageDetails {
-        thread_root_event_id: msg_like_content.thread_root.clone().or_else(|| {
-            msg_like_content.thread_summary.as_ref()
-                .and_then(|_| event_tl_item.event_id().map(|id| id.to_owned()))
-        }),
-        timeline_event_id,
-        item_id,
-        related_event_id: msg_like_content.in_reply_to.as_ref().map(|r| r.event_id.clone()),
-        room_screen_widget_uid,
-        abilities: MessageAbilities::from_user_power_and_event(
-            user_power_levels,
-            event_tl_item,
-            msg_like_content,
-            pinned_events,
-            has_html_body,
-            timeline_kind.thread_root_event_id().is_some(),
-        ),
-        should_be_highlighted: event_tl_item.is_highlighted() || has_room_mention,
-    };
     let download_state = download_info.as_ref()
         .and_then(|info| {
             let mxc = media_source_mxc(&info.media_source);
@@ -5275,7 +5276,7 @@ fn populate_message_view(
                 .map(|p| p.state.display(p.kind))
         })
         .unwrap_or_default();
-    let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
+    let is_reply_expanded = expanded_reply_previews.contains(timeline_event_id);
     item.as_message().set_data(
         cx,
         message_details,
@@ -6339,8 +6340,7 @@ pub struct Message {
     #[live] thread_summary_bg_color_hover: Vec4f,
 
     #[rust] details: Option<MessageDetails>,
-    /// `True` while a context menu that we opened is being shown.
-    #[rust] is_context_menu_open: bool,
+    #[rust] context_menu_trigger: ContextMenuTrigger,
     /// Set on file/image/audio/video messages so the download button knows
     /// what to save when the user clicks it. `None` for plain text messages,
     /// which hide the download button entirely.
@@ -6348,9 +6348,6 @@ pub struct Message {
     /// Cached so `set_data` can reset_hover only on the button that just
     /// transitioned into visibility, not on every redraw.
     #[rust] download_state: DownloadDisplayState,
-    /// The UID of the touch that was claimed by this message or one of its children.
-    /// This is used to determine if a future long press was on this message.
-    #[rust] pressed_touch_uid: Option<u64>,
     #[rust] quick_reaction_taps: QuickReactionTaps,
 
     // Belowhere: cached references to child widgets, for efficiency.
@@ -6395,32 +6392,15 @@ impl Widget for Message {
         // determine if any other ancestor widget has already claimed this pointer event.
         let claim_before = event.pointer_claimed_area();
 
-        // A right-click or long-press anywhere on a message widget should show its context menu,
-        // so we have to handle the raw events instead of relying on the hit system.
-        if let Event::MouseDown(mde) = event
-            && mde.button.is_secondary()
-            && mde.handled.get().is_empty()
-            && self.view.area().clipped_rect(cx).contains(mde.abs)
-            && !self.is_within_excluded_child(cx, mde.abs, false)
-        {
-            mde.handled.set(self.view.area());
+        if let Some(abs_pos) = self.context_menu_trigger.handle_press(
+            cx,
+            event,
+            self.view.area(),
+            |cx, abs, is_long_press| self.is_within_excluded_child(cx, abs, is_long_press),
+        ) {
             let details = d.clone();
             self.animator_play(cx, ids!(bg_hover.on));
-            self.open_context_menu(cx, room_screen_widget_uid, details, mde.abs);
-        }
-        else if let Event::LongPress(lpe) = event
-            // the long press must've been claimed by us or a descendant on touch-down,
-            // which also rules out presses owned by an open context menu overlay.
-            && self.pressed_touch_uid == Some(lpe.uid)
-        {
-            let msg_rect = self.view.area().clipped_rect(cx);
-            if msg_rect.contains(lpe.abs)
-                && !self.is_within_excluded_child(cx, lpe.abs, true)
-            {
-                let details = d.clone();
-                self.animator_play(cx, ids!(bg_hover.on));
-                self.open_context_menu(cx, room_screen_widget_uid, details, lpe.abs);
-            }
+            self.open_context_menu(cx, details, abs_pos);
         }
 
         // We first handle a click on the replied-to message preview, if present,
@@ -6457,7 +6437,7 @@ impl Widget for Message {
                 }
                 // since we already captured this finger-up, the hit test on the message body itself
                 // won't result in anything, so we have to un-set the hover here.
-                if !self.is_context_menu_open {
+                if !self.context_menu_trigger.is_menu_open {
                     self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(bg_hover.on), ids!(bg_hover.off));
                 }
             }
@@ -6496,7 +6476,7 @@ impl Widget for Message {
                     apply_hover(cx, still_hovered);
                     // Same as the reply preview: this press never reaches the body's
                     // hit test, so settle the message highlight here too.
-                    if !self.is_context_menu_open {
+                    if !self.context_menu_trigger.is_menu_open {
                         self.animator_toggle(cx, still_hovered, Animate::Yes, ids!(bg_hover.on), ids!(bg_hover.off));
                     }
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
@@ -6522,7 +6502,7 @@ impl Widget for Message {
 
         // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
-        let body_hit = handle_hover_hit(self, cx, event, message_view_area, claim_before, self.is_context_menu_open);
+        let body_hit = handle_hover_hit(self, cx, event, message_view_area, claim_before, self.context_menu_trigger.is_menu_open);
         match body_hit {
             Hit::FingerDown(_) => {
                 cx.set_key_focus(message_view_area);
@@ -6541,21 +6521,7 @@ impl Widget for Message {
 
         // All of our claim sites have run by now, so a press claimed since our
         // entry snapshot came from within us; remember it for the LongPress guard.
-        if let Event::TouchUpdate(tue) = event {
-            for touch in &tue.touches {
-                match touch.state {
-                    TouchState::Start => {
-                        self.pressed_touch_uid = (claim_before.is_empty()
-                            && !touch.handled.get().is_empty())
-                            .then_some(touch.uid);
-                    }
-                    TouchState::Stop | TouchState::Cancel if self.pressed_touch_uid == Some(touch.uid) => {
-                        self.pressed_touch_uid = None;
-                    }
-                    _ => { }
-                }
-            }
-        }
+        self.context_menu_trigger.track_touches(event, claim_before);
 
         // TODO: use regular animator states for the thread root summary hover too.
         if let Event::ClearHover = event && thread_root_event_id.is_some() {
@@ -6565,8 +6531,7 @@ impl Widget for Message {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                if self.is_context_menu_open && action.downcast_ref::<ContextMenuClosed>().is_some() {
-                    self.is_context_menu_open = false;
+                if self.context_menu_trigger.handle_menu_closed(action) {
                     continue;
                 }
 
@@ -6631,7 +6596,7 @@ impl Widget for Message {
                 if details.abilities.intersects(MessageAbilities::CanRetrySend | MessageAbilities::CanCancelSend) {
                     let details = details.clone();
                     self.animator_play(cx, ids!(bg_hover.on));
-                    self.open_context_menu(cx, room_screen_widget_uid, details, abs_pos);
+                    self.open_context_menu(cx, details, abs_pos);
                 }
             }
         }
@@ -6676,17 +6641,9 @@ impl Message {
             ))
     }
 
-    fn open_context_menu(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, details: MessageDetails, abs_pos: DVec2) {
-        self.is_context_menu_open = true;
+    fn open_context_menu(&mut self, cx: &mut Cx, details: MessageDetails, abs_pos: DVec2) {
         let own_reactions = self.view.widget(cx, ids!(reaction_list)).as_reaction_list().get_own_reactions();
-        cx.widget_action(
-            room_screen_widget_uid,
-            MessageAction::OpenMessageContextMenu {
-                details,
-                abs_pos,
-                own_reactions,
-            },
-        );
+        self.context_menu_trigger.open_menu(cx, details, abs_pos, own_reactions);
     }
 
     /// Returns the thread summary, or an empty ref if this message has never shown one.
@@ -6727,8 +6684,7 @@ impl Message {
 
         // If the message details changed, reset any UI state that belongs to the old message.
         if self.details.as_ref().is_none_or(|d| d.timeline_event_id != details.timeline_event_id) {
-            self.is_context_menu_open = false;
-            self.pressed_touch_uid = None;
+            self.context_menu_trigger = ContextMenuTrigger::default();
             self.quick_reaction_taps = QuickReactionTaps::default();
             self.animator_cut(cx, ids!(bg_hover.off));
             self.animator_cut(cx, ids!(highlight.off));

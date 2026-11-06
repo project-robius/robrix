@@ -18,6 +18,7 @@ use crate::{
         room_read_receipt::populate_read_receipts,
         room_screen::ItemDrawnStatus,
         rooms_list::RoomAvatarUpdated,
+        new_message_context_menu::MessageDetails,
         small_state_event::{populate_group_summary, populate_small_state_event_widget},
         state_event_group::{SmallStateEventWidgetRefExt, StateEventGroup, StateEventGroupHeaderWidgetRefExt},
         timeline_items::{ChangedItems, SmallStateContent, TimelineInfo, is_room_create, items_in},
@@ -343,6 +344,7 @@ pub(super) fn populate_room_creation_item(
     group: Option<&StateEventGroup>,
     create_event: &EventTimelineItem,
     create_event_content: &SmallStateContent,
+    create_event_details: MessageDetails,
     room_name_id: Option<&RoomNameId>,
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
@@ -354,9 +356,10 @@ pub(super) fn populate_room_creation_item(
     }
     item.state_event_group_header(cx, ids!(header)).set_shown(group.is_some());
     if let Some(group) = group {
-        return populate_group_summary(cx, item, existed, timeline, group, create_event, create_event_content, item_drawn_status);
+        return populate_group_summary(cx, item, existed, timeline, group, create_event, create_event_content, create_event_details, item_drawn_status);
     }
     let first_event = item.small_state_event(cx, ids!(first_event));
+    first_event.set_details(cx, create_event_details);
     let first_event_was_shown = existed && first_event.visible();
     first_event.set_shown(true);
     populate_read_receipts(&first_event, cx, timeline.kind, create_event);
@@ -368,7 +371,6 @@ pub(super) fn populate_room_creation_item(
         create_event,
         create_event_content,
         item_drawn_status,
-        false,
         false,
     );
     (item, first_event_status)

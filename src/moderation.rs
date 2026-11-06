@@ -127,6 +127,11 @@ pub enum ReportTarget {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
+    /// An event that isn't a message, like a state event.
+    Event {
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+    },
     Room(RoomNameId),
     User {
         user_id: OwnedUserId,
@@ -253,7 +258,7 @@ pub async fn moderate_member(client: Client, moderation: MemberModeration, reaso
 pub async fn report(client: Client, target: ReportTarget, reason: Option<String>) {
     let result: Result<()> = async {
         match &target {
-            ReportTarget::Message { room_id, event_id } => {
+            ReportTarget::Message { room_id, event_id } | ReportTarget::Event { room_id, event_id } => {
                 get_room(&client, room_id)?.report_content(event_id.clone(), reason).await?;
             }
             ReportTarget::Room(room_name_id) => {
@@ -268,6 +273,7 @@ pub async fn report(client: Client, target: ReportTarget, reason: Option<String>
 
     let description = match &target {
         ReportTarget::Message { .. } => String::from("this message"),
+        ReportTarget::Event { .. } => String::from("this event"),
         ReportTarget::Room(room_name_id) => format!("\"{room_name_id}\""),
         ReportTarget::User { user_name, .. } => user_name.clone(),
     };
