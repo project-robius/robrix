@@ -18,6 +18,7 @@ use crate::{
     room_preview_cache,
     shared::{
         image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
+        inline_image,
         popup_list::{PopupKind, enqueue_popup_notification},
     },
     utils::time_ago,
@@ -149,6 +150,7 @@ impl Widget for RoomsListHeader {
                             // by RoomScreen in response to the StateUpdate action.
                             user_profile_cache::clear_all_pending_requests();
                             avatar_cache::clear_all_pending_and_failed_requests();
+                            inline_image::clear_all_pending_and_failed_requests();
                             room_preview_cache::clear_all_pending_requests();
                             // Redraw everything so that widgets re-fetch any info they were still waiting on.
                             cx.redraw_all();

@@ -17,6 +17,7 @@ pub mod helpers;
 pub mod hover_highlight;
 pub mod html_or_plaintext;
 pub mod icon_button;
+pub mod inline_image;
 pub mod jump_to_bottom_button;
 pub mod lazy_view;
 pub mod list_rows;
@@ -67,6 +68,7 @@ pub fn script_mod(vm: &mut ScriptVm, appearance: Appearance) {
     room_input_popup_menu::script_mod(vm);
     avatar::script_mod(vm);
     text_or_image::script_mod(vm);
+    inline_image::script_mod(vm);
     html_or_plaintext::script_mod(vm);
     collapsible_html::script_mod(vm);
     bouncing_dots::script_mod(vm);

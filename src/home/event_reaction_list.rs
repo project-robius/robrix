@@ -1,11 +1,11 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache;
-use crate::shared::{emoji_catalog::{get_emoji_catalog, get_shortcode}, recent_emojis::record_emoji_pick};
+use crate::shared::{emoji_catalog::{get_emoji_catalog, get_shortcode}, inline_image::{InlineImageRef, InlineImageWidgetRefExt}, recent_emojis::record_emoji_pick};
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest, TimelineKind};
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use crate::{LivePtr, widget_ref_from_live_ptr};
-use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{MxcUri, OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionInfo, ReactionsByKeyBySender, TimelineEventItemId};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -84,6 +84,7 @@ script_mod! {
                 }
             }
 
+            custom_emoji := mod.widgets.InlineImage { width: 18, height: 18 }
             reaction := ReactionLabel {
                 flow: Flow.Right { wrap: false },
                 width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
@@ -111,7 +112,11 @@ impl ReactionData {
     /// Returns this reaction with each emoji's shortcode in parentheses after it, e.g., "👍 (+1)".
     ///
     /// A run of the same emoji only gets one shortcode, after its last emoji.
+    /// We don't know a custom emoji's shortcode, so that's just "a custom emoji".
     pub fn format_with_shortcodes(&self) -> String {
+        if is_custom_emoji(&self.reaction) {
+            return "a custom emoji".into();
+        }
         let mut text = String::new();
         let mut graphemes = self.reaction.graphemes(true).peekable();
         while let Some(grapheme) = graphemes.next() {
@@ -137,6 +142,8 @@ pub struct ReactionList {
     #[redraw] #[rust] area: Area,
     #[live] item: Option<LivePtr>,
     #[rust] children: Vec<(ViewRef, ReactionData)>,
+    /// The custom emoji in our buttons, which need our events so they can load and animate.
+    #[rust] custom_emoji_images: Vec<InlineImageRef>,
     #[layout] layout: Layout,
     #[walk] walk: Walk,
 
@@ -171,6 +178,9 @@ impl Widget for ReactionList {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        for custom_emoji in &self.custom_emoji_images {
+            custom_emoji.handle_event(cx, event, scope);
+        }
         for (button_ref, reaction_data) in self.children.iter() {
             let button_area = button_ref.area();
             // Note: the `break` statements are used to break out of the loop over
@@ -289,6 +299,7 @@ impl ReactionListRef {
         let Some(curr_user_id) = current_user_id() else { return };
         let Some(event_tl_item_reactions) = event_tl_item_reactions else {
             inner.children.clear();
+            inner.custom_emoji_images.clear();
             inner.last_reaction_counts = None;
             return;
         };
@@ -309,6 +320,7 @@ impl ReactionListRef {
         // here, things have changed, so we need to repopulate the list of reactions and redraw it.
         inner.last_reaction_counts = Some(new_counts);
         inner.children.clear();
+        inner.custom_emoji_images.clear();
         for (reaction_text, reaction_senders) in event_tl_item_reactions.iter() {
             let mut includes_user: bool = false;
             for (sender, _) in reaction_senders.iter() {
@@ -336,10 +348,17 @@ impl ReactionListRef {
             };
             let mut button = widget_ref_from_live_ptr(cx, inner.item).as_view();
             let reaction_label = button.label(cx, ids!(reaction));
-            reaction_label.set_text(cx, &reaction_data.reaction);
-            let is_emoji_only = reaction_text.graphemes(true).all(|g| emojis::get(g).is_some());
-            if is_emoji_only && let Some(mut label) = reaction_label.borrow_mut() {
-                label.draw_text.text_style.font_size += 1.0;
+            if is_custom_emoji(reaction_text) {
+                let custom_emoji = button.inline_image(cx, ids!(custom_emoji));
+                custom_emoji.set_mxc_uri(reaction_text.as_str().into());
+                reaction_label.set_visible(cx, false);
+                inner.custom_emoji_images.push(custom_emoji);
+            } else {
+                reaction_label.set_text(cx, &reaction_data.reaction);
+                let is_emoji_only = reaction_text.graphemes(true).all(|g| emojis::get(g).is_some());
+                if is_emoji_only && let Some(mut label) = reaction_label.borrow_mut() {
+                    label.draw_text.text_style.font_size += 1.0;
+                }
             }
             button.label(cx, ids!(count)).set_text(cx, &reaction_senders.len().to_string());
             apply_reaction_button_colors(cx, &mut button, reaction_data.includes_user);
@@ -404,6 +423,11 @@ fn apply_reaction_button_colors(cx: &mut Cx, button: &mut ViewRef, includes_user
             }
         });
     }
+}
+
+/// Returns whether the given reaction is a custom emoji, which is the `mxc://` URI of its image.
+pub fn is_custom_emoji(reaction: &str) -> bool {
+    <&MxcUri>::from(reaction).is_valid()
 }
 
 /// Returns the reaction that the user typed, or `None` if it's blank.
