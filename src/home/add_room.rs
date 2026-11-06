@@ -1,4 +1,4 @@
-//! A top-level view for adding (joining) or exploring new rooms and spaces, and for finding users.
+//! A top-level view for adding (joining) or exploring new rooms and spaces, finding users, and creating new rooms.
 
 
 use std::cmp::Reverse;
@@ -8,7 +8,7 @@ use matrix_sdk::RoomState;
 use ruma::{OwnedRoomOrAliasId, OwnedServerName, RoomId, ServerName, room::{JoinRuleSummary, RoomType}};
 use rustc_hash::FxHashSet;
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, SearchQuery, UserSearchResult, get_room_directory_servers}, home::{invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::NavigationBarAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, settings::app_preferences::AppPreferencesAction, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, collapsible_html::handle_link_clicked, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, page_header::PAGE_SIDE_PADDING, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils::{self, MatchQuality}};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, directory_search::{DirectorySearchAction, RoomKind, RoomSearchResult, SEARCH_PAGE_SIZE, Search, SearchQuery, UserSearchResult, get_room_directory_servers}, home::{create_room_modal::CreateRoomModalAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::NavigationBarAction}, logout::logout_confirm_modal::LogoutAction, profile::{user_profile::{UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt, UserProfileSlidingPaneWidgetRefExt}, user_profile_cache}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, settings::app_preferences::AppPreferencesAction, shared::{avatar::{AvatarWidgetRefExt, TextAvatarBgColor}, collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetExt}, collapsible_html::handle_link_clicked, list_rows::{LIST_ROW_HEIGHT, draw_flat_list_status_row, handle_row_actions}, page_header::PAGE_SIDE_PADDING, popup_list::{PopupKind, enqueue_popup_notification}, styles::set_view_bg_color}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils::{self, MatchQuality}};
 
 /// The width of the Go buttons and the Edit button below the room search box, so they line up.
 const SEARCH_BUTTON_WIDTH: f64 = 72.0;
@@ -382,6 +382,28 @@ script_mod! {
 
         user_results := SearchResultsList {}
 
+        LineH { padding: 10, margin: Inset{top: 15, right: 2} }
+
+        SubsectionLabel {
+            text: "Create a new room"
+        }
+
+        MessageHtml {
+            padding: Inset{left: 18, right: 7, top: 7, bottom: 7}
+            width: Fill, height: Fit
+            font_size: 10.
+            font_color: (MESSAGE_TEXT_COLOR)
+            body: "<p>Choose its name, who can join, whether it's encrypted, and who to invite.</p>"
+        }
+
+        create_room_button := RobrixIconButton {
+            margin: Inset{left: 5, top: 3}
+            padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+            draw_icon.svg: (ICON_ADD)
+            icon_walk: Walk{width: 16, height: 16}
+            text: "Create a Room"
+        }
+
         View {
             width: Fill
             height: 20
@@ -415,9 +437,6 @@ script_mod! {
         user_profile_sliding_pane := mod.widgets.UserProfileSlidingPane { }
     }
 }
-
-/// Delay after the last keystroke before we search for rooms, spaces, or people.
-const SEARCH_DELAY: f64 = 0.5;
 
 #[derive(Script, Widget)]
 pub struct AddRoomScreen {
@@ -699,6 +718,13 @@ impl Widget for AddRoomScreen {
                 // The settings screen covers this button, so it never gets the hover-out event.
                 edit_room_directories_button.reset_hover(cx);
                 cx.action(NavigationBarAction::OpenSettings);
+            }
+
+            let create_room_button = self.view.button(cx, ids!(create_room_button));
+            if create_room_button.clicked(actions) {
+                // The modal covers this button, so it never gets the hover-out event.
+                create_room_button.reset_hover(cx);
+                cx.action(CreateRoomModalAction::Open);
             }
 
             let close_button = self.view.button(cx, ids!(page_header.close_button));
@@ -1771,28 +1797,6 @@ pub enum KnockResultAction {
     }
 }
 
-
-/// The text entered in one of the search boxes, and the results of searching for it.
-#[derive(Default)]
-struct Search<R> {
-    /// The trimmed text that these results are for.
-    query: String,
-    /// This is `None` if the query can't match what this search box is for, e.g., a user ID in the room search.
-    results: Option<R>,
-    /// The countdown to searching after the user stops typing.
-    timer: Timer,
-}
-impl<R: Default> Search<R> {
-    /// Searches once the user stops typing, or clears the results if the search box is now empty.
-    fn handle_text_changed(&mut self, cx: &mut Cx, text: &str) {
-        cx.stop_timer(self.timer);
-        if text.trim().is_empty() {
-            *self = Self::default();
-        } else {
-            self.timer = cx.start_timeout(SEARCH_DELAY);
-        }
-    }
-}
 
 /// One of the two search boxes on this screen.
 #[derive(Clone, Copy, PartialEq)]

@@ -989,20 +989,23 @@ impl Widget for HomeScreen {
 
                 match action.downcast_ref() {
                     Some(AppStateAction::NavigateToRoom { room_to_close, destination_room }) => {
-                        self.navigate_to_room(cx, app_state, room_to_close.as_ref(), destination_room);
+                        let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room.room_id());
+                        self.navigate_to_room(cx, app_state, room_to_close.as_ref(), destination_room, room_state);
                     }
                     Some(AppStateAction::NavigateToSpace { space_name_id }) => {
                         self.navigate_to_space(cx, app_state, BasicRoomDetails::Name(space_name_id.clone()), None);
                     }
                     // If we successfully loaded a room that we were waiting on,
                     // we can now navigate to it and optionally close a previous room.
-                    Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) if
+                    Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, is_invite }) if
                         self.waiting_to_navigate_to_room.as_ref()
                             .is_some_and(|(dr, _)| dr.room_id() == room_name_id.room_id()) =>
                     {
                         log!("Loaded awaited room {room_name_id:?}, navigating to it now...");
                         if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_room.take() {
-                            self.navigate_to_room(cx, app_state, room_to_close.as_ref(), &dest_room);
+                            // The rooms list might not have added this room yet, so we don't ask it for the room's state.
+                            let room_state = if *is_invite { RoomState::Invited } else { RoomState::Joined };
+                            self.navigate_to_room(cx, app_state, room_to_close.as_ref(), &dest_room, Some(room_state));
                         }
                     }
                     _ => {}
@@ -1534,15 +1537,17 @@ impl HomeScreen {
     }
 
     /// Navigates to the given `destination_room`, optionally closing the `room_to_close`.
+    ///
+    /// The `room_state` is `None` if the room isn't loaded yet.
     fn navigate_to_room(
         &mut self,
         cx: &mut Cx,
         app_state: &mut AppState,
         room_to_close: Option<&OwnedRoomId>,
         destination_room: &BasicRoomDetails,
+        room_state: Option<RoomState>,
     ) {
         let destination_room_id = destination_room.room_id();
-        let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id);
         let new_selected_room = match room_state {
             Some(RoomState::Joined) => SelectedRoom::JoinedRoom {
                 room_name_id: destination_room.room_name_id().clone(),
@@ -1555,8 +1560,8 @@ impl HomeScreen {
                 self.navigate_to_space(cx, app_state, destination_room.clone(), room_to_close.cloned());
                 return;
             }
-            // The rooms list never loads an outdated room (one that a newer room replaced),
-            // so we ask for this room to be loaded in case it's one of those, and if not, we offer to join it.
+            // The rooms list never loads an outdated room (one that a newer room replaced), so we ask for this
+            // room to be loaded in case it's one of those. If it isn't, and we haven't joined it, we offer to join it.
             _ => {
                 log!("Destination room {:?} not loaded, checking if it's an outdated room...", destination_room.room_name_id());
                 self.waiting_to_navigate_to_room = Some((
