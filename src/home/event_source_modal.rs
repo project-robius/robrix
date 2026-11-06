@@ -31,22 +31,12 @@ script_mod! {
     }
 
     mod.widgets.EventSourceModal = set_type_default() do #(EventSourceModal::register_widget(vm)) {
-        ..mod.widgets.RoundedView
+        ..mod.widgets.LargeModal
 
-        width: Fill { max: 1000 }
-        height: Fit { max: FitBound.Rel{base: Base.Full, factor: 1.0} }
-        margin: (mod.widgets.MODAL_MARGIN)
-        align: Align{x: 0.5, y: 0}
-        flow: Down
         padding: Inset{top: 20}
         cursor: MouseCursor.Default
-
-        show_bg: true
-        draw_bg +: {
-            color: (COLOR_BG_FLOATING)
-            border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS
-            border_size: 0.0
-        }
+        // The body below the title does the scrolling here, not the whole modal.
+        scroll_bars: ScrollBars { show_scroll_x: false, show_scroll_y: false }
 
         // Title and close button (outside scroll so it stays visible)
         title_view := View {

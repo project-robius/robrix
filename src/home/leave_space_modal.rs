@@ -33,7 +33,7 @@ script_mod! {
 
 
     mod.widgets.LeaveSpaceModal = set_type_default() do #(LeaveSpaceModal::register_widget(vm)) {
-        ..mod.widgets.SmallModal
+        ..mod.widgets.LargeModal
 
         color: (COLOR_TRANSPARENT)
         color_hover: (COLOR_LIST_ITEM_BG_HOVER)
@@ -171,6 +171,16 @@ script_mod! {
                 text: "Cancel"
             }
 
+            back_button := RobrixNeutralIconButton {
+                visible: false
+                width: Fit{min: FitBound.Abs(120.0)}
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_ARROW_LEFT)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Go Back"
+            }
+
             leave_button := RobrixNegativeIconButton {
                 width: Fit{min: FitBound.Abs(120.0)}
                 align: Align{x: 0.5, y: 0.5}
@@ -178,6 +188,16 @@ script_mod! {
                 draw_icon.svg: (ICON_LOGOUT)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Leave"
+            }
+
+            confirm_button := RobrixNegativeIconButton {
+                visible: false
+                width: Fit{min: FitBound.Abs(120.0)}
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_LOGOUT)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Yes, Leave"
             }
 
             okay_button := RobrixIconButton {
@@ -237,6 +257,8 @@ pub struct LeaveSpaceModal {
     /// The indices of the rows whose content has been fully set, including their avatars.
     #[rust] populated_rows: FxHashSet<usize>,
     #[rust] selected_rooms: FxHashSet<OwnedRoomId>,
+    /// The rooms to leave along with the space, which are set while we ask the user to confirm leaving it.
+    #[rust] rooms_to_confirm: Option<Vec<OwnedRoomId>>,
     /// Whether we might not have found all of the rooms in this space yet.
     #[rust] is_loading_rooms: bool,
     #[rust] hovered_row: Option<LiveId>,
@@ -343,7 +365,7 @@ impl WidgetMatchEvent for LeaveSpaceModal {
                     for (parent_id, children) in children {
                         self.add_children(cx, parent_id, children);
                     }
-                    self.set_leave_button_enabled(cx, true);
+                    self.set_negative_button_enabled(cx, ids!(leave_button), true);
                     did_children_change = true;
                 }
                 Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. })
@@ -396,10 +418,7 @@ impl WidgetMatchEvent for LeaveSpaceModal {
         }
         if did_children_change || (did_loading_change && self.is_loading_rooms) {
             self.is_loading_rooms = cx.get_global::<RoomsListRef>().is_space_loading(&shown_space_id);
-            let has_rooms = !self.tree_entries.is_empty();
-            self.view.view(cx, ids!(loading_view)).set_visible(cx, self.is_loading_rooms);
-            self.view.view(cx, ids!(select_view)).set_visible(cx, has_rooms || self.is_loading_rooms);
-            self.view.view(cx, ids!(rooms_view)).set_visible(cx, has_rooms);
+            self.set_selection_visible(cx, self.rooms_to_confirm.is_none());
             self.redraw(cx);
         }
 
@@ -429,8 +448,16 @@ impl WidgetMatchEvent for LeaveSpaceModal {
             self.redraw(cx);
         }
 
-        let leave_button = self.view.button(cx, ids!(leave_button));
-        if leave_button.clicked(actions)
+        if self.view.button(cx, ids!(leave_button)).clicked(actions) {
+            self.set_confirmation_visible(cx, true);
+        }
+        if self.view.button(cx, ids!(back_button)).clicked(actions) {
+            self.set_confirmation_visible(cx, false);
+        }
+
+        let confirm_button = self.view.button(cx, ids!(confirm_button));
+        if confirm_button.clicked(actions)
+            && let Some(rooms_to_leave) = self.rooms_to_confirm.take()
             && let Some(space_name_id) = self.space_name_id.clone()
         {
             self.view.label(cx, ids!(title)).set_text(cx, "Leaving this space...");
@@ -439,18 +466,18 @@ impl WidgetMatchEvent for LeaveSpaceModal {
                 Waiting for confirmation from the homeserver...",
             ));
             self.view.label(cx, ids!(warning)).set_visible(cx, false);
-            self.view.view(cx, ids!(select_view)).set_visible(cx, false);
-            self.view.view(cx, ids!(rooms_view)).set_visible(cx, false);
-            leave_button.set_text(cx, "Leaving...");
-            self.set_leave_button_enabled(cx, false);
+            self.view.button(cx, ids!(back_button)).set_visible(cx, false);
+            confirm_button.set_text(cx, "Leaving...");
+            self.set_negative_button_enabled(cx, ids!(confirm_button), false);
             // The request is already on its way, so "Cancel" would be a lie.
             cancel_button.set_text(cx, "Close");
+            cancel_button.set_visible(cx, true);
+            cancel_button.reset_hover(cx);
             self.state = LeaveSpaceModalState::WaitingForLeaveResult;
             // These spaces are on their way out, so we mustn't ask about them anymore.
             self.requested_spaces.clear();
             self.redraw(cx);
 
-            let rooms_to_leave = self.selected_rooms.iter().cloned().collect();
             if !Self::send_space_request(cx, SpaceRequest::LeaveSpace { space_name_id, rooms_to_leave }) {
                 self.show_final_state(cx, "Error leaving space!", "Failed to send leave space request.\n\nPlease restart Robrix.");
             }
@@ -494,12 +521,73 @@ impl LeaveSpaceModal {
         }
     }
 
-    /// Sets whether the leave button can be clicked, and makes it look that way too.
-    fn set_leave_button_enabled(&mut self, cx: &mut Cx, is_enabled: bool) {
-        let leave_button = self.view.button(cx, ids!(leave_button));
-        leave_button.set_enabled(cx, is_enabled);
-        leave_button.set_disabled(cx, !is_enabled);
-        if let Some(mut button) = leave_button.borrow_mut() {
+    /// Shows or hides the list of rooms, along with its buttons and loading spinner.
+    fn set_selection_visible(&mut self, cx: &mut Cx, is_visible: bool) {
+        let has_rooms = !self.tree_entries.is_empty();
+        self.view.view(cx, ids!(loading_view)).set_visible(cx, self.is_loading_rooms);
+        self.view.view(cx, ids!(select_view)).set_visible(cx, is_visible && (has_rooms || self.is_loading_rooms));
+        self.view.view(cx, ids!(rooms_view)).set_visible(cx, is_visible && has_rooms);
+    }
+
+    /// Swaps between choosing which rooms to leave and confirming exactly what will be left.
+    /// Going back keeps the same rooms selected.
+    fn set_confirmation_visible(&mut self, cx: &mut Cx, is_visible: bool) {
+        let Some(space_name_id) = self.space_name_id.clone() else { return };
+        if is_visible {
+            let (mut num_rooms, mut num_subspaces) = (0, 0);
+            let mut counted = FxHashSet::default();
+            for entry in &self.tree_entries {
+                if let TreeEntry::Item { info, .. } = entry
+                    && self.selected_rooms.contains(&info.id)
+                    && counted.insert(&info.id)
+                {
+                    if info.is_space() { num_subspaces += 1 } else { num_rooms += 1 }
+                }
+            }
+            let count = |num: usize, noun: &str| format!("{num} {noun}{}", if num == 1 { "" } else { "s" });
+            let body = match (num_rooms, num_subspaces) {
+                (0, 0) => format!("You're about to leave \"{space_name_id}\", but you'll stay in all of your rooms within it."),
+                (rooms, 0) => format!("You're about to leave \"{space_name_id}\", along with {} within it.", count(rooms, "room")),
+                (0, subspaces) => format!("You're about to leave \"{space_name_id}\", along with {} within it.", count(subspaces, "subspace")),
+                (rooms, subspaces) => format!(
+                    "You're about to leave \"{space_name_id}\", along with {} and {} within it.",
+                    count(rooms, "room"),
+                    count(subspaces, "subspace"),
+                ),
+            };
+            self.rooms_to_confirm = Some(self.selected_rooms.iter().cloned().collect());
+            self.view.label(cx, ids!(title)).set_text(cx, "Are you sure?");
+            self.view.label(cx, ids!(body)).set_text(cx, &body);
+        } else {
+            self.rooms_to_confirm = None;
+            self.show_selection_text(cx, &space_name_id);
+        }
+        self.set_selection_visible(cx, !is_visible);
+        for (button, is_shown) in [
+            (ids!(cancel_button), !is_visible),
+            (ids!(leave_button), !is_visible),
+            (ids!(back_button), is_visible),
+            (ids!(confirm_button), is_visible),
+        ] {
+            let button = self.view.button(cx, button);
+            button.set_visible(cx, is_shown);
+            button.reset_hover(cx);
+        }
+        self.redraw(cx);
+    }
+
+    /// Shows the question that we ask while the user chooses which rooms to leave.
+    fn show_selection_text(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
+        self.view.label(cx, ids!(title)).set_text(cx, "Leave this space?");
+        self.view.label(cx, ids!(body)).set_text(cx, &format!("Are you sure you want to leave \"{space_name_id}\"?"));
+    }
+
+    /// Sets whether the given negative button can be clicked, and makes it look that way too.
+    fn set_negative_button_enabled(&mut self, cx: &mut Cx, button: &[LiveId], is_enabled: bool) {
+        let button = self.view.button(cx, button);
+        button.set_enabled(cx, is_enabled);
+        button.set_disabled(cx, !is_enabled);
+        if let Some(mut button) = button.borrow_mut() {
             button.draw_icon.color = if is_enabled { self.leave_icon_color } else { self.leave_icon_color_disabled };
         }
     }
@@ -510,8 +598,9 @@ impl LeaveSpaceModal {
         self.view.label(cx, ids!(title)).set_text(cx, title);
         self.view.label(cx, ids!(body)).set_text(cx, description);
         self.view.view(cx, ids!(rooms_view)).set_visible(cx, false);
-        self.view.button(cx, ids!(leave_button)).set_visible(cx, false);
-        self.view.button(cx, ids!(cancel_button)).set_visible(cx, false);
+        for button in [ids!(cancel_button), ids!(back_button), ids!(leave_button), ids!(confirm_button)] {
+            self.view.button(cx, button).set_visible(cx, false);
+        }
         let okay_button = self.view.button(cx, ids!(okay_button));
         okay_button.set_visible(cx, true);
         okay_button.reset_hover(cx);
@@ -533,8 +622,7 @@ impl LeaveSpaceModal {
     }
 
     pub fn show(&mut self, cx: &mut Cx, space_name_id: RoomNameId) {
-        self.view.label(cx, ids!(title)).set_text(cx, "Leave this space?");
-        self.view.label(cx, ids!(body)).set_text(cx, &format!("Are you sure you want to leave \"{space_name_id}\"?"));
+        self.show_selection_text(cx, &space_name_id);
 
         // Reset the UI state
         self.view.label(cx, ids!(warning)).set_visible(cx, false);
@@ -548,11 +636,17 @@ impl LeaveSpaceModal {
         leave_button.set_text(cx, "Leave");
         leave_button.set_visible(cx, true);
         leave_button.reset_hover(cx);
-        self.set_leave_button_enabled(cx, false);
+        self.set_negative_button_enabled(cx, ids!(leave_button), false);
         cancel_button.set_text(cx, "Cancel");
         cancel_button.set_visible(cx, true);
         cancel_button.reset_hover(cx);
+        self.view.button(cx, ids!(back_button)).set_visible(cx, false);
+        let confirm_button = self.view.button(cx, ids!(confirm_button));
+        confirm_button.set_text(cx, "Yes, Leave");
+        confirm_button.set_visible(cx, false);
+        self.set_negative_button_enabled(cx, ids!(confirm_button), true);
         self.view.button(cx, ids!(okay_button)).set_visible(cx, false);
+        self.rooms_to_confirm = None;
         self.children_cache.clear();
         self.other_spaces.clear();
         self.requested_spaces.clear();

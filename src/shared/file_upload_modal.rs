@@ -45,27 +45,10 @@ script_mod! {
     }
 
     mod.widgets.FileUploadModal = set_type_default() do #(FileUploadModal::register_widget(vm)) {
-        ..mod.widgets.RoundedView
+        ..mod.widgets.LargeModal
 
-        width: Fill { max: 1000 }
         height: Fill
-        margin: (mod.widgets.MODAL_MARGIN)
-        align: Align{x: 0.5, y: 0}
-        flow: Down
         spacing: 12
-        padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
-
-        scroll_bars: ScrollBars {
-            show_scroll_x: false, show_scroll_y: true,
-            scroll_bar_y: ScrollBar {drag_scrolling: true}
-        }
-
-        show_bg: true,
-        draw_bg +: {
-            color: (COLOR_BG_FLOATING)
-            border_radius: 6.0
-            border_size: 0.0
-        }
 
         header := View {
             width: Fill, height: Fit,

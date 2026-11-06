@@ -278,6 +278,19 @@ script_mod! {
         }
     }
 
+    // The base widget definition used for all "large" modals in Robrix.
+    mod.widgets.LargeModal = RoundedView {
+        ..mod.widgets.SmallModal
+
+        width: Fill { max: 1000 }
+        align: Align{x: 0.5, y: 0}
+        padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
+        draw_bg +: {
+            border_radius: 6.0
+            border_size: 0.0
+        }
+    }
+
     mod.widgets.ModalTitle = Label {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}

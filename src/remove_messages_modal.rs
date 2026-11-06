@@ -33,7 +33,7 @@ script_mod! {
 
 
     mod.widgets.RemoveMessagesModal = set_type_default() do #(RemoveMessagesModal::register_widget(vm)) {
-        ..mod.widgets.SmallModal
+        ..mod.widgets.LargeModal
 
         color: (COLOR_TRANSPARENT)
         color_hover: (COLOR_LIST_ITEM_BG_HOVER)
@@ -105,9 +105,8 @@ script_mod! {
                         align: Align{x: 0.5, y: 0.5}
                         show_bg: true
                         draw_bg +: {
-                            color: theme.color_inset_active
-                            border_color: theme.color_bevel_active
-                            border_size: 1.0
+                            color: (COLOR_BG_ACCENT_TINT)
+                            border_size: 0.0
                             border_radius: 2.0
                         }
 
@@ -116,7 +115,7 @@ script_mod! {
                             width: Fit, height: Fit
                             Icon {
                                 icon_walk: Walk{width: 11, height: 11}
-                                draw_icon +: { svg: (ICON_CHECKMARK), color: theme.color_mark_active }
+                                draw_icon +: { svg: (ICON_CHECKMARK), color: (COLOR_ACTIVE_PRIMARY_DARKER) }
                             }
                         }
                     }
