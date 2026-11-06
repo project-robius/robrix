@@ -6,7 +6,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use crate::{
     home::rooms_list::{RoomTombstoned, RoomsListRef},
     profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
-    shared::{popup_list::{enqueue_popup_notification, PopupKind}, verification_badge::UserVerificationBadgeWidgetExt},
+    shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::apply_lavender_button_style, verification_badge::UserVerificationBadgeWidgetExt},
     sliding_sync::{UserPowerLevels, UserPowerLevelsUpdated},
     utils,
 };
@@ -496,24 +496,12 @@ impl RoomActionBar {
     fn highlight_shown_panes(&mut self, cx: &mut Cx) {
         for (id, _, action) in ACTIONS {
             let RoomActionBarAction::TogglePane(kind) = action else { continue };
-            let mut button = self.view.widget(cx, &[id]);
-            let mut expanded_button = self.view.widget(cx, &[id!(expanded_room_actions), id]);
-            if self.shown_panes.contains(&kind) {
-                for mut button in [button, expanded_button] {
-                    script_apply_eval!(cx, button, {
-                        draw_bg +: {
-                            color: (mod.widgets.COLOR_BG_LAVENDER_SELECTED)
-                            color_hover: (mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER)
-                            color_down: (mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN)
-                        }
-                        draw_icon +: { color: (mod.widgets.COLOR_TEXT_ON_ACCENT) }
-                        draw_text +: {
-                            color: (mod.widgets.COLOR_TEXT_ON_ACCENT)
-                            color_hover: (mod.widgets.COLOR_TEXT_ON_ACCENT)
-                            color_down: (mod.widgets.COLOR_TEXT_ON_ACCENT)
-                        }
-                    });
-                }
+            let mut button = self.view.button(cx, &[id]);
+            let mut expanded_button = self.view.button(cx, &[id!(expanded_room_actions), id]);
+            let is_shown = self.shown_panes.contains(&kind);
+            apply_lavender_button_style(cx, &mut expanded_button, is_shown);
+            if is_shown {
+                apply_lavender_button_style(cx, &mut button, true);
             } else {
                 script_apply_eval!(cx, button, {
                     draw_bg +: {
@@ -522,19 +510,6 @@ impl RoomActionBar {
                         color_down: (mod.widgets.COLOR_ROOM_ACTION_BUTTON_BG_DOWN)
                     }
                     draw_icon +: { color: (mod.widgets.ROOM_NAME_TEXT_COLOR) }
-                });
-                script_apply_eval!(cx, expanded_button, {
-                    draw_bg +: {
-                        color: (mod.widgets.COLOR_BG_LAVENDER)
-                        color_hover: (mod.widgets.COLOR_BG_LAVENDER_HOVER)
-                        color_down: (mod.widgets.COLOR_BG_LAVENDER_DOWN)
-                    }
-                    draw_icon +: { color: (mod.widgets.ROOM_NAME_TEXT_COLOR) }
-                    draw_text +: {
-                        color: (mod.widgets.ROOM_NAME_TEXT_COLOR)
-                        color_hover: (mod.widgets.ROOM_NAME_TEXT_COLOR)
-                        color_down: (mod.widgets.ROOM_NAME_TEXT_COLOR)
-                    }
                 });
             }
         }

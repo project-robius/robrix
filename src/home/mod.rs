@@ -26,6 +26,7 @@ pub mod send_status_indicator;
 pub mod rooms_list;
 pub mod rooms_list_entry;
 pub mod rooms_list_header;
+pub mod room_filter_bubbles;
 pub mod rooms_sidebar;
 pub mod search_messages;
 pub mod space_lobby;
@@ -67,6 +68,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     send_status_indicator::script_mod(vm);
     rooms_list_entry::script_mod(vm);
     rooms_list_header::script_mod(vm);
+    room_filter_bubbles::script_mod(vm);
     sync_indicator_bar::script_mod(vm);
     rooms_list::script_mod(vm);
     edited_indicator::script_mod(vm);

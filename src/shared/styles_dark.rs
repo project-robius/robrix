@@ -96,6 +96,9 @@ script_mod! {
     mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER = #x7451D5
     mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN = #x6B46D2
 
+    // The border of a lavender button, which helps it stand out from a dark background.
+    mod.widgets.COLOR_LAVENDER_BUTTON_BORDER = #x5E5185
+
     mod.widgets.COLOR_BG_PREVIEW_HOVER = #x2A4236
     mod.widgets.COLOR_BG_PREVIEW_DOWN = #x264837
 
