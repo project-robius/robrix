@@ -5,7 +5,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::context_menu::{ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
-/// Nothing here is conditionally shown, so keep these matching the DSL below.
+/// The number of buttons and dividers in the DSL below, including any that `show()` hides.
 const NUM_BUTTONS: usize = 7;
 const NUM_DIVIDERS: usize = 3;
 
@@ -81,6 +81,7 @@ pub struct RoomContextMenuDetails {
     /// Whether the room has any unreads:
     /// messages, mentions, or the marked-unread state.
     pub has_unreads: bool,
+    pub can_invite: bool,
 }
 
 /// Actions emitted from the RoomContextMenu widget, as they must be handled
@@ -229,11 +230,12 @@ impl RoomContextMenu {
 
     pub fn show(&mut self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
         self.update_buttons(cx, &details);
+        let num_hidden = !details.can_invite as usize;
         self.details = Some(details);
         self.visible = true;
         self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
-        expected_menu_size(NUM_BUTTONS, NUM_DIVIDERS)
+        expected_menu_size(NUM_BUTTONS - num_hidden, NUM_DIVIDERS - num_hidden)
     }
 
     fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) {
@@ -258,6 +260,10 @@ impl RoomContextMenu {
             priority_button.set_text(cx, "Set Low Priority");
         }
         
+        // Without the invite button, its divider would sit right under another one.
+        self.button(cx, ids!(invite_button)).set_visible(cx, details.can_invite);
+        self.view(cx, ids!(divider2)).set_visible(cx, details.can_invite);
+
         // Reset hover states
         mark_unread_button.reset_hover(cx);
         favorite_button.reset_hover(cx);

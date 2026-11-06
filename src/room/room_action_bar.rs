@@ -7,6 +7,7 @@ use crate::{
     home::rooms_list::{RoomTombstoned, RoomsListRef},
     profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
     shared::{popup_list::{enqueue_popup_notification, PopupKind}, verification_badge::UserVerificationBadgeWidgetExt},
+    sliding_sync::{UserPowerLevels, UserPowerLevelsUpdated},
     utils,
 };
 use super::room_pane::RoomPaneKind;
@@ -331,6 +332,8 @@ pub struct RoomActionBar {
     #[rust] highlighted_panes: Option<Vec<RoomPaneKind>>,
     /// The room beneath this header, whose DM user's verification state we show before its name.
     #[rust] room_id: Option<OwnedRoomId>,
+    /// Whether the user can invite others to `room_id`, which shows the Invite button.
+    #[rust] can_invite: bool,
 }
 
 impl ScriptHook for RoomActionBar {
@@ -417,6 +420,13 @@ impl Widget for RoomActionBar {
                     }
                 }
             }
+            for action in actions {
+                if let Some(UserPowerLevelsUpdated { room_id, user_power_levels }) = action.downcast_ref()
+                    && self.room_id.as_ref() == Some(room_id)
+                {
+                    self.set_can_invite(cx, user_power_levels.can_invite());
+                }
+            }
         }
     }
 
@@ -442,7 +452,8 @@ impl Widget for RoomActionBar {
             let title_width = title.borrow().map(|title| {
                 utils::unwrapped_text_width(cx, &title.draw_text, &title.text()) + title.walk.margin.width()
             }).unwrap_or(width);
-            inline_count(width, badge_width + tombstone_width + title_width)
+            let num_actions = ACTIONS.iter().filter(|(_, _, action)| self.shows_action(action)).count();
+            inline_count(width, badge_width + tombstone_width + title_width, num_actions)
         } else {
             // in desktop view mode, the dock tabs only show the expand/collapse button.
             0
@@ -543,6 +554,19 @@ impl RoomActionBar {
         self.redraw(cx);
     }
 
+    fn set_can_invite(&mut self, cx: &mut Cx, can_invite: bool) {
+        if self.can_invite != can_invite {
+            self.can_invite = can_invite;
+            self.latest_layout = None;
+            self.redraw(cx);
+        }
+    }
+
+    /// Every action's button is shown, except for Invite if the user can't invite others.
+    fn shows_action(&self, action: &RoomActionBarAction) -> bool {
+        self.can_invite || !matches!(action, RoomActionBarAction::Invite)
+    }
+
     /// Emits a `LayoutChanged` action if our height changed, which the mobile `HomeScreen`
     /// handles by moving the content beneath this header (e.g., the room screen) to below it.
     ///
@@ -609,27 +633,31 @@ impl RoomActionBar {
             }
         }
 
-        for (index, (id, label, _)) in ACTIONS.iter().enumerate() {
+        // The index of each shown button, which skips over any hidden ones.
+        let mut index = 0;
+        for (id, label, action) in ACTIONS.iter() {
+            let is_shown = self.shows_action(action);
             let button = self.view.widget(cx, &[*id]);
-            let in_header_row = !self.is_desktop_mode && index < inline;
+            let in_header_row = is_shown && !self.is_desktop_mode && index < inline;
             button.set_visible(cx, in_header_row);
             let expanded_button = expanded_room_actions.widget(cx, &[*id]);
-            expanded_button.set_visible(cx, show_overflow);
+            expanded_button.set_visible(cx, is_shown && show_overflow);
             expanded_button.set_text(cx, label);
             if in_header_row {
                 let slots_after = index + 2;
                 let x = width - HEADER_BUTTON_INSET - slots_after as f64 * (BUTTON_SIZE + HEADER_BUTTON_GAP) + HEADER_BUTTON_GAP;
                 place(cx, &button, x, HEADER_BUTTON_INSET, BUTTON_SIZE, BUTTON_SIZE);
             }
+            index += is_shown as usize;
         }
     }
 }
 
 /// Reserve space for the full room name and the always-visible expand/collapse button.
-fn inline_count(width: f64, title_width: f64) -> usize {
+fn inline_count(width: f64, title_width: f64, num_actions: usize) -> usize {
     let available = width - BACK_BUTTON_INSET - HEADER_BUTTON_INSET - BACK_BUTTON_WIDTH - GAP;
     let action_width = BUTTON_SIZE + HEADER_BUTTON_GAP;
-    (((available - action_width - title_width.ceil()).max(0.0) / action_width) as usize).min(ACTION_COUNT)
+    (((available - action_width - title_width.ceil()).max(0.0) / action_width) as usize).min(num_actions)
 }
 
 fn place(cx: &mut Cx, widget: &WidgetRef, x: f64, y: f64, width: f64, height: f64) {
@@ -649,10 +677,17 @@ fn place(cx: &mut Cx, widget: &WidgetRef, x: f64, y: f64, width: f64, height: f6
 }
 
 impl RoomActionBarRef {
-    /// Sets the room beneath this header, so it can show the verification state of that room's DM user.
+    /// Sets the room beneath this header, so it can show the verification state of that room's DM user
+    /// and only show the Invite button if the user can invite others to that room.
     pub fn set_room_id(&self, cx: &mut Cx, room_id: Option<OwnedRoomId>) {
         let Some(mut inner) = self.borrow_mut() else { return };
+        let user_power_levels = room_id.as_ref().and_then(|room_id|
+            cx.has_global::<RoomsListRef>()
+                .then(|| cx.get_global::<RoomsListRef>().get_user_power_levels(room_id))
+                .flatten()
+        );
         inner.room_id = room_id;
+        inner.set_can_invite(cx, user_power_levels.is_some_and(UserPowerLevels::can_invite));
         inner.redraw(cx);
     }
 

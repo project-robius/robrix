@@ -43,7 +43,7 @@ use crate::{
         popup_list::{PopupKind, enqueue_popup_notification},
         room_filter_input_bar::MainFilterAction,
     },
-    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, RoomDiagnosticsReady, TimelineKind, submit_async_request},
+    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, RoomDiagnosticsReady, TimelineKind, UserPowerLevels, UserPowerLevelsUpdated, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{RoomNameId, VecDiff},
 };
 
@@ -437,6 +437,8 @@ pub struct JoinedRoomInfo {
     pub is_tombstoned: bool,
     /// Whether the user would need an invite to join this room again after leaving it.
     pub is_private: bool,
+    /// The current user's power levels in this room, or `None` if they haven't been fetched yet.
+    pub user_power_levels: Option<UserPowerLevels>,
 
     // TODO: we could store the parent chain(s) of this room, i.e., which spaces
     //       they are children of. One room can be in multiple spaces.
@@ -1956,6 +1958,7 @@ impl Widget for RoomsList {
                     has_unreads: jr.is_marked_unread
                         || jr.num_unread_mentions > 0
                         || jr.num_unread_messages > 0,
+                    can_invite: jr.user_power_levels.is_some_and(UserPowerLevels::can_invite),
                 };
                 cx.widget_action(
                     self.widget_uid(), 
@@ -2012,6 +2015,13 @@ impl Widget for RoomsList {
                         }
                     }
                     self.redraw(cx);
+                    continue;
+                }
+
+                if let Some(UserPowerLevelsUpdated { room_id, user_power_levels }) = action.downcast_ref() {
+                    if let Some(room) = self.all_joined_rooms.get_mut(room_id) {
+                        room.user_power_levels = Some(*user_power_levels);
+                    }
                     continue;
                 }
 
@@ -2293,6 +2303,11 @@ impl Widget for RoomsList {
                             submit_async_request(MatrixRequest::FetchRoomAvatar {
                                 room_name_id: direct_room.room_name_id.clone(),
                             });
+                            if direct_room.user_power_levels.is_none() {
+                                submit_async_request(MatrixRequest::GetRoomPowerLevels {
+                                    room_id: direct_room.room_name_id.room_id().clone(),
+                                });
+                            }
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*direct_room);
@@ -2332,6 +2347,11 @@ impl Widget for RoomsList {
                             submit_async_request(MatrixRequest::FetchRoomAvatar {
                                 room_name_id: regular_room.room_name_id.clone(),
                             });
+                            if regular_room.user_power_levels.is_none() {
+                                submit_async_request(MatrixRequest::GetRoomPowerLevels {
+                                    room_id: regular_room.room_name_id.room_id().clone(),
+                                });
+                            }
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*regular_room);
@@ -2413,6 +2433,11 @@ impl RoomsListRef {
         let Some(inner) = self.borrow() else { return true };
         let is_private = inner.all_joined_rooms.get(room_id).map(|room| room.is_private);
         is_private.or_else(|| inner.invited_rooms.borrow().get(room_id).map(|room| room.is_private)).unwrap_or(true)
+    }
+
+    /// Returns the current user's power levels in the given joined room, if they've been fetched.
+    pub fn get_user_power_levels(&self, room_id: &OwnedRoomId) -> Option<UserPowerLevels> {
+        self.borrow()?.all_joined_rooms.get(room_id)?.user_power_levels
     }
 
     /// Returns the avatar for the given room, if it is known and fetched.

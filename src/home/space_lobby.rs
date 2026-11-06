@@ -33,12 +33,13 @@ use crate::{
         space_tree::{SpaceRoomInfo, TreeEntry, TreeFilter, build_filtered_tree, build_tree_for_space, set_tree_row_position},
     },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
-    room::BasicRoomDetails,
+    room::{BasicRoomDetails, room_members_list::RoomMembersChanged},
     shared::{
         avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
         html_or_plaintext::RobrixHtmlLinkAction,
         room_filter_input_bar::RoomFilterInputBarWidgetExt,
     },
+    sliding_sync::{MatrixRequest, UserPowerLevelsUpdated, submit_async_request},
     space_service_sync::{SpaceRequest, SpaceRoomListAction},
     utils::{self, RoomNameId, open_url},
 };
@@ -927,6 +928,21 @@ impl Widget for SpaceLobbyScreen {
                     continue;
                 }
 
+                if let Some(UserPowerLevelsUpdated { room_id, user_power_levels }) = action.downcast_ref()
+                    && self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == room_id)
+                {
+                    self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.invite_button))
+                        .set_visible(cx, user_power_levels.can_invite());
+                    continue;
+                }
+                // We may have been promoted or demoted in this space.
+                if let Some(RoomMembersChanged { room_id }) = action.downcast_ref()
+                    && self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == room_id)
+                {
+                    submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
+                    continue;
+                }
+
                 match action.downcast_ref() {
                     Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. }) => {
                         self.update_children_in_space(cx, space_id, children);
@@ -1481,6 +1497,9 @@ impl SpaceLobbyScreen {
         self.space_avatar_state = AvatarState::Unknown;
         self.set_space_topic(cx, None);
         self.is_loading = true;
+        // Hide the invite button until we know whether the user can invite others to this space.
+        self.view.button(cx, ids!(header.parent_space_row.parent_space_buttons.invite_button)).set_visible(cx, false);
+        submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: space_name_id.room_id().clone() });
 
         // Clear the filter bar when switching to a new space.
         self.filter_keywords.clear();

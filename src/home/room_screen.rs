@@ -1643,7 +1643,7 @@ impl Widget for RoomScreen {
                             &content,
                             item_drawn_status,
                             shows_collapse_line,
-                            shows_invite_button,
+                            shows_invite_button && tl_state.user_power.can_invite(),
                         ),
                         ItemDraw::DateDivider(millis) => {
                             let (item, existed) = list.item_with_existed(cx, item_id, id!(DateDivider));
@@ -3344,7 +3344,7 @@ impl RoomScreen {
         // 4. Subscribe to typing notices again if they're enabled, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
-                timeline_kind: tl_state.kind.clone(),
+                room_id: room_id.clone(),
             });
             submit_async_request(MatrixRequest::GetRoomMembers {
                 timeline_kind: tl_state.kind.clone(),
@@ -3695,6 +3695,7 @@ impl RoomScreen {
 
         self.room_name_id = Some(room_name_id.clone());
         self.timeline_kind = Some(timeline_kind.clone());
+        self.view.room_action_bar(cx, ids!(room_actions)).set_room_id(cx, Some(room_name_id.room_id().clone()));
 
         // Tell the room input bar which room/thread we're now displaying.
         // The list of room members is None for now, it'll get updated later.
