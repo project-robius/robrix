@@ -748,6 +748,19 @@ impl RoomActionTooltip {
         buttons: impl IntoIterator<Item = (WidgetRef, &'static str)>,
         position: TooltipPosition,
     ) -> bool {
+        // A button with a text label doesn't need a tooltip.
+        let icon_buttons = buttons.into_iter().filter(|(button, _)| button.text().is_empty());
+        self.handle_event_with_text_buttons(cx, event, icon_buttons, position)
+    }
+
+    /// Like [`Self::handle_event()`], but also for buttons whose text isn't a label, like an emoji that acts as their icon.
+    pub fn handle_event_with_text_buttons(
+        &mut self,
+        cx: &mut Cx,
+        event: &Event,
+        buttons: impl IntoIterator<Item = (WidgetRef, &'static str)>,
+        position: TooltipPosition,
+    ) -> bool {
         self.handle_event_with_options(cx, event, buttons, CalloutTooltipOptions { position, ..Default::default() }, 0.0)
     }
 
@@ -788,7 +801,7 @@ impl RoomActionTooltip {
             Event::Actions(actions) => {
                 let target = buttons.into_iter().find_map(|(button, text)| {
                     let rect = button.area().clipped_rect(cx);
-                    (button.visible() && button.text().is_empty()
+                    (button.visible()
                         && button.as_button().long_pressed(actions)
                         && rect.size.x > 0.0 && rect.size.y > 0.0
                     )
@@ -801,7 +814,7 @@ impl RoomActionTooltip {
                 && cx.fingers.first_mouse_button.is_none() => {
                 buttons.into_iter().find_map(|(button, text)| {
                     let rect = button.area().clipped_rect(cx);
-                    (button.visible() && button.text().is_empty()
+                    (button.visible()
                         && rect.size.x > 0.0 && rect.size.y > 0.0 && rect.contains(mouse.abs))
                         .then_some((button.widget_uid(), text, rect))
                 })

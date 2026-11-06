@@ -17,7 +17,7 @@ use crate::{
     utils::has_only_soft_keyboard,
 };
 
-/// The largest size of the popup, which fits 15 columns of emoji.
+/// The largest size of the popup, which fits 13 columns of emoji.
 const MAX_SIZE: DVec2 = dvec2(616.0, 560.0);
 /// The shortest the popover gets beside a message input, before it covers part of that input instead.
 const MIN_POPOVER_HEIGHT: f64 = 300.0;
@@ -310,12 +310,11 @@ impl EmojiPickerPopup {
         self.anchor = Anchor::None;
         cx.unblock_scrolling();
         let picker = self.child_refs(cx).picker.clone();
+        picker.hide_tooltip(cx);
         // The picker's search input took the key focus from whatever had it before, like a message input.
         if picker.has_search_focus(cx) {
             cx.revert_key_focus();
         }
-        // This also ends any dictation into the search.
-        picker.clear_search(cx);
         self.redraw(cx);
     }
 }
