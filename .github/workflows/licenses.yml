@@ -69,11 +69,8 @@ jobs:
           ref: main
           token: ${{ secrets.LICENSES_PUSH_TOKEN }}
 
+      # No Rust cache, since nobody waits on this job and the build jobs need the repo's 10 GB.
       - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: "true"
 
       # cargo-about is pinned to the version that generated the committed files;
       # a different version can render the output differently. When bumping this

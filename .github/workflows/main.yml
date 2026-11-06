@@ -1,22 +1,11 @@
-# Trigger CI on PR updates and main branch pushes
-# Uses caching and selective path triggers to optimize performance
+# Trigger CI on PR updates, plus a nightly run on main
+# Uses selective path triggers to optimize performance
 
 name: Robrix CI
 
 # Only `main` branch
 on:
-    push:
-      branches:
-        - main
-      ## PRs must be up to date to merge, so `main` only reruns these to refresh its caches.
-      paths:
-        - .cargo/**
-        - .github/**
-        - Cargo.lock
-        - Cargo.toml
-        - rust-toolchain.toml
-
-    ## Keeps the caches current with new Rust releases, and covers merges that skipped CI.
+    ## Covers merges that skipped CI, and catches new lints in Rust releases.
     schedule:
       - cron: '0 8 * * *'
 
@@ -55,12 +44,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/install-linux-deps
+      ## Clippy never links, so makepad's wayland build script only needs these files to exist.
+      - name: Stub out wayland's pkg-config files
+        run: |
+          mkdir -p "$RUNNER_TEMP/pkgconfig"
+          for lib in wayland-client wayland-egl; do
+            printf 'Name: %s\nDescription: Stub for clippy\nVersion: 1.0\n' "$lib" > "$RUNNER_TEMP/pkgconfig/$lib.pc"
+          done
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: ./.github/actions/setup-rust-cache
+      ## No Rust cache here, since the build jobs need nearly all of the repo's 10 GB, and clippy beats the slowest build without one.
       - run: cargo clippy --workspace --all-features --all-targets
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/pkgconfig
 
   typos:
     if: github.event.pull_request.draft == false
