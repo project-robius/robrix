@@ -174,7 +174,11 @@ script_mod! {
             name_input := FormTextInput { empty_text: "Enter a name for the room..." }
 
             FieldLabel { text: "Topic (optional)" }
-            topic_input := FormTextInput { empty_text: "What is this room about?" }
+            topic_input := FormTextInput {
+                height: Fit { max: FitBound.Rel{base: Base.Full, factor: 0.5} }
+                is_multiline: true
+                empty_text: "What is this room about?"
+            }
 
             FieldLabel { text: "Address (optional)" }
             View {
@@ -637,12 +641,7 @@ impl WidgetMatchEvent for CreateRoomModal {
             }
         }
 
-        // Pressing Enter in one of the inputs above the invite search box is like clicking Review.
-        let submitted_input = [ids!(name_input), ids!(topic_input), ids!(alias_input)].into_iter()
-            .any(|input| self.view.text_input(cx, input).returned(actions).is_some());
-        if self.state == CreateRoomModalState::EditingForm
-            && (self.view.button(cx, ids!(review_button)).clicked(actions) || submitted_input)
-        {
+        if self.state == CreateRoomModalState::EditingForm && self.view.button(cx, ids!(review_button)).clicked(actions) {
             self.show_review(cx);
         }
         if self.view.button(cx, ids!(back_button)).clicked(actions) {
