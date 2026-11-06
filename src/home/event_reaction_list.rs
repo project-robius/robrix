@@ -112,10 +112,15 @@ impl ReactionData {
     /// Returns this reaction with each emoji's shortcode in parentheses after it, e.g., "👍 (+1)".
     ///
     /// A run of the same emoji only gets one shortcode, after its last emoji.
-    /// We don't know a custom emoji's shortcode, so that's just "a custom emoji".
+    /// A custom emoji is just its `:shortcode:`, or "a custom emoji" if no sender named it.
     pub fn format_with_shortcodes(&self) -> String {
         if is_custom_emoji(&self.reaction) {
-            return "a custom emoji".into();
+            return self.reaction_senders.values()
+                .find_map(|info| info.shortcode.as_deref())
+                .map_or_else(
+                    || "a custom emoji".into(),
+                    |shortcode| format!(":{}:", shortcode.trim_matches(':')),
+                );
         }
         let mut text = String::new();
         let mut graphemes = self.reaction.graphemes(true).peekable();

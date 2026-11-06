@@ -9,7 +9,7 @@ use makepad_widgets::{image_cache::ImageBuffer, makepad_platform::event::finger:
 use matrix_sdk::reqwest::StatusCode;
 use matrix_sdk::{
     RoomState, media::{MediaFormat, MediaRequestParameters}, room::{RoomMember, reply::{EnforceThread, Reply}}, serde_helpers::extract_bundled_thread, ruma::{
-        EventId, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedRoomOrAliasId, OwnedTransactionId, RoomId, UserId, events::{
+        EventId, MxcUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedRoomOrAliasId, OwnedTransactionId, RoomId, UserId, events::{
             receipt::Receipt,
             room::{
                 ImageInfo, MediaSource, message::{
@@ -27,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, message_shield::MessageShieldWidgetRefExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, moderation::ReportTarget, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::{
+    app::{AppStateAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, message_shield::MessageShieldWidgetRefExt, navigation_tab_bar::NavigationBarAction, room_image_viewer::{fetch_full_image_for_viewer, get_image_file_details, open_mxc_media}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{get_image_cache_key, MediaCache, MediaCacheEntry}, moderation::ReportTarget, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::{
         user_profile::{RoomMembershipInfo, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
         user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_user_verification_state},
@@ -2417,6 +2417,21 @@ impl RoomScreen {
         } else {
             return false;
         };
+        // A link to media opens in the image viewer, along with who sent the message it's in.
+        let mxc_uri = <&MxcUri>::from(url.as_str());
+        if mxc_uri.is_valid() {
+            let message = action.as_widget_action()
+                .and_then(|action| action.group.as_ref())
+                .and_then(|group| portal_list.borrow()?.items().iter()
+                    .find_map(|(index, item)| (item.widget.widget_uid() == group.item_uid).then_some(*index))
+                )
+                .and_then(|index| {
+                    let tl = self.tl_state.as_ref()?;
+                    Some((tl.kind.clone(), tl.items.get(index)?.as_event()?.clone()))
+                });
+            open_mxc_media(cx, mxc_uri, message);
+            return true;
+        }
 
         let (room_or_alias_id, event_id) = match matrix_id {
             Some(MatrixId::Room(room_id)) => (room_id.into(), None),
