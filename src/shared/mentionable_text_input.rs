@@ -554,7 +554,7 @@ impl MentionableTextInputRef {
     }
 
     /// Updates the user's power levels. Refreshes an open `@` or `/` popup so that the
-    /// "Notify the entire room" entry and any moderation commands appear or disappear accordingly.
+    /// "Notify the entire room" entry and commands like /invite and /kick appear or disappear accordingly.
     pub fn set_user_power_levels(&self, cx: &mut Cx, user_power_levels: UserPowerLevels) {
         let Some(mut inner) = self.borrow_mut() else { return };
         if inner.user_power_levels != user_power_levels {

@@ -910,14 +910,12 @@ pub enum MatrixRequest {
         timeline_kind: TimelineKind,
         user_id: OwnedUserId,
     },
-    /// Sends a request to obtain the power levels for this room.
+    /// Sends a request to obtain the current user's power levels in this room or space.
     ///
-    /// The response is delivered back to the main UI thread via [`TimelineUpdate::UserPowerLevels`].
-    ///
-    /// Even though it operates on a room itself, this accepts a `TimelineKind`
-    /// in order to be able to send the fetched room member list to a specific timeline UI.
+    /// The response is delivered back to the main UI thread via a [`UserPowerLevelsUpdated`] action,
+    /// and also via [`TimelineUpdate::UserPowerLevels`] to each of this room's timelines.
     GetRoomPowerLevels {
-        timeline_kind: TimelineKind,
+        room_id: OwnedRoomId,
     },
     /// Toggles the given reaction to the given event in the given room.
     ToggleReaction {
@@ -3179,27 +3177,31 @@ async fn matrix_worker_task(
                 });
             },
 
-            MatrixRequest::GetRoomPowerLevels { timeline_kind } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
-                    log!("BUG: {timeline_kind} not found for room power levels request");
+            MatrixRequest::GetRoomPowerLevels { room_id } => {
+                let Some(client) = get_client() else { continue };
+                let Some(room) = client.get_room(&room_id) else {
+                    error!("Room {room_id} not found for room power levels request");
                     continue;
                 };
 
                 let Some(user_id) = current_user_id() else { continue };
 
                 let _power_levels_task = Handle::current().spawn(async move {
-                    match timeline.room().power_levels().await {
+                    match room.power_levels().await {
                         Ok(power_levels) => {
-                            log!("Successfully fetched power levels for {timeline_kind}.");
-                            if sender.send(TimelineUpdate::UserPowerLevels(
-                                UserPowerLevels::from(&power_levels, &user_id),
-                            )).is_err() {
-                                error!("Failed to send room power levels to UI.")
+                            let user_power_levels = UserPowerLevels::from(&power_levels, &user_id);
+                            // Spaces have no timelines, so for them we only post the action.
+                            let timeline_update_senders = ALL_JOINED_ROOMS.lock().unwrap().get(&room_id)
+                                .map(JoinedRoomDetails::all_timeline_update_senders)
+                                .unwrap_or_default();
+                            for sender in &timeline_update_senders {
+                                let _ = sender.send(TimelineUpdate::UserPowerLevels(user_power_levels));
                             }
                             SignalToUI::set_ui_signal();
+                            Cx::post_action(UserPowerLevelsUpdated { room_id, user_power_levels });
                         }
                         Err(e) => {
-                            error!("Failed to fetch power levels for {timeline_kind}: {e:?}");
+                            error!("Failed to fetch power levels for room {room_id}: {e:?}");
                         }
                     }
                 });
@@ -5082,6 +5084,7 @@ async fn update_room(
             if let Some(nupl) = new_room.user_power_levels
                 && old_room.user_power_levels.is_none_or(|oupl| oupl != nupl)
             {
+                Cx::post_action(UserPowerLevelsUpdated { room_id: new_room_id.clone(), user_power_levels: nupl });
                 let timeline_update_senders = get_timeline_update_senders(&new_room_id);
                 if !timeline_update_senders.is_empty() {
                     log!("Updating room {new_room_id} user power levels.");
@@ -5308,6 +5311,7 @@ async fn add_new_room(
         dm_user_id: new_room.dm_user_id.clone(),
         is_tombstoned: new_room.is_tombstoned,
         is_private: new_room.is_private,
+        user_power_levels: new_room.user_power_levels,
     }));
 
     Cx::post_action(AppStateAction::RoomLoadedSuccessfully {
@@ -7371,7 +7375,7 @@ async fn run_ios_web_auth_session(url: &str) -> Result<Option<Url>, Error> {
 
 bitflags! {
     /// The powers that a user has in a given room.
-    #[derive(Copy, Clone, Default, PartialEq, Eq)]
+    #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
     pub struct UserPowerLevels: u64 {
         const Ban = 1 << 0;
         const Invite = 1 << 1;
@@ -7459,10 +7463,10 @@ impl UserPowerLevels {
 
     /// Returns the powers to assume that a user has until their real power levels arrive.
     ///
-    /// This avoids unexpectedly hiding any regular UI elements,
-    /// but moderation actions must only be offered to users who really can perform them.
+    /// This avoids unexpectedly hiding any regular UI elements, but inviting
+    /// and moderation actions must only be offered to users who really can perform them.
     pub fn assumed_until_fetched() -> Self {
-        Self::all() - (Self::Ban | Self::Kick | Self::Redact)
+        Self::all() - (Self::Ban | Self::Invite | Self::Kick | Self::Redact)
     }
 
     pub async fn from_room(room: &Room, user_id: &UserId) -> Option<Self> {
@@ -7523,6 +7527,15 @@ impl UserPowerLevels {
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
     }
+}
+
+/// The current user's power levels in the given room or space, posted whenever they're fetched or changed.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub struct UserPowerLevelsUpdated {
+    pub room_id: OwnedRoomId,
+    pub user_power_levels: UserPowerLevels,
 }
 
 

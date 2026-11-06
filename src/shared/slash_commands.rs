@@ -23,6 +23,7 @@ impl SlashCommand {
     /// Returns whether a user with the given power levels can run this command.
     pub fn is_allowed(&self, user_power_levels: UserPowerLevels) -> bool {
         match self.name {
+            "invite" => user_power_levels.can_invite(),
             "kick" => user_power_levels.can_kick(),
             "ban" => user_power_levels.can_ban(),
             "unban" => user_power_levels.can_unban(),

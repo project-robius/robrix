@@ -13,7 +13,7 @@ use crate::{
     profile::user_verification_cache::{UserVerificationStatesUpdated, get_or_fetch_dm_user_verification_state},
     room::pane_dock::FRAME_PADDING,
     shared::{avatar::AvatarWidgetExt, verification_badge::UserVerificationBadgeWidgetExt},
-    sliding_sync::{MatrixRequest, RoomDataKind, TimelineEndpointsRecreated, submit_async_request},
+    sliding_sync::{MatrixRequest, RoomDataKind, TimelineEndpointsRecreated, UserPowerLevels, UserPowerLevelsUpdated, submit_async_request},
     utils::RoomNameId,
 };
 use super::{BasicRoomDetails, FetchedRoomAvatar, PredecessorRoomDetails, message_list::RoomDataSubscription, room_pane::RoomPaneKind};
@@ -357,6 +357,11 @@ impl Widget for RoomInfoView {
             {
                 self.show_avatar(cx);
             }
+            if let Some(UserPowerLevelsUpdated { room_id, user_power_levels }) = action.downcast_ref()
+                && self.is_showing_room(room_id)
+            {
+                self.view.button(cx, ids!(invite_button)).set_visible(cx, user_power_levels.can_invite());
+            }
             if action.downcast_ref::<UserVerificationStatesUpdated>().is_some() {
                 self.view.redraw(cx);
             }
@@ -446,6 +451,13 @@ impl RoomInfoView {
         self.subscribe();
         self.show_room_name(cx);
         self.show_avatar(cx);
+        let user_power_levels = cx.has_global::<RoomsListRef>()
+            .then(|| cx.get_global::<RoomsListRef>().get_user_power_levels(room_name_id.room_id()))
+            .flatten();
+        if user_power_levels.is_none() {
+            submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_name_id.room_id().clone() });
+        }
+        self.view.button(cx, ids!(invite_button)).set_visible(cx, user_power_levels.is_some_and(UserPowerLevels::can_invite));
     }
 
     fn set_details(&mut self, cx: &mut Cx, details: RoomInfoDetails) {
