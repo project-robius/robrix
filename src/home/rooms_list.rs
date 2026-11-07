@@ -1177,6 +1177,7 @@ impl RoomsList {
         }
         if did_invited_rooms_change {
             enqueue_spaces_list_update(SpacesListUpdate::InvitedSpacesChanged);
+            cx.action(RoomFilterBubblesAction::HasInvites(!self.invited_rooms.borrow().is_empty()));
         }
         if num_updates > 0 {
             self.redraw(cx);
@@ -1721,6 +1722,7 @@ impl Widget for RoomsList {
                 // Clear widget state upon logout.
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                     self.invited_rooms.borrow_mut().clear();
+                    cx.action(RoomFilterBubblesAction::HasInvites(false));
                     self.all_joined_rooms.clear();
                     self.all_known_rooms_order.clear();
                     self.selected_space = None;
