@@ -172,6 +172,7 @@ script_mod! {
                         smoothing: 0.15
                         // Lets a mouse wheel scroll it sideways.
                         use_vertical_finger_scroll: true
+                        hide_keyboard_on_scroll: false
                     }
                 }
                 frequently_used := mod.widgets.EmojiCategoryButton { draw_icon +: { svg: (ICON_HISTORY) } }
@@ -209,6 +210,7 @@ script_mod! {
             // The right side also holds the scroll bar.
             padding: Inset{left: 6, right: 10, bottom: 6}
             reuse_items: true
+            hide_keyboard_on_scroll: false
 
             section_header := View {
                 width: Fill, height: #(HEADER_ROW_HEIGHT)
