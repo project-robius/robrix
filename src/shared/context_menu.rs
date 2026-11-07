@@ -194,32 +194,6 @@ pub fn get_keyboard_height(event: &Event) -> Option<f64> {
     })
 }
 
-/// The widget that a popup was opened for, which the popup follows as it moves,
-/// e.g., when the soft keyboard shrinks the room screen.
-#[derive(Default)]
-pub struct PopupAnchor {
-    widget: WidgetRef,
-    anchored_pos: DVec2,
-}
-
-impl PopupAnchor {
-    pub fn new(cx: &Cx, widget: WidgetRef) -> Self {
-        let anchored_pos = widget.area().rect(cx).pos;
-        Self { widget, anchored_pos }
-    }
-
-    /// Makes `get_movement()` measure from where the widget is now.
-    pub fn reset(&mut self, cx: &Cx) {
-        self.anchored_pos = self.widget.area().rect(cx).pos;
-    }
-
-    /// Returns how far the widget moved since `new()` or `reset()`, or zero if it isn't drawn.
-    pub fn get_movement(&self, cx: &Cx) -> DVec2 {
-        let rect = self.widget.area().rect(cx);
-        if rect.size.y > 0.0 { rect.pos - self.anchored_pos } else { DVec2::default() }
-    }
-}
-
 /// Returns the part of the window a popup can draw in, `edge_gap` away from the safe area and the soft keyboard.
 ///
 /// The soft keyboard can pan `overlay_origin` up, past the top of the window.

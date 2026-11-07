@@ -14,7 +14,7 @@ use std::sync::Arc;
 use emojis::Emoji;
 use makepad_widgets::*;
 use crate::{
-    shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, context_menu::{PopupAnchor, get_keyboard_height, get_popup_bounds}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
+    shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, context_menu::{get_keyboard_height, get_popup_bounds}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
     utils::RoomNameId,
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedUserId};
@@ -151,8 +151,10 @@ pub struct MentionablePopup {
     #[rust] cancel_scope: Option<CancelScope>,
     /// The location of the text input cursor that this popup is positioned near.
     #[rust] anchor_rect: Rect,
-    /// The source widget, which `anchor_rect` moves along with.
-    #[rust] anchor_source: PopupAnchor,
+    /// The source widget, which `anchor_rect` moves along with (e.g., as the soft keyboard shrinks the room screen).
+    #[rust] anchor_source: WidgetRef,
+    /// Where `anchor_source` was when we set `anchor_rect`.
+    #[rust] anchor_source_pos: DVec2,
     /// How much of the window the soft keyboard covers, which the popup stays above.
     #[rust] keyboard_height: f64,
     /// The MentionableTextInput widget instance that opened and is controlling this popup.
@@ -310,7 +312,12 @@ impl MentionablePopup {
     fn position_content(&mut self, cx: &mut Cx2d) {
         let edge = 10.0;
         let gap = 16.0; // space between the current line of text and the popup border
-        let anchor = self.anchor_rect.translate(self.anchor_source.get_movement(cx));
+        let source_rect = self.anchor_source.area().rect(cx);
+        let anchor = if source_rect.size.y > 0.0 {
+            self.anchor_rect.translate(source_rect.pos - self.anchor_source_pos)
+        } else {
+            self.anchor_rect
+        };
         // The anchor is in absolute coords (relative to the whole app window),
         // but the margins are relatively to the overlay container.
         let overlay = cx.turtle().origin();
@@ -415,7 +422,8 @@ impl MentionablePopupRef {
             inner.source_widget = Some(source_uid);
             if is_first_anchor {
                 inner.anchor_rect = anchor_rect;
-                inner.anchor_source = PopupAnchor::new(cx, source_widget.clone());
+                inner.anchor_source = source_widget.clone();
+                inner.anchor_source_pos = source_widget.area().rect(cx).pos;
                 inner.trigger_start_byte = Some(trigger_start_byte);
             }
             if !inner.is_open || is_first_anchor {
@@ -487,7 +495,7 @@ impl MentionablePopupRef {
         if let Some(mut inner) = self.borrow_mut() {
             if inner.is_open && inner.owner == Some(owner) && inner.anchor_rect != anchor {
                 inner.anchor_rect = anchor;
-                inner.anchor_source.reset(cx);
+                inner.anchor_source_pos = inner.anchor_source.area().rect(cx).pos;
                 inner.redraw(cx);
             }
         }
