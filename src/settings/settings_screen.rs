@@ -44,8 +44,6 @@ script_mod! {
                 // The section listing the other room directories that we search.
                 room_directory_settings := RoomDirectorySettings {}
 
-                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
-
                 // The privacy settings section.
                 privacy_settings := PrivacySettings {}
 
