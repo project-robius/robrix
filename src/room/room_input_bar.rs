@@ -127,6 +127,7 @@ script_mod! {
                 send_message_button := RobrixPositiveIconButton {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
+                    hide_keyboard_on_tap: false
                     padding: 8
                     margin: Inset { top: 4, left: 4, right: 4, bottom: 5}
                     spacing: 0,
