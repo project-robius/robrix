@@ -42,6 +42,9 @@ pub struct AppPreferences {
     /// Max height of image thumbnails in the room timeline.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub thumbnail_max_height: ThumbnailMaxHeight,
+    /// How the previews of links in messages look, if they're shown at all.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub link_preview_style: LinkPreviewStyle,
     /// UI-wide zoom level, which scaled the entire UI (not just text).
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub ui_zoom: UiZoom,
@@ -86,6 +89,7 @@ impl Default for AppPreferences {
             hide_header_on_scroll: true,
             hide_bottom_bars_on_scroll: false,
             thumbnail_max_height: ThumbnailMaxHeight::default(),
+            link_preview_style: LinkPreviewStyle::default(),
             ui_zoom: UiZoom::default(),
             read_receipts_privacy: ReadReceiptsPrivacy::default(),
             mark_as_read_behavior: MarkAsReadBehavior::default(),
@@ -170,6 +174,13 @@ impl AppPreferences {
         // Now that we've updated the `IMG_MSG_FIT.max` object in place,
         // we need to instruct every widget that uses this object to re-read
         // the new value and update their whole widget tree accordingly.
+        cx.request_script_reapply();
+    }
+
+    /// Applies the current `link_preview_style` value.
+    pub fn on_link_preview_style_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.link_preview_style = self.link_preview_style;
+        // This makes every timeline re-populate its messages, which rebuilds their link previews.
         cx.request_script_reapply();
     }
 
@@ -277,6 +288,7 @@ impl AppPreferences {
         self.on_hide_header_on_scroll_changed(cx);
         self.on_hide_bottom_bars_on_scroll_changed(cx);
         self.on_thumbnail_max_height_changed(cx);
+        self.on_link_preview_style_changed(cx);
         self.on_ui_zoom_changed(cx);
         self.on_read_receipts_privacy_changed(cx);
         self.on_mark_as_read_behavior_changed(cx);
@@ -362,6 +374,39 @@ impl ThumbnailMaxHeight {
             Self::Medium => 300,
             Self::Large => 400,
             Self::Custom(v) => *v,
+        }
+    }
+}
+
+/// How the previews of links in messages look.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LinkPreviewStyle {
+    /// A card with the image beside the text, or above it if there isn't enough room.
+    /// Links to images (like GIFs) show a bigger image instead.
+    #[default]
+    Automatic,
+    /// Always a card with the image beside the text.
+    Compact,
+    /// Always a card with the image above the text, or a bigger image for links to images.
+    Large,
+    /// Link previews aren't shown, or even fetched.
+    Off,
+}
+impl LinkPreviewStyle {
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            1 => Self::Compact,
+            2 => Self::Large,
+            3 => Self::Off,
+            _ => Self::Automatic,
+        }
+    }
+    pub fn to_index(self) -> usize {
+        match self {
+            Self::Automatic => 0,
+            Self::Compact => 1,
+            Self::Large => 2,
+            Self::Off => 3,
         }
     }
 }

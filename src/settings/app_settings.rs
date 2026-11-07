@@ -5,7 +5,7 @@ use makepad_widgets::*;
 use crate::{
     app::AppState,
     home::quick_reaction::QuickReaction,
-    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride, set_appearance}, text_rendering::{is_simpler_text_rendering_enabled, set_simpler_text_rendering}},
+    settings::{is_settings_screen_shown, app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, Appearance, AppearanceGlobal, LinkPreviewStyle, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride, set_appearance}, text_rendering::{is_simpler_text_rendering_enabled, set_simpler_text_rendering}},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -31,12 +31,8 @@ const READ_RECEIPTS_PRIVACY_DESC_OWN_DEVICES: &str =
 
 // The descriptions beneath each on/off toggle, as `(on, off)` pairs.
 const DOUBLE_TAP_TO_REACT_DESC: (&str, &str) = (
-    "<ul><li>Currently: double tapping/clicking a message toggles this reaction.</li><li>Type an emoji, a :shortcode:, or any text.</li></ul>",
+    "<ul><li>Currently: double tapping/clicking a message toggles this reaction.</li></ul>",
     "<ul><li>Currently: double-tapping a message does nothing.</li></ul>",
-);
-const SYNC_RECENT_EMOJIS_DESC: (&str, &str) = (
-    "<ul><li>Currently: your recent emoji are synced across your other Matrix clients.</li></ul>",
-    "<ul><li>Currently: your recent emoji are not synced and stay local to this device.</li></ul>",
 );
 const MOUSE_DRAG_SCROLLING_DESC: (&str, &str) = (
     "<ul><li>Currently: scroll via mouse wheel, trackpad, or clicking and dragging.</li></ul>",
@@ -63,6 +59,15 @@ const MARK_AS_READ_DESC_VIEWING: &str =
     "<ul><li>Currently: messages are marked as read after you scroll or interact with a timeline.</li></ul>";
 const MARK_AS_READ_DESC_MANUAL: &str =
     "<ul><li>Currently: you must mark each room as read manually.</li></ul>";
+
+const LINK_PREVIEW_STYLE_DESC_AUTOMATIC: &str =
+    "<ul><li>Currently: a link's image goes beside its text, or above it if there isn't enough room.</li><li>Links to images and GIFs show a bigger image.</li></ul>";
+const LINK_PREVIEW_STYLE_DESC_COMPACT: &str =
+    "<ul><li>Currently: a link's image always goes beside its text.</li></ul>";
+const LINK_PREVIEW_STYLE_DESC_LARGE: &str =
+    "<ul><li>Currently: a link's image always goes above its text.</li><li>Links to images and GIFs show a bigger image.</li></ul>";
+const LINK_PREVIEW_STYLE_DESC_OFF: &str =
+    "<ul><li>Currently: links in messages don't fetch or show previews.</li></ul>";
 
 
 script_mod! {
@@ -489,7 +494,7 @@ script_mod! {
 
         SubsectionLabel {
             margin: Inset{top: 10}
-            text: "Quick Reaction"
+            text: "Emojis & Reactions"
         }
 
         View {
@@ -508,11 +513,11 @@ script_mod! {
                 }
                 // Read-only while `double_tap_to_react_toggle` is off.
                 quick_reaction_input := RobrixTextInput {
-                    width: 40, height: Fit
+                    width: 50, height: Fit
                     // The toggle has more margin above it than below it.
                     margin: Inset{top: 5}
                     padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
-                    empty_text: "👍"
+                    empty_text: ":+1:"
                     autocapitalize: None,
                     autocorrect: Disabled,
                 }
@@ -520,24 +525,9 @@ script_mod! {
             double_tap_to_react_description := mod.widgets.SettingsSectionDescription {
                 body: "" // set dynamically, see `DOUBLE_TAP_TO_REACT_DESC`
             }
-        }
-
-        SubsectionLabel {
-            margin: Inset{top: 10}
-            text: "Recent Emoji"
-        }
-
-        View {
-            width: Fill, height: Fit
-            flow: Down,
-            margin: Inset{left: 6},
-
             sync_recent_emojis_toggle := mod.widgets.RobrixSettingsToggle {
                 active: true,
-                text: "Sync recent emoji"
-            }
-            sync_recent_emojis_description := mod.widgets.SettingsSectionDescription {
-                body: "" // set dynamically, see `SYNC_RECENT_EMOJIS_DESC`
+                text: "Sync recent emoji across devices"
             }
         }
 
@@ -606,7 +596,7 @@ script_mod! {
 
         SubsectionLabel {
             margin: Inset{top: 10}
-            text: "Maximum Height of Thumbnails"
+            text: "Maximum Height of Thumbnails & Previews"
         }
 
         View {
@@ -657,6 +647,38 @@ script_mod! {
                     }
                     text: "pixels"
                 }
+            }
+        }
+
+        SubsectionLabel {
+            margin: Inset{top: 10}
+            text: "Link Previews"
+        }
+
+        View {
+            width: Fill, height: Fit
+            flow: Down,
+            margin: Inset{left: 6},
+
+            View {
+                width: Fill, height: Fit
+                margin: Inset{top: 5, bottom: 5}
+                // `row_align` (not `align.y`) is what centers items within a wrapping row.
+                flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+
+                mod.widgets.SettingsItemLabel {
+                    width: Fit,
+                    text: "Link preview style:"
+                }
+
+                link_preview_style_dropdown := mod.widgets.RobrixSettingsDropDown {
+                    width: 220,
+                    labels: ["Automatic (default)", "Compact", "Large", "Off"]
+                    selected_item: 0
+                }
+            }
+            link_preview_style_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `LINK_PREVIEW_STYLE_DESC_*`
             }
         }
 
@@ -930,7 +952,6 @@ impl AppSettings {
             && enabled != app_state.app_prefs.sync_recent_emojis
         {
             app_state.app_prefs.sync_recent_emojis = enabled;
-            Self::update_toggle_description(cx, &self.view, ids!(sync_recent_emojis_description), enabled, SYNC_RECENT_EMOJIS_DESC);
             app_state.app_prefs.on_sync_recent_emojis_changed(cx);
             enqueue_popup_notification(
                 "Updated syncing of recent emoji.",
@@ -1054,6 +1075,20 @@ impl AppSettings {
                 app_state.app_prefs.on_read_receipts_privacy_changed(cx);
                 enqueue_popup_notification(
                     "Updated read receipt privacy.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
+            }
+        }
+
+        if is_shown && let Some(index) = self.view.drop_down2(cx, ids!(link_preview_style_dropdown)).changed(actions) {
+            let new_style = LinkPreviewStyle::from_index(index);
+            if new_style != app_state.app_prefs.link_preview_style {
+                app_state.app_prefs.link_preview_style = new_style;
+                Self::update_link_preview_style_description(cx, &self.view, new_style);
+                app_state.app_prefs.on_link_preview_style_changed(cx);
+                enqueue_popup_notification(
+                    "Updated link preview style.",
                     PopupKind::Success,
                     Some(3.0),
                 );
@@ -1222,9 +1257,11 @@ impl AppSettings {
         view.drop_down2(cx, ids!(mark_as_read_dropdown))
             .set_selected_item(cx, prefs.mark_as_read_behavior.to_index());
         Self::update_mark_as_read_description(cx, view, prefs.mark_as_read_behavior);
+        view.drop_down2(cx, ids!(link_preview_style_dropdown))
+            .set_selected_item(cx, prefs.link_preview_style.to_index());
+        Self::update_link_preview_style_description(cx, view, prefs.link_preview_style);
         Self::update_toggle_description(cx, view, ids!(double_tap_to_react_description), prefs.double_tap_to_react, DOUBLE_TAP_TO_REACT_DESC);
         Self::set_input_enabled(cx, view, ids!(quick_reaction_input), prefs.double_tap_to_react, Animate::No);
-        Self::update_toggle_description(cx, view, ids!(sync_recent_emojis_description), prefs.sync_recent_emojis, SYNC_RECENT_EMOJIS_DESC);
         Self::update_toggle_description(cx, view, ids!(mouse_drag_scrolling_description), prefs.mouse_drag_scrolling, MOUSE_DRAG_SCROLLING_DESC);
         Self::update_toggle_description(cx, view, ids!(show_read_receipts_description), prefs.show_read_receipts, SHOW_READ_RECEIPTS_DESC);
         Self::update_toggle_description(cx, view, ids!(show_typing_notices_description), prefs.show_typing_notices, SHOW_TYPING_NOTICES_DESC);
@@ -1273,6 +1310,16 @@ impl AppSettings {
             MarkAsReadBehavior::Manual => MARK_AS_READ_DESC_MANUAL,
         };
         view.html(cx, ids!(mark_as_read_description)).set_text(cx, text);
+    }
+
+    fn update_link_preview_style_description(cx: &mut Cx, view: &View, style: LinkPreviewStyle) {
+        let text = match style {
+            LinkPreviewStyle::Automatic => LINK_PREVIEW_STYLE_DESC_AUTOMATIC,
+            LinkPreviewStyle::Compact => LINK_PREVIEW_STYLE_DESC_COMPACT,
+            LinkPreviewStyle::Large => LINK_PREVIEW_STYLE_DESC_LARGE,
+            LinkPreviewStyle::Off => LINK_PREVIEW_STYLE_DESC_OFF,
+        };
+        view.html(cx, ids!(link_preview_style_description)).set_text(cx, text);
     }
 
     fn update_send_shortcut_description(cx: &mut Cx, view: &View, send_on_enter: bool) {

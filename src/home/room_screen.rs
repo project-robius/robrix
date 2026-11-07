@@ -403,6 +403,8 @@ script_mod! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
+                // Link preview cards size themselves by this view's width (`cqw`).
+                container_id: @message_content
 
                 message := HtmlOrPlaintext { }
                 link_preview_view := mod.widgets.LinkPreview {}

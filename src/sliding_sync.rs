@@ -3391,7 +3391,12 @@ async fn matrix_worker_task(
                     let result: Result<LinkPreviewData, UrlPreviewError> = async {
                         let client = get_client().ok_or(UrlPreviewError::ClientNotAvailable)?;
                         let request = get_media_preview::v1::Request::new(url);
-                        let response = client.send(request).await.map_err(UrlPreviewError::Request)?;
+                        // The server can fail to preview a link forever (e.g., one that can't be reached),
+                        // so we only retry a few times rather than leave its preview loading.
+                        let response = client.send(request)
+                            .with_request_config(client.request_config().retry_limit(3))
+                            .await
+                            .map_err(UrlPreviewError::Request)?;
                         match response.data {
                             Some(raw) => serde_json::from_str::<LinkPreviewData>(raw.get())
                                 .map_err(UrlPreviewError::Json),

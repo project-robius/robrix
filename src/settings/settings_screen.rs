@@ -36,9 +36,6 @@ script_mod! {
                 // The Robrix app settings section.
                 app_settings := AppSettings {}
 
-                // The privacy settings section.
-                privacy_settings := PrivacySettings {}
-
                 LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
                 // The recovery and encryption identity section.
@@ -47,12 +44,15 @@ script_mod! {
                 // The section listing the other room directories that we search.
                 room_directory_settings := RoomDirectorySettings {}
 
+                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
+
+                // The privacy settings section.
+                privacy_settings := PrivacySettings {}
+
                 // The TSP wallet settings section.
                 tsp_settings_screen := TspSettingsScreen {}
 
                 // Add other settings sections here. (Don't forget to add a `show()` fn)
-
-                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
                 // The About section, which should be the last item.
                 about_settings := AboutSettings {}

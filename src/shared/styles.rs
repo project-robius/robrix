@@ -13,6 +13,7 @@ script_mod! {
     mod.widgets.ICON_ADD_WALLET       = crate_resource("self://resources/icons/add_wallet.svg")
     mod.widgets.ICON_ARROW_LEFT       = crate_resource("self://resources/icons/arrow_left.svg")
     mod.widgets.ICON_ARROW_RIGHT      = crate_resource("self://resources/icons/arrow_right.svg")
+    mod.widgets.ICON_BROKEN_IMAGE     = crate_resource("self://resources/icons/broken_image.svg")
     mod.widgets.ICON_FORBIDDEN        = crate_resource("self://resources/icons/forbidden.svg")
     mod.widgets.ICON_CHECKMARK        = crate_resource("self://resources/icons/checkmark.svg")
     mod.widgets.ICON_CHEVRON_DOWN     = crate_resource("self://resources/icons/chevron_down.svg")
@@ -222,6 +223,8 @@ script_mod! {
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
     // Looks like COLOR_BG_PREVIEW atop white, but it also darkens a hovered or highlighted message behind it.
     mod.widgets.COLOR_BG_PREVIEW_TRANSLUCENT = #x1060FF10
+    // The area behind a link preview's image, a bit darker than the preview itself.
+    mod.widgets.COLOR_BG_LINK_PREVIEW_IMAGE = #x1060FF14
 
     // The light lavender of the room action buttons and room pane headers.
     mod.widgets.COLOR_BG_LAVENDER = #xEDE8FD
@@ -519,11 +522,6 @@ script_mod! {
     mod.widgets.COLOR_TOGGLE_MARK_ACTIVE = #x00000099
     mod.widgets.COLOR_TOGGLE_TEXT = #x000000BF
     mod.widgets.COLOR_TOGGLE_TEXT_DISABLED = #x0000001F
-
-    mod.widgets.COLOR_LINK_PREVIEW_TITLE_DOWN = #x000000BF
-    mod.widgets.COLOR_LINK_PREVIEW_TITLE_FOCUS = #x00000099
-    mod.widgets.COLOR_LINK_PREVIEW_UNDERLINE = #x00000099
-    mod.widgets.COLOR_LINK_PREVIEW_UNDERLINE_DOWN = #x000000BF
 
     mod.widgets.COLOR_MESSAGE_TABLE_HEADER_BG = #xFFFFFF0C
     mod.widgets.COLOR_MESSAGE_TABLE_BORDER = #x0000001F
