@@ -210,6 +210,7 @@ pub struct HideOnScrollView {
     /// The Settings and AddRoom pages' header and scrolling content, which only exist once that page has been shown.
     #[rust] settings_page: Option<PageRefs>,
     #[rust] add_room_page: Option<PageRefs>,
+    #[rust] is_soft_keyboard_up: bool,
 }
 
 #[derive(Clone)]
@@ -237,6 +238,13 @@ impl Widget for HideOnScrollView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let ChildRefs { header, bottom_bars, spaces_bar_wrapper, navigation_tab_bar, filter_input, .. } = self.child_refs(cx).clone();
         let (old_fraction, old_pill_state) = (self.hidden_fraction, self.pill.state);
+        // We go by the event's kind, not its height, since a floating Android keyboard reports no height.
+        if let Event::VirtualKeyboard(keyboard_event) = event {
+            self.is_soft_keyboard_up = matches!(
+                keyboard_event,
+                VirtualKeyboardEvent::WillShow { .. } | VirtualKeyboardEvent::DidShow { .. }
+            );
+        }
         if let Event::Actions(actions) = event {
             if actions.iter().any(|action|
                 matches!(action.downcast_ref(), Some(NavigationBarAction::TabSelected(_)))
@@ -384,8 +392,12 @@ impl Widget for HideOnScrollView {
             };
             // E.g., the rooms list scrolling to a room the user navigated to, or a page to what got key focus.
             let is_scrolling_by_itself = is_focus_scrolling || rooms_list.is_some_and(|list| list.is_smooth_scrolling().is_some());
-            // Only the rooms list's header has a filter bar, which keeps the bars shown while the user types into it.
-            let is_filtering = rooms_list.is_some() && filter_input.key_focus(cx);
+            // Only the rooms list's header has a filter bar, which keeps the bars shown while the user types into it
+            // (on a phone without a hardware keyboard, that's only while the soft keyboard is up).
+            let is_filtering = rooms_list.is_some() && filter_input.key_focus(cx)
+                && (self.is_soft_keyboard_up
+                    || cx.keyboard.has_physical_keyboard()
+                    || !cfg!(any(target_os = "android", target_os = "ios")));
             // A page always shows its bottom bars at its very top, e.g., once its content got too short to scroll.
             let is_page_at_top = rooms_list.is_none() && position_after.1 > -0.5;
             // Where the header's bottom edge rests. The rooms list's header reaches up behind the status bar,

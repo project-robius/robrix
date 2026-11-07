@@ -130,7 +130,7 @@ impl Widget for SettingsScreen {
                 )
             )
             || match event.hits(cx, area) {
-                Hit::FingerDown(_fde) => {
+                Hit::FingerDown(fde) if !fde.device.is_touch() => {
                     cx.set_key_focus(area);
                     false
                 }

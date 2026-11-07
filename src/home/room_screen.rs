@@ -6521,7 +6521,9 @@ impl Widget for Message {
         let message_view_area = self.view.area();
         let body_hit = handle_hover_hit(self, cx, event, message_view_area, claim_before, self.context_menu_trigger.is_menu_open);
         match body_hit {
-            Hit::FingerDown(_) => {
+            // On touch, taking the key focus would hide the keyboard
+            // even when the user is just scrolling the timeline.
+            Hit::FingerDown(fe) if !fe.device.is_touch() => {
                 cx.set_key_focus(message_view_area);
             }
             Hit::FingerUp(fe) => if let Some(details) = &self.details {

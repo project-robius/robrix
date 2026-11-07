@@ -847,22 +847,7 @@ impl AppSettings {
 
         let ui_zoom_input = self.view.text_input(cx, ids!(ui_zoom_input));
 
-        if is_shown && self.view.button(cx, ids!(ui_zoom_minus_button)).clicked(actions) {
-            let new_zoom = app_state.app_prefs.ui_zoom.zoom_out_by(UiZoom::BUTTON_STEP);
-            if new_zoom != app_state.app_prefs.ui_zoom {
-                app_state.app_prefs.ui_zoom = new_zoom;
-                app_state.app_prefs.on_ui_zoom_changed(cx);
-            }
-        }
-
-        if is_shown && self.view.button(cx, ids!(ui_zoom_plus_button)).clicked(actions) {
-            let new_zoom = app_state.app_prefs.ui_zoom.zoom_in_by(UiZoom::BUTTON_STEP);
-            if new_zoom != app_state.app_prefs.ui_zoom {
-                app_state.app_prefs.ui_zoom = new_zoom;
-                app_state.app_prefs.on_ui_zoom_changed(cx);
-            }
-        }
-
+        // A tap on minus or plus can blur the input in the same batch, so we commit what was typed first.
         if ui_zoom_input.returned(actions).is_some() || ui_zoom_input.key_focus_lost(actions) {
             let text = ui_zoom_input.text();
             match parse_zoom_percent(&text) {
@@ -884,6 +869,22 @@ impl AppSettings {
                     ui_zoom_input.set_text(cx, &app_state.app_prefs.ui_zoom.format_percent());
                 }
                 None => { }
+            }
+        }
+
+        if is_shown && self.view.button(cx, ids!(ui_zoom_minus_button)).clicked(actions) {
+            let new_zoom = app_state.app_prefs.ui_zoom.zoom_out_by(UiZoom::BUTTON_STEP);
+            if new_zoom != app_state.app_prefs.ui_zoom {
+                app_state.app_prefs.ui_zoom = new_zoom;
+                app_state.app_prefs.on_ui_zoom_changed(cx);
+            }
+        }
+
+        if is_shown && self.view.button(cx, ids!(ui_zoom_plus_button)).clicked(actions) {
+            let new_zoom = app_state.app_prefs.ui_zoom.zoom_in_by(UiZoom::BUTTON_STEP);
+            if new_zoom != app_state.app_prefs.ui_zoom {
+                app_state.app_prefs.ui_zoom = new_zoom;
+                app_state.app_prefs.on_ui_zoom_changed(cx);
             }
         }
 

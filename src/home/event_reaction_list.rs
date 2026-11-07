@@ -191,8 +191,10 @@ impl Widget for ReactionList {
             // Note: the `break` statements are used to break out of the loop over
             // all reaction buttons, since a hit event can only occur on one button.
             match event.hits(cx, button_area) {
-                Hit::FingerDown(..) => {
-                    cx.set_key_focus(button_area);
+                Hit::FingerDown(fde) => {
+                    if !fde.device.is_touch() {
+                        cx.set_key_focus(button_area);
+                    }
                     break;
                 }
                 Hit::FingerHoverIn(..) => {

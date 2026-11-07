@@ -326,7 +326,9 @@ impl Widget for RoomsListEntryContent {
             //       We should add a context menu for invited rooms.
             match hit {
                 Hit::FingerDown(fe) => {
-                    cx.set_key_focus(area);
+                    if !fe.device.is_touch() {
+                        cx.set_key_focus(area);
+                    }
                     if !self.is_invited && fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         self.is_context_menu_open = true;
                         cx.widget_action(
@@ -336,6 +338,9 @@ impl Widget for RoomsListEntryContent {
                     }
                 }
                 Hit::FingerLongPress(fe) if !self.is_invited => {
+                    // A long press can't be a scroll, so we take the key focus now,
+                    // and closing the menu gives it back to us instead of to the rooms filter.
+                    cx.set_key_focus(area);
                     self.is_context_menu_open = true;
                     cx.widget_action(
                         uid,

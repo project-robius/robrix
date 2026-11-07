@@ -81,7 +81,7 @@ impl Widget for CollapsibleHeader {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Handle hits on this view as a whole before passing the event to the inner view.
         match event.hits(cx, self.view.area()) {
-            Hit::FingerDown(..) => {
+            Hit::FingerDown(fe) if !fe.device.is_touch() => {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe)
