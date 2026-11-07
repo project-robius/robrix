@@ -21,7 +21,7 @@ use crate::{
         create_room_modal::{CreateRoomModalAction, CreateRoomModalWidgetRefExt}, event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, leave_space_modal::{LeaveSpaceModalAction, LeaveSpaceModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_buttons::enable_nav_history_buttons, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, clear_all_invited_rooms}, rooms_list_header::{RoomsListHeaderAction, SyncStatusGlobal, get_last_synced_at}, space_lobby::clear_space_lobby_states
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, inline_image::clear_inline_image_cache, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{RecentEmojis, RecentEmojisAction, clear_recent_emojis, handle_recent_emojis_action, restore_recent_emojis, save_recent_emojis}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::{UserVerificationRequestAction, VerificationAction}, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, get_keyboard_height, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, inline_image::clear_inline_image_cache, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{RecentEmojis, RecentEmojisAction, clear_recent_emojis, handle_recent_emojis_action, restore_recent_emojis, save_recent_emojis}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::{UserVerificationRequestAction, VerificationAction}, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
         show_dm_room_creation_confirmation,
@@ -433,15 +433,11 @@ impl MatchEvent for App {
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
-                let expected_dimensions = new_message_context_menu.show(cx, details, &own_reactions);
                 // Use the overlay container's rect (not the window's) to correctly position
                 // the context menu relative to the body area, which excludes the caption bar.
                 let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
-                let margin = menu_position_margin(cx, rect, abs_pos, expected_dimensions);
-                if let Some(mut main_content) = new_message_context_menu.view(cx, ids!(main_content)).borrow_mut() {
-                    main_content.walk.margin = margin;
-                }
+                self.ui.new_message_context_menu(cx, ids!(new_message_context_menu))
+                    .show(cx, details, &own_reactions, abs_pos - rect.pos);
                 self.ui.redraw(cx);
                 continue;
             }
@@ -977,6 +973,11 @@ impl AppMain for App {
         if let Event::WindowGeomChange(e) = event {
             self.app_state.app_prefs.refresh_ui_zoom_override(cx);
             self.window_geom.observe(&e.new_geom);
+        }
+
+        // The soft keyboard moves everything under a shown tooltip, which would then point at the wrong spot.
+        if get_keyboard_height(event).is_some() {
+            self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
         }
 
         self.handle_ui_zoom_shortcuts(cx, event);

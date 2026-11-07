@@ -8,7 +8,7 @@ use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, TimelineEventIt
 
 use crate::{
     home::{event_reaction_list::get_typed_reaction, reaction_strip::ReactionStripWidgetExt, send_status_indicator::is_send_error_retryable},
-    shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside},
+    shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside, menu_position_margin},
     sliding_sync::{TimelineKind, UserPowerLevels},
 };
 
@@ -350,7 +350,13 @@ impl ContextMenuTrigger {
             // which also rules out presses owned by an open context menu overlay.
             Event::LongPress(lpe) if self.pressed_touch_uid == Some(lpe.uid)
                 && area.clipped_rect(cx).contains(lpe.abs)
-                && !is_excluded(cx, lpe.abs, true) => Some(lpe.abs),
+                && !is_excluded(cx, lpe.abs, true) =>
+            {
+                // A long press can't be a scroll, so we take the key focus now,
+                // and closing the menu gives it back to us instead of to the message input.
+                cx.set_key_focus(area);
+                Some(lpe.abs)
+            }
             _ => None,
         }
     }
@@ -402,6 +408,9 @@ pub struct NewMessageContextMenu {
     #[rust] cancel_scope: Option<CancelScope>,
     /// Whether to put the key focus in the reaction text input once it's drawn, since it can't take it before that.
     #[rust] is_reaction_input_focus_pending: bool,
+    /// Where this menu was opened, relative to the top-left of its container.
+    #[rust] anchor_in_container: DVec2,
+    #[rust] expected_size: DVec2,
 }
 
 impl Widget for NewMessageContextMenu {
@@ -410,6 +419,15 @@ impl Widget for NewMessageContextMenu {
             self.visible = false;
         };
 
+        // The soft keyboard can move our container while we're shown, so we follow our anchor on every draw.
+        if self.visible {
+            let container_rect = cx.turtle().rect();
+            let anchor_pos = container_rect.pos + self.anchor_in_container;
+            let margin = menu_position_margin(cx, container_rect, anchor_pos, self.expected_size);
+            if let Some(mut main_content) = self.view(cx, ids!(main_content)).borrow_mut() {
+                main_content.walk.margin = margin;
+            }
+        }
         let step = self.view.draw_walk(cx, scope, walk);
         if self.visible {
             let main_content_area = self.view(cx, ids!(main_content)).area();
@@ -607,12 +625,9 @@ impl NewMessageContextMenu {
         self.visible
     }
 
-    /// Shows this context menu with the given message details,
+    /// Shows this context menu with the given message details at `anchor_in_container`,
     /// leaving `own_reactions` (the reactions that the user already sent on it) out of its reaction strip.
-    ///
-    /// Returns the expected dimensions of the context menu,
-    /// which can be used to proactively reposition it such that it fits on screen.
-    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String]) -> DVec2 {
+    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2) {
         if details.abilities.contains(MessageAbilities::CanReact) {
             self.view.reaction_strip(cx, ids!(reaction_strip)).populate(cx, own_reactions);
         }
@@ -620,7 +635,8 @@ impl NewMessageContextMenu {
         self.visible = true;
         self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
-        self.set_button_visibility(cx)
+        self.anchor_in_container = anchor_in_container;
+        self.expected_size = self.set_button_visibility(cx);
     }
 
     /// Sets up all of the buttons based this context menu's inner details.
@@ -777,8 +793,8 @@ impl NewMessageContextMenuRef {
     }
 
     /// See [`NewMessageContextMenu::show()`].
-    pub fn show(&self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String]) -> DVec2 {
-        let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
-        inner.show(cx, details, own_reactions)
+    pub fn show(&self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show(cx, details, own_reactions, anchor_in_container);
     }
 }
