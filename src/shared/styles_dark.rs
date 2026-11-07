@@ -84,6 +84,8 @@ script_mod! {
     mod.widgets.COLOR_BG_PREVIEW = #x2B3240
     // Looks like COLOR_BG_PREVIEW atop a pane, but it also tints a hovered or highlighted message behind it.
     mod.widgets.COLOR_BG_PREVIEW_TRANSLUCENT = #x4D8DFF1F
+    // The area behind a link preview's image, a bit lighter than the preview itself.
+    mod.widgets.COLOR_BG_LINK_PREVIEW_IMAGE = #x4D8DFF1A
 
     // The dark lavender of the room action buttons and room pane headers.
     mod.widgets.COLOR_BG_LAVENDER = #x342F42
@@ -375,11 +377,6 @@ script_mod! {
     mod.widgets.COLOR_TOGGLE_MARK_ACTIVE = #xFFFFFF99
     mod.widgets.COLOR_TOGGLE_TEXT = #xFFFFFFBF
     mod.widgets.COLOR_TOGGLE_TEXT_DISABLED = #xFFFFFF54
-
-    mod.widgets.COLOR_LINK_PREVIEW_TITLE_DOWN = #xFFFFFFBF
-    mod.widgets.COLOR_LINK_PREVIEW_TITLE_FOCUS = #xFFFFFF99
-    mod.widgets.COLOR_LINK_PREVIEW_UNDERLINE = #xFFFFFF99
-    mod.widgets.COLOR_LINK_PREVIEW_UNDERLINE_DOWN = #xFFFFFFBF
 
     mod.widgets.COLOR_MESSAGE_TABLE_HEADER_BG = #xFFFFFF0C
     mod.widgets.COLOR_MESSAGE_TABLE_BORDER = #xFFFFFF1F
