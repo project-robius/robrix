@@ -38,10 +38,6 @@ const MOUSE_DRAG_SCROLLING_DESC: (&str, &str) = (
     "<ul><li>Currently: scroll via mouse wheel, trackpad, or clicking and dragging.</li></ul>",
     "<ul><li>Currently: scroll via mouse wheel or trackpad swipes.</li></ul>",
 );
-const SHOW_INVITES_IN_UNREAD_FILTERS_DESC: (&str, &str) = (
-    "<ul><li>Currently: the Unreads and Mentions filters also show your invites.</li></ul>",
-    "<ul><li>Currently: the Unreads and Mentions filters don't show your invites.</li></ul>",
-);
 const SHOW_READ_RECEIPTS_DESC: (&str, &str) = (
     "<ul><li>Currently: each message shows the avatars of people who have read it.</li></ul>",
     "<ul><li>Currently: messages don't show who has read them.</li></ul>",
@@ -586,11 +582,8 @@ script_mod! {
             margin: Inset{left: 6},
 
             show_invites_in_unread_filters_toggle := mod.widgets.RobrixSettingsToggle {
-                active: true,
-                text: "Show invites under Unreads and Mentions"
-            }
-            show_invites_in_unread_filters_description := mod.widgets.SettingsSectionDescription {
-                body: "" // set dynamically, see `SHOW_INVITES_IN_UNREAD_FILTERS_DESC`
+                active: false,
+                text: "Show Invites under Unreads & Mentions"
             }
         }
 
@@ -1021,7 +1014,6 @@ impl AppSettings {
             && show != app_state.app_prefs.show_invites_in_unread_filters
         {
             app_state.app_prefs.show_invites_in_unread_filters = show;
-            Self::update_toggle_description(cx, &self.view, ids!(show_invites_in_unread_filters_description), show, SHOW_INVITES_IN_UNREAD_FILTERS_DESC);
             app_state.app_prefs.on_show_invites_in_unread_filters_changed(cx);
             enqueue_popup_notification(
                 "Updated the Unreads and Mentions filters.",
@@ -1266,7 +1258,6 @@ impl AppSettings {
         Self::update_toggle_description(cx, view, ids!(show_read_receipts_description), prefs.show_read_receipts, SHOW_READ_RECEIPTS_DESC);
         Self::update_toggle_description(cx, view, ids!(show_typing_notices_description), prefs.show_typing_notices, SHOW_TYPING_NOTICES_DESC);
         Self::update_toggle_description(cx, view, ids!(send_typing_notices_description), prefs.send_typing_notices, SEND_TYPING_NOTICES_DESC);
-        Self::update_toggle_description(cx, view, ids!(show_invites_in_unread_filters_description), prefs.show_invites_in_unread_filters, SHOW_INVITES_IN_UNREAD_FILTERS_DESC);
 
         view.text_input(cx, ids!(ui_zoom_input))
             .set_text(cx, &prefs.ui_zoom.format_percent());

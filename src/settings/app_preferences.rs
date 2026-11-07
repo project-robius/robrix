@@ -70,7 +70,7 @@ pub struct AppPreferences {
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub room_directories: RoomDirectories,
     /// Whether the rooms list's Unreads and Mentions filters also show the rooms we've been invited to.
-    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub show_invites_in_unread_filters: bool,
 
     // Note: if you add a new preference here, be sure to add a new
@@ -98,7 +98,7 @@ impl Default for AppPreferences {
             send_typing_notices: true,
             show_message_shields: false,
             room_directories: RoomDirectories::default(),
-            show_invites_in_unread_filters: true,
+            show_invites_in_unread_filters: false,
         }
     }
 }
