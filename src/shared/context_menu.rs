@@ -162,8 +162,15 @@ pub fn close_context_menus(cx: &mut Cx, ui: &WidgetRef) {
 
 /// Returns a margin that positions the context menu at `anchor_pos`, opening towards the container's middle,
 /// but ensuring that it stays within the given `container_rect` and below the status bar.
+///
+/// This only considers the part of the container that's below the top of the window,
+/// since the soft keyboard can pan the container up past it.
 pub fn menu_position_margin(cx: &Cx, container_rect: Rect, anchor_pos: DVec2, menu_size: DVec2) -> Inset {
-    let center = container_rect.center();
+    let visible_top = container_rect.pos.y.max(0.0);
+    let center = dvec2(
+        container_rect.center().x,
+        (visible_top + container_rect.pos.y + container_rect.size.y) / 2.0,
+    );
     let x = if anchor_pos.x > center.x { anchor_pos.x - menu_size.x } else { anchor_pos.x };
     let y = if anchor_pos.y > center.y { anchor_pos.y - menu_size.y } else { anchor_pos.y };
     Inset {
@@ -172,7 +179,7 @@ pub fn menu_position_margin(cx: &Cx, container_rect: Rect, anchor_pos: DVec2, me
             .max(0.0),
         top: (y - container_rect.pos.y)
             .min(container_rect.size.y - menu_size.y)
-            .max(cx.display_context.safe_area_insets.top),
+            .max(visible_top - container_rect.pos.y + cx.display_context.safe_area_insets.top),
         right: 0.0,
         bottom: 0.0,
     }
