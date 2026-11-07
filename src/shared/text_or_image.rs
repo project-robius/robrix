@@ -63,7 +63,7 @@ impl Widget for TextOrImage {
         if let TextOrImageStatus::Image(mxc_uri) = &self.status {
             let image_area = self.view.image(cx, ids!(image_view.image)).area();
             match event.hits(cx, image_area) {
-                Hit::FingerDown(_) => {
+                Hit::FingerDown(fe) if !fe.device.is_touch() => {
                     cx.set_key_focus(image_area);
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {

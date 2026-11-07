@@ -172,7 +172,7 @@ impl Widget for Avatar {
         let Some(info) = self.info.as_ref() else { return };
         let area = self.view.area();
         match event.hits(cx, area) {
-            Hit::FingerDown(_fde) => {
+            Hit::FingerDown(fde) if !fde.device.is_touch() => {
                 cx.set_key_focus(area);
             }
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() && fue.was_tap() => {

@@ -787,7 +787,7 @@ impl Widget for SubspaceEntry {
         }
 
         match hit {
-            Hit::FingerDown(_) => {
+            Hit::FingerDown(fe) if !fe.device.is_touch() => {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe) => {

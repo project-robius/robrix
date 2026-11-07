@@ -78,7 +78,6 @@ script_mod! {
                     use_vertical_finger_scroll: true
                     // Lets a click-drag that starts on a bubble scroll it too, like a touch drag does.
                     mouse_drags_from_widgets: true
-                    hide_keyboard_on_scroll: false
                 }
             }
             // A scroll view's own right padding doesn't count towards how far it scrolls, but this one's does.

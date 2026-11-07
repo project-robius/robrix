@@ -1150,7 +1150,7 @@ where
         toggle.set_highlighted(cx, hovered);
     }
     match hit {
-        Hit::FingerDown(_) => {
+        Hit::FingerDown(fe) if !fe.device.is_touch() => {
             cx.set_key_focus(area);
             false
         }

@@ -77,7 +77,6 @@ script_mod! {
                         flow: Down
                         padding: Inset{right: #(LIST_SIDE_PADDING)} // room for scroll bar
                         emit_scroll_actions: false
-                        hide_keyboard_on_scroll: false
                         row := mod.widgets.AvatarListRow {}
                         command_row := mod.widgets.AvatarListRow {
                             avatar := View { width: 0, height: 0 }

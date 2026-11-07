@@ -733,7 +733,7 @@ impl Widget for MatrixHtmlSpan {
         let mut needs_redraw = false;
         for area in &self.drawn_areas {
             match event.hits(cx, *area) {
-                Hit::FingerDown(..) if self.grab_key_focus => {
+                Hit::FingerDown(fe) if self.grab_key_focus && !fe.device.is_touch() => {
                     cx.set_key_focus(self.area);
                 }
                 Hit::FingerHoverIn(..) if self.spoiler.is_some() => {
