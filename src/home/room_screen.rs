@@ -610,6 +610,7 @@ script_mod! {
             scroll_bar: ListScrollBar {}
 
             auto_tail: true, // set to `true` to lock the view to the last item.
+            keep_end_on_resize: true,
             // `draw_walk()` turns this on once the timeline is fully paginated;
             // before that, reaching the top back-paginates instead of bouncing.
             bounce_at_start: false,
@@ -660,75 +661,78 @@ script_mod! {
 
         room_actions := mod.widgets.RoomActionBar {}
 
-        room_screen_wrapper := SolidView {
-            width: Fill, height: Fill,
-            flow: Overlay,
+        // We shrink above the soft keyboard while one of our text inputs has the key focus.
+        keyboard_view := KeyboardView {
+            keyboard_resize: true
 
-            show_bg: true
-            draw_bg.color: (COLOR_PRIMARY_DARKER)
-
-            restore_status_view := RestoreStatusView {}
-
-            // This used to be a KeyboardView wrapper, but now the on-screen keyboard shift
-            // is handled by the top-level Window.
-            timeline_and_input_bar := View {
+            room_screen_wrapper := SolidView {
                 width: Fill, height: Fill,
-                flow: Down,
+                flow: Overlay,
 
-                // First, display the timeline of all messages/events,
-                // surrounded by any of this room's panes that are docked around it.
-                room_pane_dock := mod.widgets.RoomPaneDock {
-                    body +: { mid +: { center +: {
-                        timeline := mod.widgets.Timeline { }
-                    }}}
-                }
+                show_bg: true
+                draw_bg.color: (COLOR_PRIMARY_DARKER)
 
-                // Below that, display a typing notice when other users in the room are typing.
-                typing_notice := TypingNotice { }
+                restore_status_view := RestoreStatusView {}
 
-                // Below that, warn about any room member whose identity was reset.
-                identity_reset_banner := IdentityResetBanner { }
+                timeline_and_input_bar := View {
+                    width: Fill, height: Fill,
+                    flow: Down,
 
-                // Below that, warn about a failed message that is holding up this room's send queue.
-                failed_send_banner := FailedSendBanner { }
-
-                room_input_bar := RoomInputBar { }
-            }
-
-            // Note: here, we're within a View that has an Overlay flow,
-            // so the order that we define the below views determines which one is on top.
-
-            // The user profile sliding pane should be displayed on top of other "static" subviews
-            // (on top of all other views that are always visible).
-            user_profile_sliding_pane := mod.widgets.UserProfileSlidingPane { }
-
-            // The loading pane appears while the user is waiting for something in the room screen
-            // to finish loading, e.g., when loading an older replied-to message.
-            loading_pane := LoadingPane { }
-
-            // The popup menu for uploading/sending other content to this room,
-            // which is controlled by actions from the RoomInputBar.
-            room_input_popup_menu := RoomInputPopupMenu { }
-
-
-            /*
-             * TODO: add the action bar back in as a series of floating buttons.
-             *
-            message_action_bar_popup := PopupNotification {
-                align: Align{x: 0.0, y: 0.0}
-                content: {
-                    height: Fit,
-                    width: Fit,
-                    show_bg: false,
-                    align: Align{
-                        x: 0.5,
-                        y: 0.5
+                    // First, display the timeline of all messages/events,
+                    // surrounded by any of this room's panes that are docked around it.
+                    room_pane_dock := mod.widgets.RoomPaneDock {
+                        body +: { mid +: { center +: {
+                            timeline := mod.widgets.Timeline { }
+                        }}}
                     }
 
-                    message_action_bar := MessageActionBar {}
+                    // Below that, display a typing notice when other users in the room are typing.
+                    typing_notice := TypingNotice { }
+
+                    // Below that, warn about any room member whose identity was reset.
+                    identity_reset_banner := IdentityResetBanner { }
+
+                    // Below that, warn about a failed message that is holding up this room's send queue.
+                    failed_send_banner := FailedSendBanner { }
+
+                    room_input_bar := RoomInputBar { }
                 }
+
+                // Note: here, we're within a View that has an Overlay flow,
+                // so the order that we define the below views determines which one is on top.
+
+                // The user profile sliding pane should be displayed on top of other "static" subviews
+                // (on top of all other views that are always visible).
+                user_profile_sliding_pane := mod.widgets.UserProfileSlidingPane { }
+
+                // The loading pane appears while the user is waiting for something in the room screen
+                // to finish loading, e.g., when loading an older replied-to message.
+                loading_pane := LoadingPane { }
+
+                // The popup menu for uploading/sending other content to this room,
+                // which is controlled by actions from the RoomInputBar.
+                room_input_popup_menu := RoomInputPopupMenu { }
+
+
+                /*
+                 * TODO: add the action bar back in as a series of floating buttons.
+                 *
+                message_action_bar_popup := PopupNotification {
+                    align: Align{x: 0.0, y: 0.0}
+                    content: {
+                        height: Fit,
+                        width: Fit,
+                        show_bg: false,
+                        align: Align{
+                            x: 0.5,
+                            y: 0.5
+                        }
+
+                        message_action_bar := MessageActionBar {}
+                    }
+                }
+                */
             }
-            */
         }
     }
 }
@@ -6325,6 +6329,8 @@ pub enum MessageAction {
         /// in which the (0,0) origin coordinate is the top left corner of the app window.
         abs_pos: DVec2,
         own_reactions: Vec<String>,
+        /// The timeline item that the menu is for, which the menu follows as it moves.
+        item_uid: WidgetUid,
     },
     /// The user requested opening the message action bar
     ActionBarOpen {
@@ -6662,7 +6668,8 @@ impl Message {
 
     fn open_context_menu(&mut self, cx: &mut Cx, details: MessageDetails, abs_pos: DVec2) {
         let own_reactions = self.view.widget(cx, ids!(reaction_list)).as_reaction_list().get_own_reactions();
-        self.context_menu_trigger.open_menu(cx, details, abs_pos, own_reactions);
+        let uid = self.widget_uid();
+        self.context_menu_trigger.open_menu(cx, uid, details, abs_pos, own_reactions);
     }
 
     /// Returns the thread summary, or an empty ref if this message has never shown one.

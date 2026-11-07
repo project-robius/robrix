@@ -364,7 +364,7 @@ impl MentionableTextInput {
         let anchor = self.popup_anchor(cx);
         let trigger_start = self.active_trigger.map_or(0, |t| t.start_byte);
         let popup_ref = self.popup_ref(cx);
-        popup_ref.show(cx, uid, self.speech_text_input_ref().widget_uid(), anchor, trigger_start, kind.header(), kind.loading_message());
+        popup_ref.show(cx, uid, &self.speech_text_input_ref(), anchor, trigger_start, kind.header(), kind.loading_message());
 
         match kind {
             TriggerKind::User => self.match_members(cx, &popup_ref, query),

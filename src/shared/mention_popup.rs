@@ -14,7 +14,7 @@ use std::sync::Arc;
 use emojis::Emoji;
 use makepad_widgets::*;
 use crate::{
-    shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, context_menu::{get_keyboard_height, get_popup_bounds}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
+    shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, context_menu::{PopupAnchor, get_keyboard_height, get_popup_bounds}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
     utils::RoomNameId,
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedUserId};
@@ -151,6 +151,8 @@ pub struct MentionablePopup {
     #[rust] cancel_scope: Option<CancelScope>,
     /// The location of the text input cursor that this popup is positioned near.
     #[rust] anchor_rect: Rect,
+    /// The source widget, which `anchor_rect` moves along with.
+    #[rust] anchor_source: PopupAnchor,
     /// How much of the window the soft keyboard covers, which the popup stays above.
     #[rust] keyboard_height: f64,
     /// The MentionableTextInput widget instance that opened and is controlling this popup.
@@ -308,7 +310,7 @@ impl MentionablePopup {
     fn position_content(&mut self, cx: &mut Cx2d) {
         let edge = 10.0;
         let gap = 16.0; // space between the current line of text and the popup border
-        let anchor = self.anchor_rect;
+        let anchor = self.anchor_rect.translate(self.anchor_source.get_movement(cx));
         // The anchor is in absolute coords (relative to the whole app window),
         // but the margins are relatively to the overlay container.
         let overlay = cx.turtle().origin();
@@ -393,29 +395,31 @@ impl MentionablePopupRef {
         &self,
         cx: &mut Cx,
         owner: WidgetUid,
-        source_widget: WidgetUid,
+        source_widget: &WidgetRef,
         anchor_rect: Rect,
         trigger_start_byte: usize,
         header: &str,
         loading_message: &str,
     ) {
-        if source_widget == WidgetUid(0) {
+        let source_uid = source_widget.widget_uid();
+        if source_uid == WidgetUid(0) {
             self.cancel(cx);
             return;
         }
         {
             let Some(mut inner) = self.borrow_mut() else { return };
             let is_first_anchor = inner.owner != Some(owner)
-                || inner.source_widget != Some(source_widget)
+                || inner.source_widget != Some(source_uid)
                 || inner.trigger_start_byte != Some(trigger_start_byte);
             inner.owner = Some(owner);
-            inner.source_widget = Some(source_widget);
+            inner.source_widget = Some(source_uid);
             if is_first_anchor {
                 inner.anchor_rect = anchor_rect;
+                inner.anchor_source = PopupAnchor::new(cx, source_widget.clone());
                 inner.trigger_start_byte = Some(trigger_start_byte);
             }
             if !inner.is_open || is_first_anchor {
-                inner.cancel_scope = Some(cx.begin_widget_cancel_scope(source_widget.0, CancelScopeKind::Both));
+                inner.cancel_scope = Some(cx.begin_widget_cancel_scope(source_uid.0, CancelScopeKind::Both));
             }
             inner.is_open = true;
             inner.view.label(cx, ids!(main_content.header_view.header_label)).set_text(cx, header);
@@ -483,6 +487,7 @@ impl MentionablePopupRef {
         if let Some(mut inner) = self.borrow_mut() {
             if inner.is_open && inner.owner == Some(owner) && inner.anchor_rect != anchor {
                 inner.anchor_rect = anchor;
+                inner.anchor_source.reset(cx);
                 inner.redraw(cx);
             }
         }

@@ -1384,7 +1384,8 @@ impl Widget for SmallStateEvent {
         {
             let details = details.clone();
             self.animator_play(cx, ids!(bg_hover.on));
-            self.context_menu_trigger.open_menu(cx, details, abs_pos, Vec::new());
+            let uid = self.widget_uid();
+            self.context_menu_trigger.open_menu(cx, uid, details, abs_pos, Vec::new());
         }
 
         self.view.handle_event(cx, event, scope);
