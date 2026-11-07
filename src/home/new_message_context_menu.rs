@@ -8,7 +8,7 @@ use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, TimelineEventIt
 
 use crate::{
     home::{event_reaction_list::get_typed_reaction, reaction_strip::ReactionStripWidgetExt, send_status_indicator::is_send_error_retryable},
-    shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size, is_context_menu_cancelled, is_tap_outside, menu_position_margin},
+    shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, PopupAnchor, expected_menu_size, is_context_menu_cancelled, is_tap_outside, menu_position_margin},
     sliding_sync::{TimelineKind, UserPowerLevels},
 };
 
@@ -361,11 +361,11 @@ impl ContextMenuTrigger {
         }
     }
 
-    pub fn open_menu(&mut self, cx: &mut Cx, details: MessageDetails, abs_pos: DVec2, own_reactions: Vec<String>) {
+    pub fn open_menu(&mut self, cx: &mut Cx, item_uid: WidgetUid, details: MessageDetails, abs_pos: DVec2, own_reactions: Vec<String>) {
         self.is_menu_open = true;
         cx.widget_action(
             details.room_screen_widget_uid,
-            MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions },
+            MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions, item_uid },
         );
     }
 
@@ -410,6 +410,8 @@ pub struct NewMessageContextMenu {
     #[rust] is_reaction_input_focus_pending: bool,
     /// Where this menu was opened, relative to the top-left of its container.
     #[rust] anchor_in_container: DVec2,
+    /// The timeline item that we're for, which `anchor_in_container` moves along with.
+    #[rust] anchor_item: PopupAnchor,
     #[rust] expected_size: DVec2,
 }
 
@@ -419,10 +421,10 @@ impl Widget for NewMessageContextMenu {
             self.visible = false;
         };
 
-        // The soft keyboard can move our container while we're shown, so we follow our anchor on every draw.
+        // The soft keyboard can move our container or our item while we're shown, so we follow them on every draw.
         if self.visible {
             let container_rect = cx.turtle().rect();
-            let anchor_pos = container_rect.pos + self.anchor_in_container;
+            let anchor_pos = container_rect.pos + self.anchor_in_container + self.anchor_item.get_movement(cx);
             let margin = menu_position_margin(cx, container_rect, anchor_pos, self.expected_size);
             if let Some(mut main_content) = self.view(cx, ids!(main_content)).borrow_mut() {
                 main_content.walk.margin = margin;
@@ -627,7 +629,7 @@ impl NewMessageContextMenu {
 
     /// Shows this context menu with the given message details at `anchor_in_container`,
     /// leaving `own_reactions` (the reactions that the user already sent on it) out of its reaction strip.
-    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2) {
+    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2, item_uid: WidgetUid) {
         if details.abilities.contains(MessageAbilities::CanReact) {
             self.view.reaction_strip(cx, ids!(reaction_strip)).populate(cx, own_reactions);
         }
@@ -636,6 +638,7 @@ impl NewMessageContextMenu {
         self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
         self.anchor_in_container = anchor_in_container;
+        self.anchor_item = PopupAnchor::new(cx, cx.widget_tree().widget(item_uid));
         self.expected_size = self.set_button_visibility(cx);
     }
 
@@ -793,8 +796,8 @@ impl NewMessageContextMenuRef {
     }
 
     /// See [`NewMessageContextMenu::show()`].
-    pub fn show(&self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2) {
+    pub fn show(&self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2, item_uid: WidgetUid) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx, details, own_reactions, anchor_in_container);
+        inner.show(cx, details, own_reactions, anchor_in_container, item_uid);
     }
 }

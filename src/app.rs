@@ -431,13 +431,13 @@ impl MatchEvent for App {
             }
 
             // Handle an action requesting to open the new message context menu.
-            if let MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions } = action.as_widget_action().cast() {
+            if let MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions, item_uid } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 // Use the overlay container's rect (not the window's) to correctly position
                 // the context menu relative to the body area, which excludes the caption bar.
                 let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
                 self.ui.new_message_context_menu(cx, ids!(new_message_context_menu))
-                    .show(cx, details, &own_reactions, abs_pos - rect.pos);
+                    .show(cx, details, &own_reactions, abs_pos - rect.pos, item_uid);
                 self.ui.redraw(cx);
                 continue;
             }
