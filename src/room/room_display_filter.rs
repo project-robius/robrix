@@ -6,7 +6,7 @@ use matrix_sdk::{RoomDisplayName, ruma::{
     OwnedRoomAliasId, RoomAliasId, RoomId, events::tag::{TagName, Tags}
 }};
 
-use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, home::spaces_bar::JoinedSpaceInfo};
+use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, home::spaces_bar::JoinedSpaceInfo, sliding_sync::UserPowerLevels};
 
 static EMPTY_TAGS: Tags = BTreeMap::new();
 
@@ -23,6 +23,7 @@ pub trait FilterableRoom {
     fn is_direct(&self) -> bool;
     fn is_invite(&self) -> bool;
     fn is_space(&self) -> bool;
+    fn user_power_levels(&self) -> Option<UserPowerLevels>;
 
     /// Returns whether this room has any unread messages or mentions, or is marked as unread.
     fn has_unreads(&self) -> bool {
@@ -81,6 +82,10 @@ impl FilterableRoom for JoinedRoomInfo {
     fn is_space(&self) -> bool {
         false
     }
+
+    fn user_power_levels(&self) -> Option<UserPowerLevels> {
+        self.user_power_levels
+    }
 }
 
 impl FilterableRoom for InvitedRoomInfo {
@@ -133,6 +138,10 @@ impl FilterableRoom for InvitedRoomInfo {
     fn is_space(&self) -> bool {
         self.is_space
     }
+
+    fn user_power_levels(&self) -> Option<UserPowerLevels> {
+        None
+    }
 }
 
 impl FilterableRoom for JoinedSpaceInfo {
@@ -184,6 +193,10 @@ impl FilterableRoom for JoinedSpaceInfo {
 
     fn is_space(&self) -> bool {
         true
+    }
+
+    fn user_power_levels(&self) -> Option<UserPowerLevels> {
+        None
     }
 }
 

@@ -13,6 +13,7 @@ use crate::{
     home::rooms_list::SIDE_PADDING,
     room::room_display_filter::FilterableRoom,
     shared::styles::apply_lavender_button_style,
+    sliding_sync::UserPowerLevels,
 };
 
 script_mod! {
@@ -90,6 +91,7 @@ script_mod! {
                 mentions := mod.widgets.RoomFilterBubbleSlot { bubble := mod.widgets.RoomFilterBubble { text: "Mentions" } }
                 people := mod.widgets.RoomFilterBubbleSlot { bubble := mod.widgets.RoomFilterBubble { text: "People" } }
                 rooms := mod.widgets.RoomFilterBubbleSlot { bubble := mod.widgets.RoomFilterBubble { text: "Rooms" } }
+                mod_admin := mod.widgets.RoomFilterBubbleSlot { bubble := mod.widgets.RoomFilterBubble { text: "Mod/Admin" } }
                 favorites := mod.widgets.RoomFilterBubbleSlot { bubble := mod.widgets.RoomFilterBubble { text: "Favorites" } }
                 invites := mod.widgets.RoomFilterBubbleSlot { bubble := mod.widgets.RoomFilterBubble { text: "Invites" } }
                 low_priority := mod.widgets.RoomFilterBubbleSlot { bubble := mod.widgets.RoomFilterBubble { text: "Low Priority" } }
@@ -109,6 +111,7 @@ bitflags! {
         const Favorites   = 0b0001_0000;
         const Invites     = 0b0010_0000;
         const LowPriority = 0b0100_0000;
+        const ModAdmin    = 0b1000_0000;
     }
 }
 
@@ -121,6 +124,8 @@ impl BubbleFilters {
             Self::Mentions => room.unread_mentions() > 0,
             Self::People => room.is_direct(),
             Self::Rooms => !room.is_direct() && !room.is_space(),
+            Self::ModAdmin => !room.is_direct() && !room.is_space()
+                && room.user_power_levels().is_some_and(UserPowerLevels::is_mod_or_admin),
             Self::Favorites => room.tags().contains_key(&TagName::Favorite),
             Self::Invites => room.is_invite(),
             Self::LowPriority => room.tags().contains_key(&TagName::LowPriority),
@@ -138,20 +143,24 @@ impl BubbleFilters {
 }
 
 /// Groups of filters where selecting one hides the rest of its group.
-const EXCLUSIVE_GROUPS: [BubbleFilters; 3] = [
+const EXCLUSIVE_GROUPS: [BubbleFilters; 4] = [
     // Mentions are always unread, and the unread filters show either all invites or none of them.
     BubbleFilters::Unreads.union(BubbleFilters::Mentions).union(BubbleFilters::Invites),
-    BubbleFilters::People.union(BubbleFilters::Rooms),
+    // Mod/Admin rooms are always Rooms, never People.
+    BubbleFilters::People.union(BubbleFilters::Rooms).union(BubbleFilters::ModAdmin),
     // Invites don't have tags, and the SDK never lets a room be both a favorite and low priority.
     BubbleFilters::Favorites.union(BubbleFilters::LowPriority).union(BubbleFilters::Invites),
+    // We don't know our power levels in rooms we haven't joined.
+    BubbleFilters::ModAdmin.union(BubbleFilters::Invites),
 ];
 
 /// The ID of each bubble's slot, and the bubble's filter.
-const BUBBLES: [(LiveId, BubbleFilters); 7] = [
+const BUBBLES: [(LiveId, BubbleFilters); 8] = [
     (id!(unreads), BubbleFilters::Unreads),
     (id!(mentions), BubbleFilters::Mentions),
     (id!(people), BubbleFilters::People),
     (id!(rooms), BubbleFilters::Rooms),
+    (id!(mod_admin), BubbleFilters::ModAdmin),
     (id!(favorites), BubbleFilters::Favorites),
     (id!(invites), BubbleFilters::Invites),
     (id!(low_priority), BubbleFilters::LowPriority),
