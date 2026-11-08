@@ -22,7 +22,6 @@ pub trait FilterableRoom {
     fn tags(&self) -> &Tags;
     fn is_direct(&self) -> bool;
     fn is_invite(&self) -> bool;
-    fn is_space(&self) -> bool;
     fn user_power_levels(&self) -> Option<UserPowerLevels>;
 
     /// Returns whether this room has any unread messages or mentions, or is marked as unread.
@@ -78,11 +77,6 @@ impl FilterableRoom for JoinedRoomInfo {
         false
     }
 
-    // Joined spaces aren't in the rooms list.
-    fn is_space(&self) -> bool {
-        false
-    }
-
     fn user_power_levels(&self) -> Option<UserPowerLevels> {
         self.user_power_levels
     }
@@ -135,10 +129,6 @@ impl FilterableRoom for InvitedRoomInfo {
         true
     }
 
-    fn is_space(&self) -> bool {
-        self.is_space
-    }
-
     fn user_power_levels(&self) -> Option<UserPowerLevels> {
         None
     }
@@ -189,10 +179,6 @@ impl FilterableRoom for JoinedSpaceInfo {
 
     fn is_invite(&self) -> bool {
         false
-    }
-
-    fn is_space(&self) -> bool {
-        true
     }
 
     fn user_power_levels(&self) -> Option<UserPowerLevels> {

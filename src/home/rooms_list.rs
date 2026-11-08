@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, Mil
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, rooms_list_header::RoomsListHeaderAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
+        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, BubbleSelection, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, rooms_list_header::RoomsListHeaderAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
     },
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
@@ -631,7 +631,7 @@ pub struct RoomsList {
     /// The currently-active sort function for the list of rooms.
     #[rust] sort_fn: Option<Box<SortFn>>,
 
-    #[rust] bubble_filters: BubbleFilters,
+    #[rust] bubble_selection: BubbleSelection,
     /// Our copy of the app preference, which we re-read whenever the bubble filters change.
     #[rust] show_invites_in_unread_filters: bool,
 
@@ -699,7 +699,7 @@ macro_rules! should_display_room {
     ($self:expr, $room_id:expr, $room:expr) => {
         !$self.hidden_rooms.contains($room_id)
             && ($self.display_filter)($room)
-            && ($self.bubble_filters.is_empty() || $self.bubble_filters.matches($room, $self.show_invites_in_unread_filters))
+            && ($self.bubble_selection.is_empty() || $self.bubble_selection.matches($room, $self.show_invites_in_unread_filters))
             && ($self.selected_space.is_none()
                 || $self.rooms_in_selected_space.iter().any(|rooms| rooms.contains($room_id)))
     };
@@ -1238,7 +1238,7 @@ impl RoomsList {
     }
 
     fn is_mod_admin_active(&self) -> bool {
-        self.bubble_filters.contains(BubbleFilters::ModAdmin)
+        self.bubble_selection.active().contains(BubbleFilters::ModAdmin)
     }
 
     fn is_mod_admin_loading(&self) -> bool {
@@ -1281,7 +1281,7 @@ impl RoomsList {
 
     /// Returns whether the filter bar's keywords or any filter bubbles are filtering the rooms.
     fn is_filtering(&self) -> bool {
-        self.display_filter.is_some() || !self.bubble_filters.is_empty()
+        self.display_filter.is_some() || !self.bubble_selection.is_empty()
     }
 
     /// Updates the display filter and sort function based on the
@@ -1662,7 +1662,7 @@ impl Widget for RoomsList {
             if self.display_filter.is_some() {
                 cx.action(MainFilterAction::Clear);
             }
-            if !self.bubble_filters.is_empty() {
+            if !self.bubble_selection.is_empty() {
                 cx.action(RoomFilterBubblesAction::Clear);
             }
         }
@@ -1837,9 +1837,9 @@ impl Widget for RoomsList {
                     continue;
                 }
 
-                if let Some(RoomFilterBubblesAction::Changed(bubble_filters)) = action.downcast_ref() {
+                if let Some(RoomFilterBubblesAction::Changed(bubble_selection)) = action.downcast_ref() {
                     let was_mod_admin_active = self.is_mod_admin_active();
-                    self.bubble_filters = *bubble_filters;
+                    self.bubble_selection = *bubble_selection;
                     if !was_mod_admin_active && self.is_mod_admin_active() {
                         self.request_missing_power_levels(cx);
                     }
@@ -1850,7 +1850,7 @@ impl Widget for RoomsList {
 
                 if let Some(AppPreferencesAction::ShowInvitesInUnreadFiltersChanged(show)) = action.downcast_ref() {
                     self.show_invites_in_unread_filters = *show;
-                    if self.bubble_filters.intersects(BubbleFilters::Unreads | BubbleFilters::Mentions) {
+                    if self.bubble_selection.active().intersects(BubbleFilters::Unreads | BubbleFilters::Mentions) {
                         self.update_displayed_rooms(cx, false);
                     }
                     continue;
