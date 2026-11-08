@@ -9,7 +9,7 @@ use imbl::Vector;
 use makepad_widgets::{error, image_cache::image_size_by_data, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, recovery::{IdentityResetHandle, RecoveryError, RecoveryState}, secret_storage::SecretStorageError, CrossSigningResetAuthType, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, Receipts}, serde_helpers::extract_thread_root, ruma::{
+    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, recovery::{IdentityResetHandle, RecoveryError, RecoveryState}, secret_storage::SecretStorageError, CrossSigningResetAuthType, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, Receipts, RoomMemberRole}, serde_helpers::extract_thread_root, ruma::{
         api::{client::{alias::get_alias, authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             room::{
@@ -926,6 +926,12 @@ pub enum MatrixRequest {
     /// and also via [`TimelineUpdate::UserPowerLevels`] to each of this room's timelines.
     GetRoomPowerLevels {
         room_id: OwnedRoomId,
+    },
+    /// Reads the current user's power levels in many rooms, a few rooms at a time (or one at a time in the background),
+    /// and then sends all of them to the rooms list in one [`RoomsListUpdate::UpdatePowerLevels`].
+    GetPowerLevelsInRooms {
+        room_ids: Vec<OwnedRoomId>,
+        in_background: bool,
     },
     /// Toggles the given reaction to the given event in the given room.
     ToggleReaction {
@@ -3221,6 +3227,25 @@ async fn matrix_worker_task(
                             error!("Failed to fetch power levels for room {room_id}: {e:?}");
                         }
                     }
+                });
+            },
+
+            MatrixRequest::GetPowerLevelsInRooms { room_ids, in_background } => {
+                let rooms: Vec<Room> = get_client()
+                    .map(|client| room_ids.iter().filter_map(|room_id| client.get_room(room_id)).collect())
+                    .unwrap_or_default();
+                let _power_levels_task = Handle::current().spawn(async move {
+                    let user_power_levels: Vec<_> = stream::iter(rooms)
+                        .map(|room| async move {
+                            let user_power_levels = UserPowerLevels::from_room(&room, room.own_user_id()).await?;
+                            Some((room.room_id().to_owned(), user_power_levels))
+                        })
+                        .buffer_unordered(if in_background { 1 } else { *MAX_CONCURRENCY })
+                        .filter_map(std::future::ready)
+                        .collect()
+                        .await;
+                    // We send this even if some rooms failed, so the rooms list never waits on them forever.
+                    enqueue_rooms_list_update(RoomsListUpdate::UpdatePowerLevels { room_ids, user_power_levels });
                 });
             },
 
@@ -7484,6 +7509,9 @@ bitflags! {
         // const BeaconInfo = 1 << 56;
         // const CallMember = 1 << 57;
         // const MemberHints = 1 << 58;
+        // -------------------------------------
+        /// The user is a moderator, an admin, or one of the room's creators.
+        const ModOrAdmin = 1 << 59;
     }
 }
 impl UserPowerLevels {
@@ -7502,6 +7530,7 @@ impl UserPowerLevels {
         retval.set(UserPowerLevels::RoomRedaction, user_power >= power_levels.for_message(MessageLikeEventType::RoomRedaction));
         retval.set(UserPowerLevels::Sticker, user_power >= power_levels.for_message(MessageLikeEventType::Sticker));
         retval.set(UserPowerLevels::RoomPinnedEvents, user_power >= power_levels.for_state(StateEventType::RoomPinnedEvents));
+        retval.set(UserPowerLevels::ModOrAdmin, RoomMemberRole::suggested_role_for_power_level(user_power) != RoomMemberRole::User);
         retval
     }
 
@@ -7510,7 +7539,7 @@ impl UserPowerLevels {
     /// This avoids unexpectedly hiding any regular UI elements, but inviting
     /// and moderation actions must only be offered to users who really can perform them.
     pub fn assumed_until_fetched() -> Self {
-        Self::all() - (Self::Ban | Self::Invite | Self::Kick | Self::Redact)
+        Self::all() - (Self::Ban | Self::Invite | Self::Kick | Self::Redact | Self::ModOrAdmin)
     }
 
     pub async fn from_room(room: &Room, user_id: &UserId) -> Option<Self> {
@@ -7571,9 +7600,14 @@ impl UserPowerLevels {
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
     }
+
+    pub fn is_mod_or_admin(self) -> bool {
+        self.contains(UserPowerLevels::ModOrAdmin)
+    }
 }
 
-/// The current user's power levels in the given room or space, posted whenever they're fetched or changed.
+/// The current user's power levels in the given room or space,
+/// posted whenever they change or a [`MatrixRequest::GetRoomPowerLevels`] request fetches them.
 ///
 /// This is NOT a widget action.
 #[derive(Debug)]

@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, Mil
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
+        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, rooms_list_header::RoomsListHeaderAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
     },
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
@@ -263,6 +263,12 @@ pub enum RoomsListUpdate {
     UpdateIsPrivate {
         room_id: OwnedRoomId,
         is_private: bool,
+    },
+    /// Update the current user's power levels in a batch of rooms.
+    UpdatePowerLevels {
+        /// Every room in the batch, even the ones whose power levels we couldn't read.
+        room_ids: Vec<OwnedRoomId>,
+        user_power_levels: Vec<(OwnedRoomId, UserPowerLevels)>,
     },
     /// Remove the given room from the rooms list
     RemoveRoom {
@@ -629,6 +635,10 @@ pub struct RoomsList {
     /// Our copy of the app preference, which we re-read whenever the bubble filters change.
     #[rust] show_invites_in_unread_filters: bool,
 
+    /// Rooms whose power levels we asked for in a batch that hasn't come back yet.
+    #[rust] rooms_waiting_on_power_levels: FxHashSet<OwnedRoomId>,
+    #[rust] is_initial_sync_done: bool,
+
     /// The list of invited rooms currently displayed in the UI.
     #[rust] displayed_invited_rooms: Vec<OwnedRoomId>,
 
@@ -767,6 +777,9 @@ impl RoomsList {
         let mut needs_sort = false;
         let mut searchable_metadata_changed = false;
         let mut did_invited_rooms_change = false;
+        let mut did_bulk_load_rooms = false;
+        let mut got_power_levels = false;
+        let was_mod_admin_loading = self.is_mod_admin_loading();
         let num_displayed_rooms = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
             num_updates += 1;
@@ -1019,6 +1032,18 @@ impl RoomsList {
                 RoomsListUpdate::LoadedRooms { max_rooms } => {
                     self.max_known_rooms = max_rooms;
                 },
+                RoomsListUpdate::UpdatePowerLevels { room_ids, user_power_levels } => {
+                    for room_id in &room_ids {
+                        self.rooms_waiting_on_power_levels.remove(room_id);
+                    }
+                    for (room_id, user_power_levels) in user_power_levels {
+                        // A room's power levels may have changed while we were fetching them, so we keep any newer ones.
+                        if let Some(room) = self.all_joined_rooms.get_mut(&room_id) && room.user_power_levels.is_none() {
+                            room.user_power_levels = Some(user_power_levels);
+                        }
+                    }
+                    got_power_levels = true;
+                }
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.tags = new_tags;
@@ -1117,6 +1142,7 @@ impl RoomsList {
                         VecDiff::Append { values } => {
                             self.all_known_rooms_order.extend(values);
                             needs_sort = true;
+                            did_bulk_load_rooms = true;
                         }
                         VecDiff::Clear => {
                             self.all_known_rooms_order.clear();
@@ -1168,6 +1194,7 @@ impl RoomsList {
         }
         if (needs_sort && self.sort_fn.is_none())
             || (searchable_metadata_changed && self.display_filter.is_some())
+            || (got_power_levels && self.is_mod_admin_active())
         {
             self.update_displayed_rooms(cx, false);
         }
@@ -1179,9 +1206,45 @@ impl RoomsList {
             enqueue_spaces_list_update(SpacesListUpdate::InvitedSpacesChanged);
             cx.action(RoomFilterBubblesAction::HasInvites(!self.invited_rooms.borrow().is_empty()));
         }
+        // Rooms loaded in bulk (which ends with an Append) don't have their power levels yet,
+        // so we fetch those now if the initial sync is done or the Mod/Admin bubble needs them.
+        if did_bulk_load_rooms && (self.is_initial_sync_done || self.is_mod_admin_active()) {
+            self.request_missing_power_levels(cx);
+        }
+        if self.is_mod_admin_loading() != was_mod_admin_loading {
+            self.update_status();
+        }
         if num_updates > 0 {
             self.redraw(cx);
         }
+    }
+
+    /// Starts fetching the power levels of every loaded joined room that doesn't have them yet,
+    /// in the background unless the Mod/Admin bubble is waiting on them.
+    fn request_missing_power_levels(&mut self, cx: &mut Cx) {
+        // Rooms that are still loading in bulk aren't in this order yet, so we get to them once that's done.
+        let room_ids: Vec<OwnedRoomId> = self.all_known_rooms_order.iter()
+            .filter(|room_id| self.all_joined_rooms.get(*room_id).is_some_and(|room| room.user_power_levels.is_none())
+                && !self.rooms_waiting_on_power_levels.contains(*room_id))
+            .cloned()
+            .collect();
+        if room_ids.is_empty() { return; }
+        self.rooms_waiting_on_power_levels.extend(room_ids.iter().cloned());
+        submit_async_request(MatrixRequest::GetPowerLevelsInRooms { room_ids, in_background: !self.is_mod_admin_active() });
+        if self.is_mod_admin_active() {
+            self.update_status();
+            self.redraw(cx);
+        }
+    }
+
+    fn is_mod_admin_active(&self) -> bool {
+        self.bubble_filters.contains(BubbleFilters::ModAdmin)
+    }
+
+    fn is_mod_admin_loading(&self) -> bool {
+        // Rooms that are still loading in bulk have no order yet, and we haven't asked for their power levels.
+        let are_rooms_loading = self.all_known_rooms_order.is_empty() && !self.all_joined_rooms.is_empty();
+        self.is_mod_admin_active() && (are_rooms_loading || !self.rooms_waiting_on_power_levels.is_empty())
     }
 
     /// Updates the status message to show how many rooms have been loaded, how many
@@ -1192,6 +1255,10 @@ impl RoomsList {
     fn update_status(&mut self) {
         if self.is_selected_space_loading {
             self.status = "Loading rooms in this space and its subspaces…".into();
+            return;
+        }
+        if self.is_mod_admin_loading() {
+            self.status = "Checking your room roles…".into();
             return;
         }
 
@@ -1682,8 +1749,25 @@ impl Widget for RoomsList {
                 }
 
                 if let Some(UserPowerLevelsUpdated { room_id, user_power_levels }) = action.downcast_ref() {
-                    if let Some(room) = self.all_joined_rooms.get_mut(room_id) {
-                        room.user_power_levels = Some(*user_power_levels);
+                    let Some(room) = self.all_joined_rooms.get_mut(room_id) else { continue };
+                    room.user_power_levels = Some(*user_power_levels);
+                    if self.is_mod_admin_active() {
+                        let num_displayed_rooms = self.displayed_joined_rooms.len();
+                        self.add_or_remove_displayed_joined_room(room_id);
+                        if self.displayed_joined_rooms.len() != num_displayed_rooms {
+                            self.update_status();
+                            self.redraw(cx);
+                        }
+                    }
+                    continue;
+                }
+
+                // Once the initial sync is done, we fetch every room's power levels in the background,
+                // so the Mod/Admin bubble rarely has to wait for them.
+                if let Some(RoomsListHeaderAction::SetSyncStatus(status)) = action.downcast_ref() {
+                    if status.is_fully_synced && !self.is_initial_sync_done {
+                        self.is_initial_sync_done = true;
+                        self.request_missing_power_levels(cx);
                     }
                     continue;
                 }
@@ -1717,6 +1801,7 @@ impl Widget for RoomsList {
                 // A failed login ends the previous session, so we must never save its space graph for the next one.
                 if let Some(LoginAction::LoginFailure(_)) = action.downcast_ref() {
                     self.clear_saved_space_graph();
+                    self.is_initial_sync_done = false;
                 }
 
                 // Clear widget state upon logout.
@@ -1735,6 +1820,8 @@ impl Widget for RoomsList {
                     self.displayed_joined_room_ids.clear();
                     self.current_active_room = None;
                     self.max_known_rooms = None;
+                    self.rooms_waiting_on_power_levels.clear();
+                    self.is_initial_sync_done = false;
                     self.status = Cow::Borrowed("");
                     self.rescan_selected_space();
                     self.update_status();
@@ -1751,7 +1838,11 @@ impl Widget for RoomsList {
                 }
 
                 if let Some(RoomFilterBubblesAction::Changed(bubble_filters)) = action.downcast_ref() {
+                    let was_mod_admin_active = self.is_mod_admin_active();
                     self.bubble_filters = *bubble_filters;
+                    if !was_mod_admin_active && self.is_mod_admin_active() {
+                        self.request_missing_power_levels(cx);
+                    }
                     self.show_invites_in_unread_filters = cx.global::<AppPreferencesGlobal>().0.show_invites_in_unread_filters;
                     self.update_displayed_rooms(cx, true);
                     continue;
@@ -1955,13 +2046,14 @@ impl Widget for RoomsList {
                 else if portal_list_index == status_label_id {
                     let item = list.item(cx, portal_list_index, id!(status_label));
                     let label = item.label(cx, ids!(label));
+                    let shows_spinner = self.is_selected_space_loading || self.is_mod_admin_loading();
                     if let Some(mut spinner_and_label) = item.view(cx, ids!(spinner_and_label)).borrow_mut()
                         && let Some(mut inner) = label.borrow_mut()
                     {
                         // If the loading spinner is shown, we use left-aligned text to make it look clean,
                         // and then center the two of those as a group.
                         // If not, the text is centered as normal.
-                        if self.is_selected_space_loading {
+                        if shows_spinner {
                             spinner_and_label.walk.width = Size::fit();
                             inner.walk.width = Size::Fit {
                                 min: None,
@@ -1985,7 +2077,7 @@ impl Widget for RoomsList {
                     }
                     label.set_text(cx, &self.status);
                     item.child_by_path(ids!(loading_spinner))
-                        .set_visible(cx, self.is_selected_space_loading);
+                        .set_visible(cx, shows_spinner);
                     item.child_by_path(ids!(clear_filter_button))
                         .set_visible(cx, self.is_filtering());
                     item.draw_all(cx, &mut scope);
