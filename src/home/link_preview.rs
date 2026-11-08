@@ -26,6 +26,8 @@ const MAX_CACHE_ENTRIES_BEFORE_CLEANUP: usize = 100;
 const CACHE_ENTRY_MAX_AGE_SECS: u64 = 3600;
 /// How many previews we show before hiding the rest behind a "show more" button.
 const MAX_DEFAULT_VISIBLE_PREVIEWS: usize = 2;
+/// The tallest a link preview card can be, including its image and text.
+const MAX_CARD_HEIGHT: f64 = 300.0;
 
 /// An entry in the Link Preview cache with timestamp for cleanup.
 #[allow(clippy::large_enum_variant)]
@@ -197,7 +199,7 @@ script_mod! {
 
         image_view := mod.widgets.LinkPreviewImage {
             // `cqw` is the message's width here, and a 16:9 image takes up this whole height.
-            // `populate_card` caps it at the max thumbnail height, like an image in a message.
+            // `populate_card` caps it, so the whole card fits in `MAX_CARD_HEIGHT`.
             width: Fit, height: "(100cqw - 16px) * 0.5625"
             // We don't center it across, since that'd stretch it out to the message's width.
             align: Align{x: 0.0, y: 0.5}
@@ -722,21 +724,27 @@ where
             Size::Rel { base: Base::Parent, factor: 1.0 }
         };
     }
-    // An image is no taller than an image in a message, so a card with its text below
-    // its image (whose height adds them up) can't be taller than both of them either.
-    let max_image_height = cx.global::<AppPreferencesGlobal>().0.thumbnail_max_height.to_pixels() as f64;
+    // A card's height doesn't depend on its image, so we cap it, and an image above its text gets
+    // the rest of that height. That image is also no taller than an image in a message.
+    let text_height = match card.text_walk.height {
+        Size::Fixed(text_height) => text_height,
+        // An image-link card's text is just its one-line title.
+        _ => title_label.borrow().map_or(0.0, |label| utils::text_line_height(cx, &label.draw_text)),
+    };
+    let height_besides_image = card.view.borrow().map_or(0.0, |card_view| {
+        let layout = &card_view.layout;
+        let gap = if card.kind == CardKind::Responsive { layout.wrap_spacing } else { layout.spacing };
+        layout.padding.top + gap + text_height + layout.padding.bottom
+    });
+    let max_image_height = (cx.global::<AppPreferencesGlobal>().0.thumbnail_max_height.to_pixels() as f64)
+        .min(MAX_CARD_HEIGHT - height_besides_image);
     for image_area in [ids!(image_view), ids!(no_image_view)] {
         if let Some(mut view) = card.view.view(cx, image_area).borrow_mut() {
             view.walk.max_height = Some(FitBound::Abs(max_image_height));
         }
     }
-    if let Size::Fixed(text_height) = card.text_walk.height
-        && let Some(mut card_view) = card.view.borrow_mut()
-    {
-        let layout = &card_view.layout;
-        let gap = if card.kind == CardKind::Stacked { layout.spacing } else { layout.wrap_spacing };
-        let max_height = layout.padding.top + max_image_height + gap + text_height + layout.padding.bottom;
-        card_view.walk.max_height = Some(FitBound::Abs(max_height));
+    if let Some(mut card_view) = card.view.borrow_mut() {
+        card_view.walk.max_height = Some(FitBound::Abs(height_besides_image + max_image_height));
     }
     fully_drawn
 }
