@@ -57,8 +57,9 @@ script_mod! {
             margin: Inset{left: 2}
             padding: 0, spacing: 0
             align: Align{x: 0.5, y: 0.5}
-            // Clicking it shouldn't take the key focus away from the message, which hides the soft keyboard.
+            // Tapping it keeps the message focused, so the soft keyboard stays up while picking emoji.
             grab_key_focus: false
+            hide_keyboard_on_tap: false
             icon_walk: Walk{width: 22, height: 22}
             draw_icon +: {
                 svg: (ICON_EMOJI)
