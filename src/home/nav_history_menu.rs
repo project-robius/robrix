@@ -317,9 +317,10 @@ impl NavHistoryMenu {
         // The gap on the menu's right side never gets smaller than the gap on its left side.
         let width = full_width.min(container_rect.size.x - 2.0 * (anchor_pos.x - container_rect.pos.x));
         let one_row_height = BUTTON_HEIGHT + 2.0 * MENU_PADDING;
-        // The list must scroll if it's too long to fit beneath the anchor.
+        // The list must scroll if it's too long to fit between the anchor and the bottom safe area.
         let full_height = places.len() as f64 * BUTTON_HEIGHT + 2.0 * MENU_PADDING;
-        let height = full_height.min((container_rect.pos.y + container_rect.size.y - anchor_pos.y).max(one_row_height));
+        let space_below = container_rect.pos.y + container_rect.size.y - cx.display_context.safe_area_insets.bottom - anchor_pos.y;
+        let height = full_height.min(space_below.max(one_row_height));
         let margin = menu_position_margin(cx, container_rect, anchor_pos, dvec2(width, height));
         if let Some(mut main_content) = self.view(cx, ids!(main_content)).borrow_mut() {
             main_content.walk.margin = margin;
