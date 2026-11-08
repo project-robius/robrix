@@ -43,7 +43,7 @@ use crate::{
         room_filter_input_bar::MainFilterAction,
     },
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, RoomDiagnosticsReady, TimelineKind, UserPowerLevels, UserPowerLevelsUpdated, submit_async_request},
-    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{RoomNameId, VecDiff},
+    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{self, RoomNameId, VecDiff},
 };
 
 /// Whether to pre-paginate visible rooms at least once in order to
@@ -103,15 +103,15 @@ script_mod! {
 
     mod.widgets.RoomsListStatusLabel = View {
         width: Fill, height: Fit,
-        flow: Down,
+        flow: Flow.Right{wrap: true, row_align: RowAlign.Center},
         align: Align{ x: 0.5, y: 0 }
         padding: 15.0,
         spacing: 10,
+        wrap_spacing: 10,
 
-        View {
-            width: Fill, height: Fit,
+        spinner_and_label := View {
+            width: Fit, height: Fit,
             flow: Right,
-            align: Align{ x: 0.5, y: 0 }
 
             loading_spinner := LoadingSpinner {
                 visible: false,
@@ -1586,7 +1586,7 @@ impl Widget for RoomsList {
         let rooms_list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::empty())
         );
-        // Handle the "Clear filter" button below the status label being clicked.
+        // Handle the status label's "Clear filter" button being clicked.
         if !rooms_list_actions.is_empty()
             && self.is_filtering()
             && self.view.portal_list(cx, ids!(list)).items_with_actions(&rooms_list_actions).iter()
@@ -1955,17 +1955,30 @@ impl Widget for RoomsList {
                 else if portal_list_index == status_label_id {
                     let item = list.item(cx, portal_list_index, id!(status_label));
                     let label = item.label(cx, ids!(label));
-                    if let Some(mut inner) = label.borrow_mut() {
+                    if let Some(mut spinner_and_label) = item.view(cx, ids!(spinner_and_label)).borrow_mut()
+                        && let Some(mut inner) = label.borrow_mut()
+                    {
                         // If the loading spinner is shown, we use left-aligned text to make it look clean,
                         // and then center the two of those as a group.
                         // If not, the text is centered as normal.
                         if self.is_selected_space_loading {
+                            spinner_and_label.walk.width = Size::fit();
                             inner.walk.width = Size::Fit {
                                 min: None,
                                 max: Some(FitBound::Rel { base: Base::Line, factor: 1.0 }),
                             };
                             inner.align.x = 0.0;
                         } else {
+                            // The text only takes the width it needs, so the "Clear filter" button can fit beside it,
+                            // but it still wraps onto centered lines if it doesn't fit on one.
+                            let text_width = utils::unwrapped_text_width(cx, &inner.draw_text, &self.status);
+                            spinner_and_label.walk.width = Size::Fill {
+                                weight: 100.0,
+                                basis: FitBound::Abs(0.0),
+                                shrink: 0.0,
+                                min: None,
+                                max: Some(text_width.ceil()),
+                            };
                             inner.walk.width = Size::fill();
                             inner.align.x = 0.5;
                         }
