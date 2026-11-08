@@ -606,7 +606,7 @@ impl Widget for SpacesBar {
                         let num_joined = self.displayed_joined_spaces.len();
                         let text: Cow<'static, str> = if self.is_filtered {
                             let total = self.all_joined_spaces.len();
-                            format!("{num_joined} of {total} spaces").into()
+                            format!("{num_joined} of {total} spaces match.").into()
                         } else {
                             match num_joined {
                                 0   => "Found no joined spaces.".into(),
