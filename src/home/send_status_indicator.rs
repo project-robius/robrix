@@ -205,6 +205,11 @@ impl SendStatusInfo {
             SendStatusIcon::Sent => Some(SendStatusLabel::Sent),
         }
     }
+
+    /// Returns whether we show anything, since a sent message only shows that while it's our newest one nobody has read.
+    fn is_shown(&self) -> bool {
+        self.icon != SendStatusIcon::Sent || self.is_newest_sent
+    }
 }
 
 /// Actions emitted by the send status indicator widget.
@@ -294,7 +299,7 @@ impl Widget for SendStatusIndicator {
             self.area = Area::Empty;
             return DrawStep::done();
         };
-        if info.icon == SendStatusIcon::Sent && !info.is_newest_sent {
+        if !info.is_shown() {
             self.area = Area::Empty;
             return DrawStep::done();
         }
@@ -480,6 +485,11 @@ impl SendStatusIndicatorRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_from_event(cx, event_tl_item, is_newest_sent, is_blocked_by_failed_send, is_room_encrypted);
+    }
+
+    /// Returns whether this indicator shows anything.
+    pub fn is_shown(&self) -> bool {
+        self.borrow().is_some_and(|inner| inner.info.as_ref().is_some_and(SendStatusInfo::is_shown))
     }
 
     /// Whether `abs` is within this indicator's hit area and it has a tooltip to show there.

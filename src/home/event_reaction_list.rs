@@ -282,6 +282,11 @@ impl ReactionList {
 
 
 impl ReactionListRef {
+    /// Returns whether there are no reactions to show.
+    pub fn is_empty(&self) -> bool {
+        self.borrow().is_none_or(|inner| inner.children.is_empty())
+    }
+
     /// Set the list of reactions and their counts to display in the ReactionList widget,
     /// along with the room ID and event ID that these reactions are for.
     ///
