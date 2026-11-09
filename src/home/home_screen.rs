@@ -227,11 +227,15 @@ script_mod! {
                             height: 39,
                             flow: Right
                             padding: Inset{top: 2, bottom: 2}
-                            // The negative left/right margins compensate for the gray border,
+                            // The negative right margin compensates for the gray border,
                             // such that the inner white input part is aligned with other elements.
-                            margin: Inset{left: -1.5, right: -1.5}
+                            margin: Inset{right: -1.5}
                             spacing: 2
                             align: Align{y: 0.5}
+
+                            toggle_rooms_sidebar_button := ToggleRoomsSideBarButton { margin: Inset{left: 2} }
+                            // These are only shown if there's no window caption bar to show them, like on Android.
+                            nav_history_buttons := NavHistoryButtons { visible: false, margin: 0 }
 
                             CachedWidget {
                                 room_filter_input_bar := RoomFilterInputBar { is_main_filter: true }
