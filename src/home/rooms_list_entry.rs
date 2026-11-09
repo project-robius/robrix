@@ -129,6 +129,38 @@ script_mod! {
         }
     }
 
+    // A room's avatar with its unread badge and tombstone icon on the avatar's top-right corner.
+    mod.widgets.RoomsListEntryAvatar = View {
+        width: 36, height: 36
+        flow: Overlay
+        // Don't clip (cut-off) the unread badge's glow
+        clip_x: false, clip_y: false
+
+        avatar := Avatar { width: Fill, height: Fill }
+        View {
+            width: Fill, height: Fill
+            align: Align{x: 1.0, y: 0.0}
+            clip_x: false, clip_y: false
+            tombstone_icon := mod.widgets.TombstoneIcon {
+                margin: Inset{top: -3, right: -4}
+                show_bg: true
+                draw_bg +: {
+                    color: (COLOR_PRIMARY_DARKER)
+                    // The icon is just a thin ring, so we put a solid circle behind it to stand out on the avatar.
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        sdf.circle(self.rect_size.x * 0.5, self.rect_size.y * 0.5, self.rect_size.x * 0.5 - 1.0)
+                        sdf.fill(self.color)
+                        return sdf.result
+                    }
+                }
+            }
+            unread_badge := UnreadBadge {
+                margin: Inset{top: -4, right: -8}
+            }
+        }
+    }
+
     mod.widgets.RoomsListEntry = #(RoomsListEntry::register_widget(vm)) {
         flow: Down, height: Fit
 
@@ -138,26 +170,15 @@ script_mod! {
             height: Fit
 
             OnlyIcon := mod.widgets.RoomsListEntryContent {
-                align: Align{x: 0.5, y: 0.5}
-                padding: 5.
-                View {
-                    height: Fit
-                    flow: Overlay
-                    align: Align{ x: 1.0 }
-                    // Don't clip (cut-off) the unread badge's glow
-                    clip_x: false, clip_y: false
-                    avatar := Avatar {}
-                    unread_badge := UnreadBadge {}
-                    tombstone_icon := mod.widgets.TombstoneIcon {}
-                }
+                padding: Inset{top: 6, bottom: 6}
+                align: Align{x: 0.5}
+                mod.widgets.RoomsListEntryAvatar {}
             }
             IconAndName := mod.widgets.RoomsListEntryContent {
-                padding: 5.
-                align: Align{x: 0.5, y: 0.5}
-                avatar := Avatar {}
+                padding: Inset{top: 6, bottom: 6, left: 5, right: 5}
+                align: Align{y: 0.5}
+                mod.widgets.RoomsListEntryAvatar {}
                 room_name := mod.widgets.RoomName {}
-                unread_badge := UnreadBadge {}
-                tombstone_icon := mod.widgets.TombstoneIcon {}
             }
             FullPreview := mod.widgets.RoomsListEntryContent {
                 padding: 10
@@ -232,7 +253,7 @@ impl RoomsListEntry {
         self.view
             .adaptive_view(cx, ids!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 70.0 => id!(OnlyIcon),
+                width if width <= 100.0 => id!(OnlyIcon),
                 width if width <= 200.0 => id!(IconAndName),
                 _ => id!(FullPreview),
             });
