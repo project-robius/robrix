@@ -64,7 +64,39 @@ script_mod! {
         }
     }
 
-    // A link preview's image, whose area stays empty until the image arrives.
+    // Says that a link has no image, in the space where its image would be.
+    mod.widgets.LinkPreviewNoImageMessage = View {
+        width: Fill, height: Fit
+        flow: Down
+        align: Align{x: 0.5}
+        spacing: 4
+        padding: Inset{left: 6, right: 6}
+
+        Icon {
+            width: Fit, height: Fit
+            draw_icon +: {
+                svg: (ICON_BROKEN_IMAGE)
+                color: (COLOR_TEXT_MUTED)
+            }
+            icon_walk: Walk{width: 24, height: 24}
+        }
+        Label {
+            width: Fill, height: Fit
+            padding: 0
+            flow: Flow.Right{wrap: true}
+            align: Align{x: 0.5}
+            draw_text +: {
+                text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                    font_size: 10.0,
+                    line_spacing: 1.0,
+                },
+                color: (COLOR_TEXT_MUTED),
+            }
+            text: "No preview available, click to open"
+        }
+    }
+
+    // A link preview's image, which has a spinner or the no-image message while it's missing.
     mod.widgets.LinkPreviewImage = mod.widgets.LinkPreviewImageArea {
         flow: Overlay
         image := TextOrImage {
@@ -76,19 +108,21 @@ script_mod! {
                 image +: { height: Fill }
             }
         }
+        placeholder := View {
+            width: Fill, height: Fill
+            align: Align{x: 0.5, y: 0.5}
+            loading_spinner := LoadingSpinner {
+                width: 32, height: 32
+                draw_bg +: { color: (COLOR_ACTIVE_PRIMARY) }
+            }
+            no_image_message := mod.widgets.LinkPreviewNoImageMessage { visible: false }
+        }
     }
 
-    // What a card shows in place of its image when it doesn't have one.
+    // What a card shows in place of its image when it has enough text to go without one.
     mod.widgets.LinkPreviewNoImage = mod.widgets.LinkPreviewImageArea {
         visible: false
-        Icon {
-            width: Fit, height: Fit
-            draw_icon +: {
-                svg: (ICON_BROKEN_IMAGE)
-                color: (COLOR_TEXT_MUTED)
-            }
-            icon_walk: Walk{width: 40, height: 40}
-        }
+        mod.widgets.LinkPreviewNoImageMessage {}
     }
 
     mod.widgets.LinkPreviewTitle = Label {
@@ -194,6 +228,9 @@ script_mod! {
     // It's only as wide as its image and title need.
     mod.widgets.LargeImageLinkPreviewCard = mod.widgets.LinkPreviewCardBase {
         width: Fit
+        // `cqw` is the message's width here. The card's height never depends on its title,
+        // so its image can take the title's space if there isn't one.
+        height: "42px + (100cqw - 16px) * 0.5625"
         flow: Down
         spacing: 6
 
@@ -203,8 +240,8 @@ script_mod! {
             width: Fit, height: "(100cqw - 16px) * 0.5625"
             // We don't center it across, since that'd stretch it out to the message's width.
             align: Align{x: 0.0, y: 0.5}
-            // While the image loads, this keeps its area as wide as a 16:9 image.
-            placeholder := View { width: Fit, height: Fill, aspect: 1.7778 }
+            // Without an image, this keeps its area as wide as a 16:9 image.
+            placeholder +: { width: Fit{max: "100cqw - 16px"}, aspect: 1.7778 }
             image +: {
                 width: Fit
                 image_view +: {
@@ -218,9 +255,12 @@ script_mod! {
             width: Fit, height: "(100cqw - 16px) * 0.5625"
             aspect: 1.7778
         }
-        title_label := mod.widgets.LinkPreviewTitle {
-            width: Fit{max: "100cqw - 16px"}
-            max_lines: 1
+        content_view := View {
+            width: Fit, height: 20
+            title_label := mod.widgets.LinkPreviewTitle {
+                width: Fit{max: "100cqw - 16px"}
+                max_lines: 1
+            }
         }
     }
 
@@ -332,6 +372,8 @@ struct LinkPreviewCard {
     view: ViewRef,
     /// The walk of the card's text when it leaves room for an image.
     text_walk: Walk,
+    /// The height of the card's image when it leaves room for text.
+    image_height: Size,
 }
 
 #[derive(Script, WidgetRef, WidgetSet, WidgetRegister)]
@@ -600,7 +642,9 @@ impl LinkPreviewRef {
                         let view = widget_ref_from_live_ptr(cx, inner.get_card_template(kind)).as_view();
                         let text_walk = view.view(cx, ids!(content_view)).borrow()
                             .map_or(Walk::default(), |content_view| content_view.walk);
-                        LinkPreviewCard { link, kind, view, text_walk }
+                        let image_height = view.view(cx, ids!(image_view)).borrow()
+                            .map_or(Size::default(), |image_view| image_view.walk.height);
+                        LinkPreviewCard { link, kind, view, text_walk, image_height }
                     }
                 };
                 // Reset each preview's per-link visual state: a reused one keeps its old
@@ -669,18 +713,21 @@ where
     let description_label = card.view.widget(cx, ids!(description_label));
     let text_or_image = card.view.text_or_image(cx, ids!(image_view.image));
 
-    let fully_drawn = match entry {
+    let (fully_drawn, has_text_besides_link) = match entry {
         Some(LinkPreviewCacheEntry::LoadedLinkPreview(data)) => {
-            title_label.set_text(cx, data.title.as_deref().unwrap_or(card.link.as_str()));
+            let title = data.title.as_deref().filter(|title| !title.trim().is_empty());
+            title_label.set_text(cx, title.unwrap_or(card.link.as_str()));
             // The description label is as many lines as fit with ellipsis wrap, so we
             // ensure that hard link breaks are ignored by converting them to spaces.
             let description = data.description.as_deref()
                 .map(|description| utils::replace_linebreaks_separators(description, false));
             description_label.set_text(cx, description.as_deref().unwrap_or(""));
             // An empty description would still take up a line, which pushes the title off-center.
-            description_label.set_visible(cx, description.is_some_and(|description| !description.trim().is_empty()));
+            let shows_description = !description_label.is_empty()
+                && description.is_some_and(|description| !description.trim().is_empty());
+            description_label.set_visible(cx, shows_description);
 
-            match &data.image {
+            let fully_drawn = match &data.image {
                 Some(image) => {
                     let mut image_info = ImageInfo::default();
                     image_info.mimetype = data.image_type.clone();
@@ -689,48 +736,55 @@ where
                     populate_image_fn(cx, &text_or_image, Some(&image_info), source, "", media_cache)
                 }
                 None => true,
-            }
+            };
+            (fully_drawn, title.is_some() || shows_description)
         }
         Some(LinkPreviewCacheEntry::Requested | LinkPreviewCacheEntry::Failed) => {
             title_label.set_text(cx, card.link.as_str());
             description_label.set_visible(cx, false);
             // We treat "Failed" as permanent, i.e., it's fully drawn.
-            matches!(entry, Some(LinkPreviewCacheEntry::Failed))
+            let is_failed = matches!(entry, Some(LinkPreviewCacheEntry::Failed));
+            // Image links rarely have titles, so their cards assume there isn't one until we know.
+            (is_failed, !is_failed && card.kind != CardKind::LargeImage)
         }
         // We can't tell what kind of media an `mxc://` link is, so we only show it once
         // the server makes a thumbnail of it, which means it's an image.
         None => {
             title_label.set_text(cx, card.link.as_str());
             let source = MediaSource::Plain(card.link.as_str().into());
-            match media_cache.try_get_media_or_fetch(&source, utils::MEDIA_THUMBNAIL_FORMAT.into()).0 {
+            let fully_drawn = match media_cache.try_get_media_or_fetch(&source, utils::MEDIA_THUMBNAIL_FORMAT.into()).0 {
                 MediaCacheEntry::Loaded(_) => populate_image_fn(cx, &text_or_image, Some(&ImageInfo::default()), source, "", media_cache),
                 MediaCacheEntry::Requested => false,
                 MediaCacheEntry::Failed(_) => true,
-            }
+            };
+            (fully_drawn, false)
         }
     };
     let is_showing_image = text_or_image.status().is_image();
     text_or_image.set_visible(cx, is_showing_image);
-    card.view.view(cx, ids!(image_view.placeholder)).set_visible(cx, !is_showing_image);
-    // Once we know there won't be an image, the card's no-image view takes its place,
-    // and text beside it gets the whole width.
-    let might_have_image = is_showing_image || !fully_drawn;
-    card.view.view(cx, ids!(image_view)).set_visible(cx, might_have_image);
-    card.view.view(cx, ids!(no_image_view)).set_visible(cx, !might_have_image);
-    if let Some(mut content_view) = card.view.view(cx, ids!(content_view)).borrow_mut() {
-        content_view.walk.width = if might_have_image {
-            card.text_walk.width
-        } else {
-            Size::Rel { base: Base::Parent, factor: 1.0 }
-        };
+    let placeholder = card.view.view(cx, ids!(image_view.placeholder));
+    placeholder.set_visible(cx, !is_showing_image);
+    placeholder.view(cx, ids!(loading_spinner)).set_visible(cx, !fully_drawn);
+    placeholder.view(cx, ids!(no_image_message)).set_visible(cx, fully_drawn);
+    // Once we know there won't be an image, a card with text swaps to its no-image view, and text
+    // beside that gets the whole width. A card with just a link says so in its image's space.
+    let shows_no_image_view = has_text_besides_link && fully_drawn && !is_showing_image;
+    card.view.view(cx, ids!(image_view)).set_visible(cx, !shows_no_image_view);
+    card.view.view(cx, ids!(no_image_view)).set_visible(cx, shows_no_image_view);
+    let full_size = Size::Rel { base: Base::Parent, factor: 1.0 };
+    // The message already shows the link, so we only repeat it beside an image, not below one.
+    // A narrow Responsive card's image takes its whole height, which pushes the link off the card.
+    let content_view = card.view.view(cx, ids!(content_view));
+    content_view.set_visible(cx, has_text_besides_link || matches!(card.kind, CardKind::Responsive | CardKind::Compact));
+    if let Some(mut content_view) = content_view.borrow_mut() {
+        content_view.walk.width = if shows_no_image_view { full_size } else { card.text_walk.width };
+    }
+    if let Some(mut image_view) = card.view.view(cx, ids!(image_view)).borrow_mut() {
+        image_view.walk.height = if has_text_besides_link { card.image_height } else { full_size };
     }
     // A card's height doesn't depend on its image, so we cap it, and an image above its text gets
     // the rest of that height. That image is also no taller than an image in a message.
-    let text_height = match card.text_walk.height {
-        Size::Fixed(text_height) => text_height,
-        // An image-link card's text is just its one-line title.
-        _ => title_label.borrow().map_or(0.0, |label| utils::text_line_height(cx, &label.draw_text)),
-    };
+    let text_height = card.text_walk.height.to_fixed().unwrap_or(0.0);
     let height_besides_image = card.view.borrow().map_or(0.0, |card_view| {
         let layout = &card_view.layout;
         let gap = if card.kind == CardKind::Responsive { layout.wrap_spacing } else { layout.spacing };
@@ -740,7 +794,7 @@ where
         .min(MAX_CARD_HEIGHT - height_besides_image);
     for image_area in [ids!(image_view), ids!(no_image_view)] {
         if let Some(mut view) = card.view.view(cx, image_area).borrow_mut() {
-            view.walk.max_height = Some(FitBound::Abs(max_image_height));
+            view.walk.max_height = has_text_besides_link.then_some(FitBound::Abs(max_image_height));
         }
     }
     if let Some(mut card_view) = card.view.borrow_mut() {
