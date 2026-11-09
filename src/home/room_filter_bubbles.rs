@@ -1,7 +1,7 @@
 //! `RoomFilterBubbles`: a row of filter bubbles above the rooms list, like "Unreads" and "People".
 //!
-//! Tapping a bubble includes its filter, and long-pressing or right-clicking it excludes its filter ("Not Unreads"),
-//! so the rooms list only shows the rooms that match every included filter and none of the excluded ones.
+//! Tapping a bubble includes its filter, and long-pressing, right-clicking or middle-clicking it excludes its filter
+//! ("Not Unreads"), so the rooms list only shows the rooms that match every included filter and none of the excluded ones.
 //! We hide the bubbles that can't be combined with the active ones, like "Rooms" while "People" is included,
 //! and the ones that would add nothing, like "Unreads" while "Mentions" is included.
 //! The active bubbles slide to the front of the row, right after an "X" bubble that deactivates them all.
@@ -293,9 +293,11 @@ impl Widget for RoomFilterBubbles {
         }
 
         let bubble_actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
-        // A bubble's button claims a right-click without acting on it, so we check which bubble claimed it.
-        let right_clicked_area = match event {
-            Event::MouseDown(mde) if mde.button.is_secondary() && !mde.handled.get().is_empty() => Some(mde.handled.get()),
+        // A bubble's button claims a right or middle click without acting on it, so we check which bubble claimed it.
+        let right_or_middle_clicked_area = match event {
+            Event::MouseDown(mde) if (mde.button.is_secondary() || mde.button.is_middle()) && !mde.handled.get().is_empty() => {
+                Some(mde.handled.get())
+            }
             _ => None,
         };
         // A mouse held on a bubble without moving excludes its filter once it's held as long as a long press.
@@ -320,7 +322,7 @@ impl Widget for RoomFilterBubbles {
         }
         let mut selection = self.selection;
         let mut changed_filter = None;
-        if !bubble_actions.is_empty() || right_clicked_area.is_some() || long_held_filter.is_some() {
+        if !bubble_actions.is_empty() || right_or_middle_clicked_area.is_some() || long_held_filter.is_some() {
             if self.view.button(cx, ids!(clear.bubble)).clicked(&bubble_actions) {
                 selection = BubbleSelection::default();
             }
@@ -335,7 +337,7 @@ impl Widget for RoomFilterBubbles {
                     }
                 } else if bubble.long_pressed(&bubble_actions) || long_held_filter == Some(filter) {
                     selection.toggle_excluded(filter);
-                } else if right_clicked_area == Some(bubble.area()) {
+                } else if right_or_middle_clicked_area == Some(bubble.area()) {
                     // It can slide out from under the pointer before the release, which would leave it looking hovered.
                     bubble.reset_hover(cx);
                     selection.toggle_excluded(filter);
