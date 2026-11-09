@@ -23,7 +23,7 @@ script_mod! {
 
         button := mod.widgets.NavHistoryButton {
             draw_icon +: { svg: (ICON_SIDEBAR_HIDE) }
-            icon_walk: Walk{width: 18, height: 18}
+            icon_walk: Walk{width: 20, height: 20}
         }
     }
 }
