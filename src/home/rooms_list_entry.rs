@@ -178,11 +178,13 @@ script_mod! {
             OnlyIcon := mod.widgets.RoomsListEntryContent {
                 padding: Inset{top: 6, bottom: 6}
                 align: Align{x: 0.5}
+                has_name_tooltip: true
                 mod.widgets.RoomsListEntryAvatar {}
             }
             IconAndName := mod.widgets.RoomsListEntryContent {
                 padding: Inset{top: 6, bottom: 6, left: 5, right: 5}
                 align: Align{y: 0.5}
+                has_name_tooltip: true
                 mod.widgets.RoomsListEntryAvatar {}
                 room_name := mod.widgets.RoomName {}
             }
@@ -289,8 +291,12 @@ pub struct RoomsListEntryContent {
     #[live] preview_link_color: Vec4f,
     #[live] selected_text_color: Vec4f,
     #[live] selected_code_bg_color: Vec4f,
+    /// Whether hovering over us shows the room's name in a tooltip, if we don't show all of it.
+    #[live] has_name_tooltip: bool,
 
     #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] room_name: String,
+    #[rust] is_name_tooltip_shown: bool,
 
     /// `true` while a context menu that we opened is being shown.
     #[rust] is_context_menu_open: bool,
@@ -352,7 +358,29 @@ impl Widget for RoomsListEntryContent {
             // TODO: Invited rooms have no context menu, so don't emit secondary clicks.
             //       We should add a context menu for invited rooms.
             match hit {
+                Hit::FingerHoverIn(_) if self.has_name_tooltip && !self.room_name.is_empty() => {
+                    // The icon-only layout has no name label, and the other one might have cut the name off.
+                    let name_label = self.child_refs(cx).room_name.clone();
+                    let is_name_cut_off = name_label.borrow().is_none_or(|label| {
+                        let row = area.rect(cx);
+                        let max_width = row.pos.x + row.size.x - self.view.layout.padding.right - label.area().rect(cx).pos.x;
+                        utils::unwrapped_text_width(cx, &label.draw_text, &self.room_name) > max_width + 1.0
+                    });
+                    if is_name_cut_off {
+                        cx.widget_action(uid, TooltipAction::HoverIn {
+                            text: self.room_name.clone(),
+                            widget_rect: area.rect(cx),
+                            options: CalloutTooltipOptions {
+                                position: TooltipPosition::Right,
+                                ..Default::default()
+                            },
+                        });
+                        self.is_name_tooltip_shown = true;
+                    }
+                }
+                Hit::FingerHoverOut(_) => self.hide_name_tooltip(cx),
                 Hit::FingerDown(fe) => {
+                    self.hide_name_tooltip(cx);
                     if !fe.device.is_touch() {
                         cx.set_key_focus(area);
                     }
@@ -406,9 +434,26 @@ impl RoomsListEntryContent {
         if self.room_id.as_deref() != Some(room_id) {
             self.is_context_menu_open = false;
             self.animator_cut(cx, ids!(bg_hover.off));
+            self.hide_name_tooltip(cx);
             self.room_id = Some(room_id.to_owned());
         }
         self.is_invited = is_invited;
+    }
+
+    /// Shows the given room name, and keeps it for our name tooltip.
+    fn set_room_name(&mut self, cx: &mut Cx, name: &str) {
+        self.child_refs(cx).room_name.set_text(cx, name);
+        if self.room_name != name {
+            self.room_name.clear();
+            self.room_name.push_str(name);
+        }
+    }
+
+    fn hide_name_tooltip(&mut self, cx: &mut Cx) {
+        if self.is_name_tooltip_shown {
+            self.is_name_tooltip_shown = false;
+            cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
+        }
     }
 
     fn child_refs(&mut self, cx: &mut Cx) -> &EntryChildRefs {
@@ -429,8 +474,8 @@ impl RoomsListEntryContent {
     ) {
         // Note: in general, we must always set all fields in case a rooms list entry widget
         // was re-used by the portal list, to avoid showing any old content for a different entry.
+        self.set_room_name(cx, &room_info.room_name_id.display());
         let child_refs = self.child_refs(cx);
-        child_refs.room_name.set_text(cx, &room_info.room_name_id.display());
         if let Some(latest) = room_info.latest.as_ref() {
             child_refs.timestamp.set_text(cx, relative_format(latest.timestamp).as_deref().unwrap_or(""));
             child_refs.latest_message.show_html(cx, &latest.text);
@@ -460,8 +505,8 @@ impl RoomsListEntryContent {
             true => Cow::Owned(format!("[Space] {name}")),
             false => name,
         };
+        self.set_room_name(cx, &name);
         let child_refs = self.child_refs(cx);
-        child_refs.room_name.set_text(cx, &name);
         // Hide the timestamp field, and use the latest message field to show the inviter.
         child_refs.timestamp.set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {

@@ -70,6 +70,9 @@ script_mod! {
         spacing: 3
         cursor: MouseCursor.Hand
 
+        content_color: (COLOR_ACTIVE_PRIMARY_DARKER)
+        selected_content_color: (COLOR_TEXT_ON_ACCENT)
+
         show_bg: true
         draw_bg +: {
             hover: instance(0.0)
@@ -80,6 +83,7 @@ script_mod! {
             color_hover: instance(COLOR_BG_ACCENT_TINT_HOVER)
             color_down: instance(COLOR_BG_ACCENT_TINT_DOWN)
             color_active: instance(COLOR_ACTIVE_PRIMARY)
+            color_active_hover: instance(COLOR_ACTIVE_PRIMARY_HOVER)
             border_size: uniform(0.0)
             border_color: instance(COLOR_TRANSPARENT)
             // Half of our height, which gives us fully rounded ends.
@@ -97,7 +101,7 @@ script_mod! {
                         self.color_down,
                         self.down
                     ),
-                    self.color_active,
+                    mix(self.color_active, self.color_active_hover, self.hover),
                     self.active
                 )
             }
@@ -126,26 +130,7 @@ script_mod! {
             align: Align{x: 0.5, y: 0.5}
             draw_icon +: {
                 svg: (ICON_HIERARCHY)
-
-                active: instance(0.0)
-                hover: instance(0.0)
-                down: instance(0.0)
-
                 color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                color_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
-                color_active: instance(COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE)
-
-                get_color: fn() -> vec4 {
-                    return mix(
-                        mix(
-                            self.color,
-                            self.color_hover,
-                            self.hover
-                        ),
-                        self.color_active,
-                        self.active
-                    )
-                }
             }
             icon_walk: Walk{ width: 25, height: 20, margin: Inset{top: 2} }
         }
@@ -156,27 +141,8 @@ script_mod! {
             padding: 0,
 
             draw_text +: {
-                active: instance(0.0)
-                hover: instance(0.0)
-                down: instance(0.0)
-
                 color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                color_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
-                color_active: instance(COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE)
-
                 text_style: REGULAR_TEXT {font_size: 11},
-
-                get_color: fn() -> vec4 {
-                    return mix(
-                        mix(
-                            self.color,
-                            self.color_hover,
-                            self.hover
-                        ),
-                        self.color_active,
-                        self.active
-                    )
-                }
             }
             text: "Explore this Space"
         }
@@ -184,7 +150,7 @@ script_mod! {
         chevron := View {
             width: Fit, height: Fit
             margin: Inset{left: 2, right: 8}
-            Icon {
+            chevron_icon := Icon {
                 draw_icon +: {
                     svg: (ICON_CHEVRON_RIGHT)
                     color: (COLOR_ACTIVE_PRIMARY_DARKER)
@@ -193,6 +159,7 @@ script_mod! {
             }
         }
 
+        // An animator can't reach our child widgets, so `set_selected()` colors them instead.
         animator: Animator{
             bg_hover: {
                 default: @off
@@ -200,24 +167,33 @@ script_mod! {
                     from: {all: Forward {duration: 0.15}}
                     apply: {
                         draw_bg: {down: 0.0, hover: 0.0}
-                        space_lobby_label: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
-                        icon: { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
                     }
                 }
                 on: AnimatorState{
                     from: {all: Snap}
                     apply: {
                         draw_bg: {down: 0.0, hover: 1.0}
-                        space_lobby_label: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
-                        icon: { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
                     }
                 }
                 down: AnimatorState{
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {down: snap(1.0), hover: 1.0,}
-                        space_lobby_label: { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
-                        icon: { draw_icon: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
+                    }
+                }
+            }
+            active: {
+                default: @off
+                off: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 0.0}
+                    }
+                }
+                on: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 1.0}
                     }
                 }
             }
@@ -677,11 +653,26 @@ pub fn clear_space_lobby_states(_cx: &mut Cx) {
 const ENTRY_NON_LABEL_WIDTH: f64 = 67.0;
 
 /// A clickable entry shown in the RoomsList that will show the space lobby when clicked.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct SpaceLobbyEntry {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+
+    /// The color of our icons and label.
+    #[live] content_color: Vec4f,
+    #[live] selected_content_color: Vec4f,
+    /// Whether we last showed ourselves as selected, or `None` if we haven't since our last reload.
+    #[rust] shown_selection: Option<bool>,
+}
+
+impl ScriptHook for SpaceLobbyEntry {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // A reload resets our children's colors to their DSL defaults, so we must set them again.
+        if apply.is_reload() {
+            self.shown_selection = None;
+        }
+    }
 }
 
 impl Widget for SpaceLobbyEntry {
@@ -739,6 +730,22 @@ impl Widget for SpaceLobbyEntry {
             label.set_text(cx, text);
         }
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SpaceLobbyEntryRef {
+    /// Shows this entry as selected or not, the same way the rooms list shows a selected room.
+    pub fn set_selected(&self, cx: &mut Cx, is_selected: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if inner.shown_selection == Some(is_selected) { return; }
+        inner.shown_selection = Some(is_selected);
+        inner.animator_toggle(cx, is_selected, Animate::No, ids!(active.on), ids!(active.off));
+        let color = if is_selected { inner.selected_content_color } else { inner.content_color };
+        inner.view.label(cx, ids!(space_lobby_label)).set_text_color(cx, color);
+        for icon_id in [ids!(icon), ids!(chevron_icon)] {
+            let mut icon = inner.view.icon(cx, icon_id);
+            script_apply_eval!(cx, icon, { draw_icon +: { color: #(color) } });
+        }
     }
 }
 
