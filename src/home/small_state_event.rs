@@ -360,7 +360,7 @@ pub(super) fn populate_small_state_event_widget(
     // Only a knock still waiting on an answer should show the invite button.
     // See the `PendingKnocks` struct for more details on how that gets updated.
     item.button(cx, ids!(invite_user_button)).set_visible(cx, show_invite_button);
-    item.label(cx, ids!(content)).set_text(cx, &event_content.text(event_tl_item, &username));
+    item.set_text(cx, &event_content.text(event_tl_item, &username));
     new_drawn_status.content_drawn = true;
     (item, new_drawn_status)
 }
