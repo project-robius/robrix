@@ -21,7 +21,7 @@ script_mod! {
     mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
         Desktop := SolidView {
             padding: Inset{top: 20, left: #(SIDE_PADDING)}
-            flow: Down, spacing: 5
+            flow: Down
             width: Fill, height: Fill
 
             draw_bg.color: (COLOR_PRIMARY_DARKER)
@@ -37,13 +37,30 @@ script_mod! {
             // Reaches out to the sidebar's left edge, so the bubbles scroll out of view right at its edge.
             View {
                 width: Fill, height: Fit
-                margin: Inset{left: #(-SIDE_PADDING)}
+                margin: Inset{top: 5, left: #(-SIDE_PADDING)}
                 CachedWidget {
                     room_filter_bubbles := RoomFilterBubbles {}
                 }
             }
-            CachedWidget {
-                rooms_list := RoomsList {}
+            // The rooms list goes first, so the header's rounded bottom edge and shadow get drawn over it.
+            // This doesn't clip sideways, so they still reach the sidebar's left edge.
+            View {
+                width: Fill, height: Fill
+                padding: Inset{top: 10}
+                flow: Overlay
+                clip_x: false
+
+                CachedWidget {
+                    rooms_list := RoomsList {}
+                }
+                // About as tall as the header, and clipped so only its rounded bottom edge shows below the bubbles.
+                View {
+                    width: Fill, height: 90
+                    margin: Inset{top: -90, left: #(-SIDE_PADDING)}
+                    clip_x: false, clip_y: false
+                    show_bg: true
+                    draw_bg: mod.widgets.RobrixHeaderBackground {}
+                }
             }
         },
 
