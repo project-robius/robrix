@@ -11,6 +11,9 @@ script_mod! {
         // min_vertical: theme.splitter_min_vertical
         // max_vertical: theme.splitter_max_vertical
 
+        // The narrowest the rooms sidebar can get while still fitting an avatar and its unread badge.
+        min_vertical: 76
+
         draw_bg +: {
             color: COLOR_PANE_DIVIDER_GRIP
             color_hover: COLOR_ROBRIX_PURPLE
