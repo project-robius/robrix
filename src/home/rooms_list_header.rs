@@ -24,6 +24,9 @@ use crate::{
     utils::time_ago,
 };
 
+/// We stack the title above the sync status at or below this width, where "Rooms" wouldn't fit beside it.
+const STACKED_TITLE_MAX_WIDTH: f64 = 93.0;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -34,7 +37,8 @@ script_mod! {
         height: Fit,
         padding: Inset{bottom: 4}
         flow: Right,
-        spacing: 3,
+        // This only kicks in once the title is stacked, which centers the sync status below it.
+        align: Align{x: 0.5}
 
         tooltip_bg_color_syncing: (COLOR_ACTIVE_PRIMARY)
         tooltip_bg_color_offline: (COLOR_BG_DANGER_RED_SOLID)
@@ -44,7 +48,6 @@ script_mod! {
             width: Fill,
             height: Fit,
             padding: 0
-            margin: Inset{left: 5, top: -1}
             flow: Flow.Right { wrap: true },
             max_lines: 3,
             text_overflow: Ellipsis,
@@ -57,8 +60,8 @@ script_mod! {
 
         // As wide as the cloud icons, so the title doesn't move when the narrower spinner shows.
         sync_status := View {
-            width: 26, height: Fit,
-            margin: Inset{right: 3}
+            width: 26, height: Fit{min: FitBound.Abs(20)},
+            margin: Inset{left: 3, right: 3}
             flow: Overlay,
             align: Align{x: 0.5}
 
@@ -205,6 +208,16 @@ impl Widget for RoomsListHeader {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let is_stacked = cx.peek_walk_turtle(walk).size.x <= STACKED_TITLE_MAX_WIDTH;
+        self.view.layout.flow = if is_stacked { Flow::Down } else { Flow::right() };
+        if let Some(mut title) = self.view.label(cx, ids!(header_title)).borrow_mut() {
+            title.align.x = if is_stacked { 0.5 } else { 0.0 };
+            title.walk.margin = if is_stacked {
+                Inset { left: 0.0, top: -1.0, right: 0.0, bottom: 4.0 }
+            } else {
+                Inset { left: 5.0, top: -1.0, right: 0.0, bottom: 0.0 }
+            };
+        }
         let step = self.view.draw_walk(cx, scope, walk);
         self.sync_status_area = self.view.child(live_id!(sync_status)).area();
         step

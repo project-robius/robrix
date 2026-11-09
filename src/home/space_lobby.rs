@@ -63,31 +63,39 @@ script_mod! {
         width: Fill,
         height: Fit,
         flow: Right,
-        align: Align{y: 0.5}
+        // This centering only kicks in once the label is hidden.
+        align: Align{x: 0.5, y: 0.5}
         padding: 5,
         margin: Inset{top: 10, bottom: 0}
-        spacing: 5
+        spacing: 3
         cursor: MouseCursor.Hand
 
         show_bg: true
         draw_bg +: {
             hover: instance(0.0)
+            down: instance(0.0)
             active: instance(0.0)
 
-            color: instance(COLOR_NAVIGATION_TAB_BG)
-            color_hover: instance(COLOR_NAVIGATION_TAB_BG_HOVER)
+            color: instance(COLOR_BG_ACCENT_TINT)
+            color_hover: instance(COLOR_BG_ACCENT_TINT_HOVER)
+            color_down: instance(COLOR_BG_ACCENT_TINT_DOWN)
             color_active: instance(COLOR_ACTIVE_PRIMARY)
             border_size: uniform(0.0)
             border_color: instance(COLOR_TRANSPARENT)
-            border_radius: uniform(4.0)
+            // Half of our height, which gives us fully rounded ends.
+            border_radius: uniform(17.5)
             border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
                 return mix(
                     mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
+                        mix(
+                            self.color,
+                            self.color_hover,
+                            self.hover
+                        ),
+                        self.color_down,
+                        self.down
                     ),
                     self.color_active,
                     self.active
@@ -114,7 +122,7 @@ script_mod! {
         icon := Icon {
             width: 25,
             height: 25,
-            margin: Inset{left: 5, right: 3}
+            margin: Inset{left: 5, right: 5}
             align: Align{x: 0.5, y: 0.5}
             draw_icon +: {
                 svg: (ICON_HIERARCHY)
@@ -123,8 +131,8 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: (COLOR_TEXT)
-                color_hover: instance(COLOR_TEXT)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                color_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
                 color_active: instance(COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE)
 
                 get_color: fn() -> vec4 {
@@ -152,8 +160,8 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: (COLOR_TEXT)
-                color_hover: instance(COLOR_TEXT)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                color_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
                 color_active: instance(COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE)
 
                 text_style: REGULAR_TEXT {font_size: 11},
@@ -173,13 +181,25 @@ script_mod! {
             text: "Explore this Space"
         }
 
+        chevron := View {
+            width: Fit, height: Fit
+            margin: Inset{left: 2, right: 8}
+            Icon {
+                draw_icon +: {
+                    svg: (ICON_CHEVRON_RIGHT)
+                    color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                }
+                icon_walk: Walk{width: Fit, height: 11}
+            }
+        }
+
         animator: Animator{
             bg_hover: {
                 default: @off
                 off: AnimatorState{
                     from: {all: Forward {duration: 0.15}}
                     apply: {
-                        draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 0.0}
+                        draw_bg: {down: 0.0, hover: 0.0}
                         space_lobby_label: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
                         icon: { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
                     }
@@ -187,7 +207,7 @@ script_mod! {
                 on: AnimatorState{
                     from: {all: Snap}
                     apply: {
-                        draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 1.0}
+                        draw_bg: {down: 0.0, hover: 1.0}
                         space_lobby_label: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
                         icon: { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
                     }
@@ -195,7 +215,7 @@ script_mod! {
                 down: AnimatorState{
                     from: {all: Forward {duration: 0.2}}
                     apply: {
-                        draw_bg: {down: [{time: 0.0, value: 1.0}], hover: 1.0,}
+                        draw_bg: {down: snap(1.0), hover: 1.0,}
                         space_lobby_label: { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
                         icon: { draw_icon: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
                     }
@@ -653,6 +673,9 @@ pub fn clear_space_lobby_states(_cx: &mut Cx) {
 }
 
 
+/// How much of a `SpaceLobbyEntry`'s width goes to everything except its label.
+const ENTRY_NON_LABEL_WIDTH: f64 = 67.0;
+
 /// A clickable entry shown in the RoomsList that will show the space lobby when clicked.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SpaceLobbyEntry {
@@ -703,6 +726,18 @@ impl Widget for SpaceLobbyEntry {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let max_label_width = cx.peek_walk_turtle(walk).size.x - ENTRY_NON_LABEL_WIDTH;
+        let label = self.view.label(cx, ids!(space_lobby_label));
+        // We show the longest label that fits between the icons, or just the main icon if none of them do.
+        let fitting_text = label.borrow().and_then(|inner|
+            ["Explore this Space", "Explore Space", "Explore"].into_iter()
+                .find(|text| utils::unwrapped_text_width(cx, &inner.draw_text, text) <= max_label_width)
+        );
+        label.set_visible(cx, fitting_text.is_some());
+        self.view.view(cx, ids!(chevron)).set_visible(cx, fitting_text.is_some());
+        if let Some(text) = fitting_text {
+            label.set_text(cx, text);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }

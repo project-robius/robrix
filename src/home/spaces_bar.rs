@@ -131,18 +131,9 @@ script_mod! {
         spaces_bar_entry := mod.widgets.SpacesBarEntry {}
         StatusLabel := mod.widgets.SpacesStatusLabel {}
         // Just the X and "Clear", which wraps below the X in the narrow Desktop bar.
-        clear_filter_button := mod.widgets.ClearFilterButton {
+        clear_filter_button := mod.widgets.CompactClearFilterButton {
             width: Fill{max: 70}
             margin: Inset{top: 2, bottom: 2, left: 6, right: 6}
-            padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
-            flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
-            spacing: 5
-            wrap_spacing: 3
-            icon_walk: Walk{width: 8, height: 8}
-            draw_text +: {
-                text_style: REGULAR_TEXT {font_size: 8}
-            }
-            text: "Clear"
         }
         BottomFiller := View {
             width: (NAVIGATION_TAB_BAR_SIZE)

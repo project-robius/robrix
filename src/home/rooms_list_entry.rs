@@ -14,6 +14,12 @@ use crate::{
 };
 
 use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo};
+
+/// Rooms list rows at or below this width only show the room's avatar.
+pub(crate) const ONLY_ICON_MAX_WIDTH: f64 = 90.0;
+/// Rooms list rows at or below this width show the avatar and name, but no message preview.
+pub(crate) const ICON_AND_NAME_MAX_WIDTH: f64 = 200.0;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -253,8 +259,8 @@ impl RoomsListEntry {
         self.view
             .adaptive_view(cx, ids!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 100.0 => id!(OnlyIcon),
-                width if width <= 200.0 => id!(IconAndName),
+                width if width <= ONLY_ICON_MAX_WIDTH => id!(OnlyIcon),
+                width if width <= ICON_AND_NAME_MAX_WIDTH => id!(IconAndName),
                 _ => id!(FullPreview),
             });
     }
