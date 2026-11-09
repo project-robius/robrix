@@ -361,11 +361,11 @@ impl ContextMenuTrigger {
         }
     }
 
-    pub fn open_menu(&mut self, cx: &mut Cx, item_uid: WidgetUid, details: MessageDetails, abs_pos: DVec2, own_reactions: Vec<String>) {
+    pub fn open_menu(&mut self, cx: &mut Cx, details: MessageDetails, abs_pos: DVec2, own_reactions: Vec<String>) {
         self.is_menu_open = true;
         cx.widget_action(
             details.room_screen_widget_uid,
-            MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions, item_uid },
+            MessageAction::OpenMessageContextMenu { details, abs_pos, own_reactions },
         );
     }
 
@@ -408,17 +408,6 @@ pub struct NewMessageContextMenu {
     #[rust] cancel_scope: Option<CancelScope>,
     /// Whether to put the key focus in the reaction text input once it's drawn, since it can't take it before that.
     #[rust] is_reaction_input_focus_pending: bool,
-    /// Where this menu was opened, relative to the top-left of its container.
-    #[rust] anchor_in_container: DVec2,
-    /// The timeline item that we're for, and the timeline list that it's in.
-    #[rust] item: WidgetRef,
-    #[rust] item_list: WidgetRef,
-    /// Where `item` was and how big `item_list` was when we last drew.
-    #[rust] item_pos_when_drawn: Option<DVec2>,
-    #[rust] item_list_size_when_drawn: DVec2,
-    /// How far `item` moved while `item_list` got shorter or taller, which we move along with.
-    #[rust] item_movement: DVec2,
-    #[rust] expected_size: DVec2,
 }
 
 impl Widget for NewMessageContextMenu {
@@ -427,28 +416,6 @@ impl Widget for NewMessageContextMenu {
             self.visible = false;
         };
 
-        // The soft keyboard can move our container or our item while we're shown, so we follow them on every draw.
-        if self.visible {
-            let container_rect = cx.turtle().rect();
-            // We only follow our item while its list resizes, e.g., as the soft keyboard shrinks the room screen,
-            // since a timeline update can make the item's row show a different item.
-            let item_rect = self.item.area().rect(cx);
-            if item_rect.size.y > 0.0 {
-                let item_list_size = self.item_list.area().rect(cx).size;
-                if let Some(item_pos) = self.item_pos_when_drawn
-                    && item_list_size != self.item_list_size_when_drawn
-                {
-                    self.item_movement += item_rect.pos - item_pos;
-                }
-                self.item_pos_when_drawn = Some(item_rect.pos);
-                self.item_list_size_when_drawn = item_list_size;
-            }
-            let anchor_pos = container_rect.pos + self.anchor_in_container + self.item_movement;
-            let margin = menu_position_margin(cx, container_rect, anchor_pos, self.expected_size);
-            if let Some(mut main_content) = self.view(cx, ids!(main_content)).borrow_mut() {
-                main_content.walk.margin = margin;
-            }
-        }
         let step = self.view.draw_walk(cx, scope, walk);
         if self.visible {
             let main_content_area = self.view(cx, ids!(main_content)).area();
@@ -646,22 +613,21 @@ impl NewMessageContextMenu {
         self.visible
     }
 
-    /// Shows this context menu with the given message details at `anchor_in_container`,
+    /// Shows this context menu with the given message details at `abs_pos` within `container_rect`,
     /// leaving `own_reactions` (the reactions that the user already sent on it) out of its reaction strip.
-    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2, item_uid: WidgetUid) {
+    pub fn show(&mut self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], abs_pos: DVec2, container_rect: Rect) {
         if details.abilities.contains(MessageAbilities::CanReact) {
             self.view.reaction_strip(cx, ids!(reaction_strip)).populate(cx, own_reactions);
         }
-        self.item = cx.widget_tree().widget(item_uid);
-        self.item_list = cx.widget_tree().widget(details.room_screen_widget_uid).widget(cx, ids!(timeline.list));
-        self.item_pos_when_drawn = None;
-        self.item_movement = DVec2::default();
         self.details = Some(details);
         self.visible = true;
         self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
-        self.anchor_in_container = anchor_in_container;
-        self.expected_size = self.set_button_visibility(cx);
+        let expected_size = self.set_button_visibility(cx);
+        let margin = menu_position_margin(cx, container_rect, abs_pos, expected_size);
+        if let Some(mut main_content) = self.view(cx, ids!(main_content)).borrow_mut() {
+            main_content.walk.margin = margin;
+        }
     }
 
     /// Sets up all of the buttons based this context menu's inner details.
@@ -818,8 +784,8 @@ impl NewMessageContextMenuRef {
     }
 
     /// See [`NewMessageContextMenu::show()`].
-    pub fn show(&self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], anchor_in_container: DVec2, item_uid: WidgetUid) {
+    pub fn show(&self, cx: &mut Cx, details: MessageDetails, own_reactions: &[String], abs_pos: DVec2, container_rect: Rect) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx, details, own_reactions, anchor_in_container, item_uid);
+        inner.show(cx, details, own_reactions, abs_pos, container_rect);
     }
 }

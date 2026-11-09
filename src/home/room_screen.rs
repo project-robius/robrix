@@ -6323,8 +6323,6 @@ pub enum MessageAction {
         /// in which the (0,0) origin coordinate is the top left corner of the app window.
         abs_pos: DVec2,
         own_reactions: Vec<String>,
-        /// The timeline item that the menu is for, which the menu follows as it moves.
-        item_uid: WidgetUid,
     },
     /// The user requested opening the message action bar
     ActionBarOpen {
@@ -6664,8 +6662,7 @@ impl Message {
 
     fn open_context_menu(&mut self, cx: &mut Cx, details: MessageDetails, abs_pos: DVec2) {
         let own_reactions = self.view.widget(cx, ids!(reaction_list)).as_reaction_list().get_own_reactions();
-        let uid = self.widget_uid();
-        self.context_menu_trigger.open_menu(cx, uid, details, abs_pos, own_reactions);
+        self.context_menu_trigger.open_menu(cx, details, abs_pos, own_reactions);
     }
 
     /// Returns the thread summary, or an empty ref if this message has never shown one.
