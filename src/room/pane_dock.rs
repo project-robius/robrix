@@ -35,7 +35,7 @@ script_mod! {
         width: #(HEADER_BUTTON_SIZE), height: #(HEADER_BUTTON_SIZE)
         padding: 0, spacing: 0, margin: 0
         align: Align{x: 0.5, y: 0.5}
-        icon_walk: Walk{width: 13, height: 13, margin: 0}
+        icon_walk: Walk{width: 16, height: 16, margin: 0}
         draw_icon.color: (COLOR_TEXT_MUTED)
         draw_bg +: {
             border_size: 0
@@ -100,7 +100,7 @@ script_mod! {
             width: Fill, height: Fit
             flow: Right
             spacing: #(HEADER_SPACING)
-            padding: Inset{top: #(HEADER_PADDING), right: #(FRAME_PADDING), bottom: #(HEADER_PADDING), left: #(FRAME_PADDING)}
+            padding: Inset{top: #(HEADER_PADDING), right: #(HEADER_PADDING), bottom: #(HEADER_PADDING), left: #(FRAME_PADDING)}
             show_bg: true
             draw_bg +: { color: (COLOR_BG_LAVENDER) }
 
@@ -125,7 +125,7 @@ script_mod! {
                 }
                 pane_close_button := mod.widgets.RoomPaneHeaderButton {
                     margin: Inset{left: #(2.0 * HEADER_BUTTON_STEP)}
-                    icon_walk: Walk{width: 12, height: 12, margin: 0}
+                    icon_walk: Walk{width: 15, height: 15, margin: 0}
                     draw_icon.svg: (ICON_CLOSE)
                 }
             }
@@ -302,9 +302,9 @@ const CONTENT_TOP_PADDING: f64 = 6.0;
 const VERTICAL_CONTENT_TOP_PADDING: f64 = 12.0;
 /// The spacing between the header's icon, titles, and buttons.
 const HEADER_SPACING: f64 = 4.0;
-/// The space above and below the header's contents.
-const HEADER_PADDING: f64 = 7.0;
-const HEADER_BUTTON_SIZE: f64 = 25.0;
+/// The space above, below and to the right of the header's contents.
+const HEADER_PADDING: f64 = 5.5;
+const HEADER_BUTTON_SIZE: f64 = 28.0;
 const HEADER_BUTTON_SPACING: f64 = 2.0;
 /// The distance between the starts of adjacent header buttons.
 const HEADER_BUTTON_STEP: f64 = HEADER_BUTTON_SIZE + HEADER_BUTTON_SPACING;
@@ -317,7 +317,7 @@ const HEADER_BUTTONS: [&[LiveId]; 3] = [
 /// The width of the header's icon, including its margins.
 const HEADER_ICON_WIDTH: f64 = 20.0;
 /// The narrowest a top or bottom pane can be while its header still fits its icon and one row of buttons.
-const MIN_HEADER_WIDTH: f64 = FRAME_PADDING * 2.0 + HEADER_ICON_WIDTH + HEADER_SPACING * 2.0
+const MIN_HEADER_WIDTH: f64 = FRAME_PADDING + HEADER_PADDING + HEADER_ICON_WIDTH + HEADER_SPACING * 2.0
     + HEADER_BUTTON_STEP * HEADER_BUTTONS.len() as f64 - HEADER_BUTTON_SPACING;
 /// The dock always leaves at least this much space for the timeline in the center.
 const MIN_CENTER_SIZE: f64 = 150.0;
@@ -1114,6 +1114,11 @@ impl RoomPaneDock {
         if let Some(mut content) = pane.frame.view(cx, ids!(content)).borrow_mut() {
             content.layout.padding = Inset { top, right, bottom: FRAME_PADDING, left: FRAME_PADDING };
         }
+        // The edge's divider covers the top of a bottom pane's header, so we move its contents down by that much.
+        if let Some(mut header) = pane.frame.view(cx, ids!(header)).borrow_mut() {
+            header.layout.padding.top = HEADER_PADDING + if pane.layout.side == PaneSide::Bottom { EDGE_DIVIDER_COVERAGE } else { 0.0 };
+            header.layout.padding.right = get_header_right_padding(pane.layout.side);
+        }
     }
 
     /// Limits each pair of opposite edges such that the center keeps at least `MIN_CENTER_SIZE`.
@@ -1150,7 +1155,7 @@ impl RoomPaneDock {
                 // The icon hasn't been measured before its first draw.
                 let icon_width = pane.frame.widget(cx, ids!(pane_icon)).area().rect(cx).size.x;
                 let icon_width = if icon_width > 0.0 { icon_width } else { HEADER_ICON_WIDTH };
-                let title_area = |cols: usize| pane_width - FRAME_PADDING * 2.0 - icon_width - HEADER_SPACING * 2.0
+                let title_area = |cols: usize| pane_width - FRAME_PADDING - get_header_right_padding(side) - icon_width - HEADER_SPACING * 2.0
                     - (HEADER_BUTTON_STEP * cols as f64 - HEADER_BUTTON_SPACING);
                 // Beside two or more rows of buttons, the title can wrap onto a second line.
                 (1..=HEADER_BUTTONS.len()).rev()
@@ -1268,6 +1273,13 @@ const GRAB_TOUCH_SLOP: f64 = 8.0;
 const EDGE_MIN_SIZE: f64 = 60.0;
 /// The thickness of the dividers beside and between panes.
 const DIVIDER_THICKNESS: f64 = 2.0;
+/// How much of a pane its edge's divider visibly covers, since its rounded shape draws a bit smaller than its rect.
+const EDGE_DIVIDER_COVERAGE: f64 = DIVIDER_THICKNESS - 0.33;
+
+/// Returns the padding to the right of a pane's header buttons, which clears the divider on a left pane's right edge.
+fn get_header_right_padding(side: PaneSide) -> f64 {
+    HEADER_PADDING + if side == PaneSide::Left { EDGE_DIVIDER_COVERAGE } else { 0.0 }
+}
 
 /// Widget actions emitted by a [`RoomPaneDock`].
 #[derive(Clone, Debug, Default)]
