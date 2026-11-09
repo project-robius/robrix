@@ -5,7 +5,7 @@ use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{home_screen::ScreenRestoredAction, nav_history::{GoBackAction, GoForwardAction, NavHistory, can_show}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, sliding_sync::TimelineKind, space_service_sync::SpaceRoomListAction, utils::RoomNameId};
-use super::{invite_screen::InviteScreenWidgetRefExt, room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt}, room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt}, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
+use super::{invite_screen::InviteScreenWidgetRefExt, room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt}, room_screen::{NavigateToLinkAction, RoomScreenWidgetRefExt}, rooms_list::{AcceptedInviteKind, RoomsListAction}, rooms_sidebar_toggle::{CollapsibleRoomsSideBar, ToggleRoomsSideBarAction}, spaces_bar::SpacesBarAction};
 use crate::{logout::logout_confirm_modal::LogoutAction, room::{pinned_messages_list::PinnedMessagesListAction, room_action_bar::RoomActionBarWidgetRefExt, room_pane, room_tabs::RoomTabs}};
 
 script_mod! {
@@ -121,6 +121,8 @@ pub struct MainDesktopUI {
 
     /// Lets the go-back gesture go back in the nav history; child overlays take priority.
     #[rust] cancel_scope: Option<CancelScope>,
+
+    #[rust] rooms_sidebar: CollapsibleRoomsSideBar,
 }
 
 impl ScriptHook for MainDesktopUI {
@@ -143,6 +145,7 @@ impl Widget for MainDesktopUI {
             self.restore_dock(cx, app_state);
         }
 
+        self.rooms_sidebar.handle_event(cx, event);
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
         self.room_tabs.handle_event(cx, event, scope, &mut self.view, &self.open_rooms);
 
@@ -513,8 +516,10 @@ impl MainDesktopUI {
     /// An inner function that creates a `SavedDockState` from the current contents of this widget. 
     fn save_dock_state(&self, cx: &mut Cx) -> SavedDockState {
         let dock = self.view.dock(cx, ids!(dock));
+        let mut dock_items = dock.clone_state().unwrap_or_default();
+        self.rooms_sidebar.save_state(&mut dock_items);
         SavedDockState {
-            dock_items: dock.clone_state().unwrap_or_default(),
+            dock_items,
             open_rooms: self.open_rooms.clone(),
             room_order: self.room_order.clone(),
             selected_room: self.most_recently_selected_room.clone(),
@@ -605,6 +610,7 @@ impl MainDesktopUI {
         self.open_rooms = open_rooms;
 
         dock.load_state(cx, dock_items);
+        self.rooms_sidebar.restore_state(cx, &dock, app_state);
         // Loading the dock clears its focused tab, so we clear the previous dock's selection too,
         // since re-adding or re-selecting a room that was also selected there would do nothing below.
         self.most_recently_selected_room = None;
@@ -738,6 +744,8 @@ impl WidgetMatchEvent for MainDesktopUI {
 
             if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                 self.selected_space = None;
+                let dock = self.view.dock(cx, ids!(dock));
+                self.rooms_sidebar.expand(cx, &dock);
                 continue;
             }
 
@@ -772,6 +780,13 @@ impl WidgetMatchEvent for MainDesktopUI {
                     self.focus_or_create_tab_in_place(cx, next_screen);
                     should_save_dock_action = true;
                 }
+                continue;
+            }
+
+            if let Some(ToggleRoomsSideBarAction) = action.downcast_ref() {
+                let dock = self.view.dock(cx, ids!(dock));
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                self.rooms_sidebar.toggle(cx, &dock, app_state);
                 continue;
             }
 
@@ -915,6 +930,10 @@ impl WidgetMatchEvent for MainDesktopUI {
                     // uninitialized tab that was deferred during dock restoration.
                     self.init_all_visible_tabs(cx);
                     should_save_dock_action = true;
+                }
+                DockAction::SplitPanelChanged { panel_id, .. } => {
+                    let app_state = scope.data.get_mut::<AppState>().unwrap();
+                    self.rooms_sidebar.handle_splitter_dragged(panel_id, app_state);
                 }
                 _ => (),
             }

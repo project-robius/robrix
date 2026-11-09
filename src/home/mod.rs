@@ -28,6 +28,7 @@ pub mod rooms_list_entry;
 pub mod rooms_list_header;
 pub mod room_filter_bubbles;
 pub mod rooms_sidebar;
+pub mod rooms_sidebar_toggle;
 pub mod search_messages;
 pub mod space_lobby;
 pub mod space_tree;
@@ -99,6 +100,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     nav_bar_pill::script_mod(vm);
     navigation_tab_bar::script_mod(vm);
     nav_history_buttons::script_mod(vm);
+    rooms_sidebar_toggle::script_mod(vm);
     upload_progress::script_mod(vm);
     hide_on_scroll::script_mod(vm);
     // Keep HomeScreen last, it references many widgets registered above.

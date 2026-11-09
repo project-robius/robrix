@@ -1,4 +1,5 @@
-//! The go-back and go-forward buttons in the window's title/caption bar.
+//! The go-back and go-forward buttons in the window's title/caption bar,
+//! or next to the rooms filter bar if there's no caption bar.
 
 use makepad_widgets::*;
 
@@ -60,6 +61,7 @@ pub struct NavHistoryButtons {
     #[deref] view: View,
     #[live] icon_color: Vec4f,
     #[live] icon_color_disabled: Vec4f,
+    #[live] is_in_caption_bar: bool,
     #[rust] tooltip: RoomActionTooltip,
     #[rust] long_press: LongPressWatcher,
     #[rust] are_tooltips_hidden: bool,
@@ -109,7 +111,7 @@ impl Widget for NavHistoryButtons {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, mut walk: Walk) -> DrawStep {
         // Avoid drawing over the window chrome buttons, either on the left or right of the caption bar.
-        if let Some(window_id) = cx.get_current_window_id() {
+        if self.is_in_caption_bar && let Some(window_id) = cx.get_current_window_id() {
             let geom = &cx.windows[window_id].window_geom;
             let chrome = geom.window_chrome_buttons;
             if chrome.size.x > 0.0 && chrome.pos.x + chrome.size.x / 2.0 < geom.inner_size.x / 2.0 {
@@ -161,8 +163,18 @@ impl NavHistoryButtonsRef {
 
 /// Enables or disables the title bar's go-back and go-forward buttons,
 /// depending on the nav history and where we can currently go right now.
+///
+/// Without a caption bar (like on Android), this shows and updates the desktop home screen's buttons instead.
 pub fn enable_nav_history_buttons(cx: &mut Cx, ui: &WidgetRef, app_state: &AppState) {
-    let buttons = ui.nav_history_buttons(cx, ids!(nav_history_buttons));
+    let buttons = if ui.view(cx, ids!(caption_bar)).visible() {
+        ui.nav_history_buttons(cx, ids!(caption_bar.nav_history_buttons))
+    } else {
+        let buttons = ui.nav_history_buttons(cx, ids!(home_screen.nav_history_buttons));
+        buttons.set_visible(cx, true);
+        buttons
+    };
+    // The home screen has no buttons of its own in mobile view mode.
+    if buttons.is_empty() { return; }
     // While one of the buttons shows its nav history menu, they keep their look,
     // but their tooltips would cover the menu.
     let is_menu_shown = ui.nav_history_menu(cx, ids!(nav_history_menu)).is_currently_shown();

@@ -50,7 +50,7 @@ script_mod! {
                         }
                         View {
                             width: Fill, height: Fit
-                            nav_history_buttons := NavHistoryButtons {}
+                            nav_history_buttons := NavHistoryButtons { is_in_caption_bar: true }
                         }
                     }
                     // The min/max/close buttons only show up on Windows and on Linux without native decorations.
@@ -1014,8 +1014,8 @@ impl AppMain for App {
         }
 
         // Now that the rest of the app has handled these actions, we can
-        // enable/disable the nav buttons in the title bar based on nav history state.
-        if let Event::Actions(_) = event && self.ui.view(cx, ids!(caption_bar)).visible() {
+        // enable/disable the nav buttons based on nav history state.
+        if let Event::Actions(_) = event {
             enable_nav_history_buttons(cx, &self.ui, &self.app_state);
         }
     }
@@ -1288,6 +1288,9 @@ pub struct AppState {
     /// The layout that the user last chose for docked room panes.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub room_pane_layout: Option<PaneLayout>,
+    /// Whether the user collapsed the rooms sidebar in desktop view mode, which applies to every space's dock.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub is_rooms_sidebar_collapsed: bool,
     /// When we last got a sync response, as of the last time this app state was saved.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub last_synced_at: Option<MilliSecondsSinceUnixEpoch>,

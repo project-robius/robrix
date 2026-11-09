@@ -1,8 +1,8 @@
 //! A popup menu for viewing and going back/forward through nav history, like a web browser.
 //!
 //! Currently this is shown when long-pressing (including clicking and holding the mouse):
-//! * the go-back button in the title/caption bar,
-//! * the go-forward button in the title/caption bar,
+//! * the go-back button in the title/caption bar (or next to the rooms filter bar),
+//! * the go-forward button in the title/caption bar (or next to the rooms filter bar),
 //! * the go-back button in the stack nav header.
 
 use makepad_widgets::{makepad_platform::event::finger::{TAP_COUNT_DISTANCE, TAP_COUNT_TIME, TouchState}, *};

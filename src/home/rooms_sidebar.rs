@@ -71,6 +71,10 @@ pub struct RoomsSideBar {
 
     /// The most recently applied view-mode override.
     #[rust] applied_view_mode: ViewModeOverride,
+    /// Whether the desktop dock had collapsed us to zero width when we were last drawn.
+    #[rust] is_collapsed: bool,
+    /// How much of our full width the desktop dock shows while it animates us collapsing or expanding.
+    #[rust] visible_fraction: Option<f64>,
 }
 
 impl ScriptHook for RoomsSideBar {
@@ -109,10 +113,37 @@ impl Widget for RoomsSideBar {
                 }
             }
         }
+        // A hidden widget of ours could still have the key focus, but it shouldn't act on keys.
+        if self.is_collapsed && matches!(event, Event::KeyDown(_) | Event::KeyUp(_)) {
+            return;
+        }
         self.view.handle_event(cx, event, scope);
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, mut walk: Walk) -> DrawStep {
+        // When the desktop dock collapses us to zero width, we don't draw anything,
+        // which also keeps Tab from moving the key focus to any of our hidden widgets.
+        let width = cx.peek_walk_turtle(walk).size.x;
+        self.is_collapsed = width <= 0.0;
+        if self.is_collapsed {
+            return DrawStep::done();
+        }
+        // While the dock animates our width, we lay out our content at its full width
+        // and slide it past the dock's left edge, so it doesn't reflow on every frame.
+        if let Some(visible_fraction) = self.visible_fraction {
+            let full_width = width / visible_fraction;
+            walk.width = Size::Fixed(full_width);
+            walk.margin.left -= full_width - width;
+        }
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl RoomsSideBarRef {
+    /// Sets how much of our full width the desktop dock shows while it animates us, or `None` once it's done.
+    pub fn set_visible_fraction(&self, visible_fraction: Option<f64>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible_fraction = visible_fraction;
+        }
     }
 }
