@@ -227,14 +227,14 @@ script_mod! {
                             height: 39,
                             flow: Right
                             padding: Inset{top: 2, bottom: 2}
-                            // The negative right margin compensates for the gray border,
+                            // The negative left/right margins compensate for the gray border,
                             // such that the inner white input part is aligned with other elements.
-                            margin: Inset{right: -1.5}
+                            margin: Inset{left: -1.5, right: -1.5}
                             spacing: 2
                             align: Align{y: 0.5}
 
                             // These are only shown if there's no window caption bar to show them, like on Android.
-                            title_bar_buttons := TitleBarButtons { visible: false, margin: Inset{left: 2} }
+                            title_bar_buttons := LargeTitleBarButtons { visible: false, margin: Inset{left: 1.2} }
 
                             CachedWidget {
                                 room_filter_input_bar := RoomFilterInputBar { is_main_filter: true }

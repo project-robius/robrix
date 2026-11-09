@@ -30,6 +30,15 @@ script_mod! {
         toggle_rooms_sidebar_button := ToggleRoomsSideBarButton {}
         nav_history_buttons := NavHistoryButtons {}
     }
+
+    // This height lines up their hover color with the visible edges of the rooms filter bar beside them.
+    mod.widgets.LargeTitleBarButtons = mod.widgets.TitleBarButtons {
+        toggle_rooms_sidebar_button +: { button +: { width: 40, height: 32.3, icon_walk: Walk{width: 24, height: 24} } }
+        nav_history_buttons +: {
+            go_back_button +: { width: 40, height: 32.3, icon_walk: Walk{width: 22, height: 22} }
+            go_forward_button +: { width: 40, height: 32.3, icon_walk: Walk{width: 22, height: 22} }
+        }
+    }
 }
 
 /// The title bar's buttons, each of which is only enabled when it can do something.

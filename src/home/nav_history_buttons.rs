@@ -16,7 +16,8 @@ script_mod! {
     use mod.widgets.*
 
     mod.widgets.NavHistoryButton = RobrixIconButton {
-        width: 28, height: 24
+        width: 32, height: 26
+        margin: 0
         padding: 0
         spacing: 0
         align: Align{x: 0.5, y: 0.5}
@@ -32,7 +33,7 @@ script_mod! {
             color_down: (COLOR_NAV_HISTORY_BUTTON_BG_DOWN)
         }
         draw_icon.color: (COLOR_FG_DISABLED)
-        icon_walk: Walk{width: 16, height: 16}
+        icon_walk: Walk{width: 18, height: 18}
     }
 
     mod.widgets.NavHistoryButtons = #(NavHistoryButtons::register_widget(vm)) {
