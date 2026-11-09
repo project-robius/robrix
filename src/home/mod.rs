@@ -18,6 +18,7 @@ pub mod tombstone_footer;
 pub mod loading_pane;
 pub mod location_preview;
 pub mod main_desktop_ui;
+pub mod message_footer;
 pub mod message_shield;
 pub mod room_pane_screen;
 pub mod room_screen;
@@ -68,6 +69,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     event_reaction_list::script_mod(vm);
     room_read_receipt::script_mod(vm);
     send_status_indicator::script_mod(vm);
+    message_footer::script_mod(vm);
     rooms_list_entry::script_mod(vm);
     rooms_list_header::script_mod(vm);
     room_filter_bubbles::script_mod(vm);

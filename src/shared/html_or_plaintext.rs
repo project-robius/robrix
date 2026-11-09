@@ -928,6 +928,30 @@ impl HtmlOrPlaintext {
         });
     }
 
+    /// Returns the empty space after the text on its last line,
+    /// or `None` if the text ends in a box like a quote or a code block.
+    pub fn last_line_free_space(&mut self, cx: &mut Cx) -> Option<Rect> {
+        let child_refs = self.child_refs(cx);
+        if child_refs.html_view.visible() {
+            let html = child_refs.html.borrow()?;
+            let free_space = html.last_line_free_space()?;
+            return Some(Rect { pos: html.area().rect(cx).pos + free_space.pos, size: free_space.size });
+        }
+        // A label's area is its text's, so we take its view's rect, which is the label's whole box.
+        let rect = child_refs.plaintext_view.area().rect(cx);
+        let label = child_refs.pt_label.borrow()?;
+        let font_scale = label.draw_text.font_scale as f64;
+        let max_width_in_lpxs = (rect.size.x / font_scale.max(0.0001)) as f32;
+        let laidout = label.draw_text.layout(cx, 0.0, 0.0, Some(max_width_in_lpxs), true, label.align, &label.text());
+        let last_row = laidout.rows.last()?;
+        let end_x = rect.pos.x + (last_row.origin_in_lpxs.x + last_row.width_in_lpxs - last_row.hanging_width_in_lpxs) as f64 * font_scale;
+        // A label's lines are all as tall, so its last line takes up its bottom.
+        let row_height = rect.size.y / laidout.rows.len() as f64;
+        Some(Rect {
+            pos: dvec2(end_x, rect.pos.y + rect.size.y - row_height),
+            size: dvec2(rect.pos.x + rect.size.x - end_x, row_height),
+        })
+    }
 }
 
 impl HtmlOrPlaintextRef {
@@ -952,4 +976,8 @@ impl HtmlOrPlaintextRef {
         }
     }
 
+    /// See [`HtmlOrPlaintext::last_line_free_space()`].
+    pub fn last_line_free_space(&self, cx: &mut Cx) -> Option<Rect> {
+        self.borrow_mut()?.last_line_free_space(cx)
+    }
 }

@@ -1,7 +1,7 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache::get_user_display_name_for_room;
 use crate::settings::app_preferences::AppPreferencesGlobal;
-use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt, draw_stacked_avatars};
+use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt, draw_stacked_avatars, get_stacked_avatars_size};
 use crate::sliding_sync::TimelineKind;
 use crate::utils::{self, distinct_user_labels, human_readable_list};
 use indexmap::IndexMap;
@@ -266,6 +266,18 @@ impl AvatarRow {
         self.update_undrawn_avatars(cx);
     }
 
+    /// Returns how big this row is with its "+N" beside its avatars, or `None` if it shows nothing.
+    fn get_one_line_size(&self, cx: &mut Cx) -> Option<DVec2> {
+        if !cx.global::<AppPreferencesGlobal>().0.show_read_receipts || self.read_receipts.as_ref().is_none_or(|r| r.is_empty()) {
+            return None;
+        }
+        let mut size = get_stacked_avatars_size(cx, self.buttons.iter().map(|(avatar_ref, _)| avatar_ref));
+        if !self.plus_text.is_empty() {
+            size.x += self.plus_walk.margin.width() + self.plus_width;
+        }
+        Some(size)
+    }
+
     /// Populates avatars that haven't been drawn.
     ///
     /// An avatar stays marked un-drawn while its image is being fetched
@@ -317,6 +329,11 @@ impl AvatarRowRef {
         if let Some(ref mut inner) = self.borrow_mut() {
             inner.set_avatar_row(cx, timeline_kind, receipts_map);
         }
+    }
+
+    /// See [`AvatarRow::get_one_line_size()`].
+    pub fn get_one_line_size(&self, cx: &mut Cx) -> Option<DVec2> {
+        self.borrow()?.get_one_line_size(cx)
     }
 
     /// Tells this row about the text the given label shows beside it.

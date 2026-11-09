@@ -55,6 +55,7 @@ use crate::room::{
 };
 use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
 use crate::home::identity_reset_banner::{IdentityReset, IdentityResetBannerWidgetExt};
+use crate::home::message_footer::{MessageFooterRef, link_footer_to_text};
 use crate::home::send_status_indicator::{SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
@@ -409,14 +410,7 @@ script_mod! {
                 message := HtmlOrPlaintext { }
                 link_preview_view := mod.widgets.LinkPreview {}
                 download_section := LazyView { template: mod.widgets.MessageDownloadSection { visible: true } }
-                View {
-                    width: Fill,
-                    height: Fit
-                    flow: Right,
-                    reaction_list := mod.widgets.ReactionList { }
-                    avatar_row := mod.widgets.AvatarRow {}
-                    send_status_indicator := mod.widgets.SendStatusIndicator {}
-                }
+                footer := mod.widgets.MessageFooter {}
                 thread_root_summary := LazyView { template: mod.widgets.ThreadRootSummary { visible: true } }
             }
         }
@@ -6381,6 +6375,7 @@ pub struct Message {
     #[rust] thread_root_summary_view: Option<LazyViewRef>,
     #[rust] send_status_indicator: Option<SendStatusIndicatorRef>,
     #[rust] download_section: Option<LazyViewRef>,
+    #[rust] footer: Option<MessageFooterRef>,
 }
 
 impl ScriptHook for Message {
@@ -6393,6 +6388,7 @@ impl ScriptHook for Message {
         self.thread_root_summary_view = None;
         self.send_status_indicator = None;
         self.download_section = None;
+        self.footer = None;
     }
 }
 
@@ -6719,6 +6715,7 @@ impl Message {
         self.details = Some(details);
         self.download_info = download_info;
         self.send_status_indicator(cx).set_from_event(cx, event_tl_item, is_newest_sent, is_blocked_by_failed_send, is_room_encrypted);
+        self.footer.get_or_insert_with(|| link_footer_to_text(cx, &self.view));
 
         // Re-apply this every time to ensure a re-used portallist item is still correctly expanded.
         self.replied_to_message_view(cx).set_expanded(is_reply_expanded);

@@ -581,12 +581,30 @@ impl AvatarRef {
 /// Draws the given avatars in a row, each one slightly overlapping the one before it.
 pub fn draw_stacked_avatars<'a>(cx: &mut Cx2d, scope: &mut Scope, avatars: impl Iterator<Item = &'a AvatarRef>) {
     for (i, avatar) in avatars.enumerate() {
-        let mut walk = avatar.walk(cx);
-        if i > 0 {
-            walk.margin.left = -STACKED_AVATAR_OVERLAP;
-        }
+        let walk = get_stacked_avatar_walk(cx, i, avatar);
         let _ = avatar.draw_walk(cx, scope, walk);
     }
+}
+
+/// Returns how much room [`draw_stacked_avatars()`] takes up for the given fixed-size avatars.
+pub fn get_stacked_avatars_size<'a>(cx: &mut Cx, avatars: impl Iterator<Item = &'a AvatarRef>) -> DVec2 {
+    let mut size = DVec2::default();
+    for (i, avatar) in avatars.enumerate() {
+        let walk = get_stacked_avatar_walk(cx, i, avatar);
+        let (Size::Fixed(width), Size::Fixed(height)) = (walk.width, walk.height) else { continue };
+        size.x += walk.margin.left + width + walk.margin.right;
+        size.y = size.y.max(walk.margin.top + height + walk.margin.bottom);
+    }
+    size
+}
+
+/// Returns the walk of the `i`th avatar in a stack, which overlaps the one before it.
+fn get_stacked_avatar_walk(cx: &mut Cx, i: usize, avatar: &AvatarRef) -> Walk {
+    let mut walk = avatar.walk(cx);
+    if i > 0 {
+        walk.margin.left = -STACKED_AVATAR_OVERLAP;
+    }
+    walk
 }
 
 impl SelectedRoom {
