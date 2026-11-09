@@ -17,11 +17,14 @@ script_mod! {
 
     mod.widgets.ToggleRoomsSideBarButton = #(ToggleRoomsSideBarButton::register_widget(vm)) {
         width: Fit, height: Fit
+        // The button's icon while the rooms list is showing, and while it's hidden.
+        hide_icon: (ICON_SIDEBAR_HIDE)
+        show_icon: (ICON_SIDEBAR_SHOW)
 
         button := mod.widgets.NavHistoryButton {
             enabled: true
             draw_icon +: {
-                svg: (ICON_SIDEBAR)
+                svg: (ICON_SIDEBAR_HIDE)
                 color: (COLOR_TEXT)
             }
             icon_walk: Walk{width: 18, height: 18}
@@ -33,18 +36,38 @@ script_mod! {
 #[derive(Debug)]
 pub struct ToggleRoomsSideBarAction;
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct ToggleRoomsSideBarButton {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    #[live] hide_icon: Option<ScriptHandleRef>,
+    #[live] show_icon: Option<ScriptHandleRef>,
     #[rust] tooltip: RoomActionTooltip,
+    /// Whether the button shows `show_icon` rather than `hide_icon`.
+    #[rust] is_show_icon_shown: bool,
+}
+
+impl ScriptHook for ToggleRoomsSideBarButton {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // A reload gives the button its default icon again.
+        self.is_show_icon_shown = false;
+    }
 }
 
 impl Widget for ToggleRoomsSideBarButton {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let is_collapsed = scope.data.get::<AppState>().is_some_and(|app_state| app_state.is_rooms_sidebar_collapsed);
+        // The rooms list can also be hidden or shown without us, like by dragging its splitter, so we check on every event.
+        if is_collapsed != self.is_show_icon_shown {
+            self.is_show_icon_shown = is_collapsed;
+            if let Some(mut button) = self.view.child(id!(button)).as_button().borrow_mut() {
+                button.draw_icon.svg = if is_collapsed { self.show_icon.clone() } else { self.hide_icon.clone() };
+            }
+            self.view.redraw(cx);
+        }
+
         // This is lazy, as the tooltip only looks at the button for the few events that can show it.
         let button = std::iter::once_with(|| {
-            let is_collapsed = scope.data.get::<AppState>().is_some_and(|app_state| app_state.is_rooms_sidebar_collapsed);
             (self.view.child(id!(button)), if is_collapsed { "Show rooms list" } else { "Hide rooms list" })
         });
         self.tooltip.handle_event(cx, event, button, TooltipPosition::Bottom);
