@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, Mil
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, BubbleSelection, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::{ICON_AND_NAME_MAX_WIDTH, ONLY_ICON_MAX_WIDTH, RoomsListEntryAction}, rooms_list_header::RoomsListHeaderAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
+        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, BubbleSelection, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::{ICON_AND_NAME_MAX_WIDTH, ONLY_ICON_MAX_WIDTH, RoomsListEntryAction}, rooms_list_header::RoomsListHeaderAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt, SpaceLobbyEntryWidgetRefExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
     },
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
@@ -1723,9 +1723,13 @@ impl Widget for RoomsList {
                 let new_selected_space = SelectedRoom::Space { space_name_id };
                 self.set_current_active_room(cx, Some(new_selected_space.clone()));
                 cx.widget_action(
-                    self.widget_uid(), 
+                    self.widget_uid(),
                     RoomsListAction::Selected(new_selected_space),
                 );
+            }
+            // We captured our entries' tooltip actions too, so we pass them on to the app's tooltip.
+            else if action.as_widget_action().is_some_and(|wa| wa.action.downcast_ref::<TooltipAction>().is_some()) {
+                cx.extend_actions(vec![action]);
             }
         }
 
@@ -1940,6 +1944,14 @@ impl Widget for RoomsList {
         if self.current_active_room != app_state.selected_room {
             self.current_active_room = app_state.selected_room.clone();
         }
+        // The space lobby entry looks selected while its lobby is shown, just like a selected room.
+        let is_lobby_selected = matches!(
+            (&self.current_active_room, &self.selected_space),
+            (Some(SelectedRoom::Space { space_name_id }), Some(space)) if space_name_id.room_id() == space.room_id()
+        );
+        if self.selected_space.is_some() {
+            self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_selected(cx, is_lobby_selected);
+        }
 
         // In the mobile layout, the space lobby entry moves into the list's first item.
         let has_bar_spaces = !effective_is_desktop(cx);
@@ -1995,6 +2007,7 @@ impl Widget for RoomsList {
                 if self.has_bar_spaces && portal_list_index == 0 {
                     let template = if self.selected_space.is_some() { id!(header_space_with_lobby) } else { id!(header_space) };
                     let item = list.item(cx, portal_list_index, template);
+                    item.space_lobby_entry(cx, ids!(space_lobby_entry)).set_selected(cx, is_lobby_selected);
                     if let Some(mut header_space) = item.as_view().borrow_mut() {
                         header_space.layout.padding.top = self.header_space_height;
                     }

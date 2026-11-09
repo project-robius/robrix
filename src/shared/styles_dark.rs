@@ -311,7 +311,6 @@ script_mod! {
 
     mod.widgets.COLOR_SPACE_LOBBY_NAME_TEXT = #xE6E6E6
     mod.widgets.COLOR_SPACE_LOBBY_TREE_LINES = #x737373
-    mod.widgets.COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE = #xFFFFFF
 
     mod.widgets.COLOR_INVITE_SCREEN_TOPIC_TEXT = #xBDBDBD
 

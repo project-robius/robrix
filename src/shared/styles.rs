@@ -458,8 +458,6 @@ script_mod! {
 
     mod.widgets.COLOR_SPACE_LOBBY_NAME_TEXT = #x1A1A1A
     mod.widgets.COLOR_SPACE_LOBBY_TREE_LINES = #x888888
-    // Not COLOR_TEXT_ON_ACCENT, since white on the light accent is only 3.5:1.
-    mod.widgets.COLOR_SPACE_LOBBY_ENTRY_TEXT_ACTIVE = #x111830
 
     mod.widgets.COLOR_INVITE_SCREEN_TOPIC_TEXT = #x444444
 
