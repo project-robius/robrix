@@ -39,6 +39,7 @@ pub mod nav_bar_pill;
 pub mod nav_history;
 pub mod nav_history_buttons;
 pub mod nav_history_menu;
+pub mod title_bar_buttons;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
@@ -101,6 +102,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     navigation_tab_bar::script_mod(vm);
     nav_history_buttons::script_mod(vm);
     rooms_sidebar_toggle::script_mod(vm);
+    title_bar_buttons::script_mod(vm);
     upload_progress::script_mod(vm);
     hide_on_scroll::script_mod(vm);
     // Keep HomeScreen last, it references many widgets registered above.

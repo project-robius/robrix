@@ -4,10 +4,9 @@
 use makepad_widgets::*;
 
 use crate::{
-    app::AppState,
     home::{
-        nav_history::{GoBackAction, GoForwardAction, can_navigate_history, can_show, current_place},
-        nav_history_menu::{LongPressWatcher, NavHistoryDirection, NavHistoryMenuWidgetRefExt, request_nav_history_menu},
+        nav_history::{GoBackAction, GoForwardAction},
+        nav_history_menu::{LongPressWatcher, NavHistoryDirection, request_nav_history_menu},
     },
     room::room_action_bar::RoomActionTooltip,
 };
@@ -38,12 +37,8 @@ script_mod! {
 
     mod.widgets.NavHistoryButtons = #(NavHistoryButtons::register_widget(vm)) {
         width: Fit, height: Fit
-        margin: Inset{left: 8}
         spacing: 2
         align: Align{y: 0.5}
-
-        icon_color: (COLOR_TEXT)
-        icon_color_disabled: (COLOR_FG_DISABLED)
 
         go_back_button := mod.widgets.NavHistoryButton {
             draw_icon +: { svg: (ICON_ARROW_LEFT) }
@@ -59,14 +54,9 @@ script_mod! {
 pub struct NavHistoryButtons {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[live] icon_color: Vec4f,
-    #[live] icon_color_disabled: Vec4f,
-    #[live] is_in_caption_bar: bool,
     #[rust] tooltip: RoomActionTooltip,
     #[rust] long_press: LongPressWatcher,
     #[rust] are_tooltips_hidden: bool,
-    #[rust] can_go_back: bool,
-    #[rust] can_go_forward: bool,
 }
 
 impl Widget for NavHistoryButtons {
@@ -94,51 +84,18 @@ impl Widget for NavHistoryButtons {
             };
             request_nav_history_menu(cx, direction, &button, held_pointer);
         }
-        match event {
-            Event::Actions(actions) => {
-                if self.view.button(cx, ids!(go_back_button)).clicked(actions) {
-                    cx.action(GoBackAction { steps: 1 });
-                }
-                if self.view.button(cx, ids!(go_forward_button)).clicked(actions) {
-                    cx.action(GoForwardAction { steps: 1 });
-                }
+        if let Event::Actions(actions) = event {
+            if self.view.button(cx, ids!(go_back_button)).clicked(actions) {
+                cx.action(GoBackAction { steps: 1 });
             }
-            // A reapply resets the buttons to their DSL defaults, so we enable them again.
-            Event::LiveEdit | Event::ScriptReapply => self.enable_buttons(cx, self.can_go_back, self.can_go_forward),
-            _ => {}
+            if self.view.button(cx, ids!(go_forward_button)).clicked(actions) {
+                cx.action(GoForwardAction { steps: 1 });
+            }
         }
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, mut walk: Walk) -> DrawStep {
-        // Avoid drawing over the window chrome buttons, either on the left or right of the caption bar.
-        if self.is_in_caption_bar && let Some(window_id) = cx.get_current_window_id() {
-            let geom = &cx.windows[window_id].window_geom;
-            let chrome = geom.window_chrome_buttons;
-            if chrome.size.x > 0.0 && chrome.pos.x + chrome.size.x / 2.0 < geom.inner_size.x / 2.0 {
-                walk.margin.left += chrome.pos.x + chrome.size.x;
-            }
-        }
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl NavHistoryButtons {
-    /// Enables or disables (grays out) the go-back and go-forward buttons.
-    fn enable_buttons(&mut self, cx: &mut Cx, can_go_back: bool, can_go_forward: bool) {
-        self.can_go_back = can_go_back;
-        self.can_go_forward = can_go_forward;
-        for (button_id, enable) in [(ids!(go_back_button), can_go_back), (ids!(go_forward_button), can_go_forward)] {
-            let button = self.view.button(cx, button_id);
-            if !enable {
-                // A button that we disable while it's hovered shouldn't stay highlighted.
-                button.reset_hover(cx);
-            }
-            button.set_enabled(cx, enable);
-            if let Some(mut inner) = button.borrow_mut() {
-                inner.draw_icon.color = if enable { self.icon_color } else { self.icon_color_disabled };
-            }
-        }
-        self.view.redraw(cx);
     }
 }
 
@@ -151,46 +108,4 @@ impl NavHistoryButtonsRef {
         }
         inner.are_tooltips_hidden = hide;
     }
-
-    /// See [`NavHistoryButtons::enable_buttons()`].
-    pub fn enable_buttons(&self, cx: &mut Cx, can_go_back: bool, can_go_forward: bool) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        if (inner.can_go_back, inner.can_go_forward) != (can_go_back, can_go_forward) {
-            inner.enable_buttons(cx, can_go_back, can_go_forward);
-        }
-    }
-}
-
-/// Enables or disables the title bar's go-back and go-forward buttons,
-/// depending on the nav history and where we can currently go right now.
-///
-/// Without a caption bar (like on Android), this shows and updates the desktop home screen's buttons instead.
-pub fn enable_nav_history_buttons(cx: &mut Cx, ui: &WidgetRef, app_state: &AppState) {
-    let buttons = if ui.view(cx, ids!(caption_bar)).visible() {
-        ui.nav_history_buttons(cx, ids!(caption_bar.nav_history_buttons))
-    } else {
-        let buttons = ui.nav_history_buttons(cx, ids!(home_screen.nav_history_buttons));
-        buttons.set_visible(cx, true);
-        buttons
-    };
-    // The home screen has no buttons of its own in mobile view mode.
-    if buttons.is_empty() { return; }
-    // While one of the buttons shows its nav history menu, they keep their look,
-    // but their tooltips would cover the menu.
-    let is_menu_shown = ui.nav_history_menu(cx, ids!(nav_history_menu)).is_currently_shown();
-    buttons.hide_tooltips(cx, is_menu_shown);
-    if is_menu_shown {
-        return;
-    }
-    let (can_go_back, can_go_forward) = if can_navigate_history(cx, ui, app_state) {
-        let can_show = can_show(cx);
-        let current = current_place(cx, ui, app_state);
-        (
-            NavHistoryDirection::Back.places(app_state, current, &can_show).next().is_some(),
-            NavHistoryDirection::Forward.places(app_state, current, &can_show).next().is_some(),
-        )
-    } else {
-        (false, false)
-    };
-    buttons.enable_buttons(cx, can_go_back, can_go_forward);
 }
