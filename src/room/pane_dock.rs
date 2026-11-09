@@ -117,7 +117,7 @@ script_mod! {
                 flow: Overlay
 
                 pane_edge_button := mod.widgets.RoomPaneHeaderButton {
-                    draw_icon.svg: (ICON_CARET_DOWN)
+                    draw_icon.svg: (ICON_PANE_TO_BOTTOM)
                 }
                 pane_pop_out_button := mod.widgets.RoomPaneHeaderButton {
                     margin: Inset{left: #(HEADER_BUTTON_STEP)}
@@ -288,10 +288,10 @@ script_mod! {
         }
 
         // The edge button's icon for each side that it can move its pane to.
-        edge_icon_top: (ICON_CARET_UP)
-        edge_icon_bottom: (ICON_CARET_DOWN)
-        edge_icon_left: (ICON_CARET_LEFT)
-        edge_icon_right: (ICON_CARET_RIGHT)
+        edge_icon_top: (ICON_PANE_TO_TOP)
+        edge_icon_bottom: (ICON_PANE_TO_BOTTOM)
+        edge_icon_left: (ICON_PANE_TO_LEFT)
+        edge_icon_right: (ICON_PANE_TO_RIGHT)
     }
 }
 
