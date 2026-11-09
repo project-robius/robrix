@@ -2054,15 +2054,11 @@ impl Widget for RoomsList {
                     let item = list.item(cx, portal_list_index, template);
                     let label = item.label(cx, ids!(label));
                     let shows_spinner = self.is_selected_space_loading || self.is_mod_admin_loading();
-                    // In the narrowest layout, the only thing worth saying is that the list is empty.
+                    // In the narrowest layout, the status is only worth its space when the list is empty.
                     let is_list_empty = self.displayed_invited_rooms.is_empty() && self.displayed_joined_rooms.is_empty();
-                    let status: &str = if row_width > ONLY_ICON_MAX_WIDTH {
-                        &self.status
-                    } else if is_list_empty && self.is_initial_sync_done && !shows_spinner {
-                        "No rooms"
-                    } else {
-                        ""
-                    };
+                    let shows_status = row_width > ONLY_ICON_MAX_WIDTH
+                        || (is_list_empty && self.is_initial_sync_done && !shows_spinner);
+                    let status: &str = if shows_status { &self.status } else { "" };
                     if let Some(mut spinner_and_label) = item.view(cx, ids!(spinner_and_label)).borrow_mut()
                         && let Some(mut inner) = label.borrow_mut()
                     {
