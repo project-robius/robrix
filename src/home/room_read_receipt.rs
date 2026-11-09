@@ -1,9 +1,9 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache::get_user_display_name_for_room;
 use crate::settings::app_preferences::AppPreferencesGlobal;
-use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
+use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt, draw_stacked_avatars};
 use crate::sliding_sync::TimelineKind;
-use crate::utils::{distinct_user_labels, human_readable_list};
+use crate::utils::{self, distinct_user_labels, human_readable_list};
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use crate::{LivePtr, widget_ref_from_live_ptr};
@@ -37,21 +37,19 @@ script_mod! {
         }
         margin: Inset{top: 5, right: 0},
         width: Fit,
-        height: 15.0,
-        plus_template: Label {
-            padding: 0,
-            flow: Flow.Right { wrap: false },
-            draw_text +: {
-                color: (COLOR_TEXT_BODY),
-                text_style: TITLE_TEXT { font_size: 10}
-            }
-            text: ""
+        height: Fit,
+        draw_text +: {
+            color: (COLOR_TEXT_BODY),
+            text_style: TITLE_TEXT { font_size: 10}
+            ink_centered: true
         }
+        plus_walk: Walk{width: Fit, height: Fit, margin: Inset{left: 3}}
     }
 }
 /// The widget that displays a list of read receipts.
 #[derive(Script, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct AvatarRow {
+    /// Draws the "+N" for everyone who doesn't get an avatar.
     #[live]
     draw_text: DrawText,
     #[deref]
@@ -63,16 +61,16 @@ pub struct AvatarRow {
     avatar_template: Option<LivePtr>,
     #[layout]
     layout: Layout,
-    /// Label template for truncated number of people seen
     #[live]
-    plus_template: Option<LivePtr>,
+    plus_walk: Walk,
     /// A vector containing its avatarRef, its drawn status and username
     ///
     /// Storing the drawn status helps prevent unnecessary set avatar in the draw_walk function
     #[rust]
     buttons: Vec<(AvatarRef, bool)>,
+    /// The "+N", which is empty if everyone gets an avatar.
     #[rust]
-    label: Option<LabelRef>,
+    plus_text: String,
     /// The area of the widget
     #[rust]
     area: Area,
@@ -82,11 +80,23 @@ pub struct AvatarRow {
     /// The timeline these read receipts belong to.
     #[rust]
     timeline_kind: Option<TimelineKind>,
+    /// The width of the "+N" text.
+    #[rust]
+    plus_width: f64,
+    #[rust]
+    plus_line_height: f64,
+    /// The one-line width of the text beside this row, which is infinite if it has line breaks.
+    /// It's `None` in rows that never wrap their "+N", like a message's.
+    #[rust]
+    text_beside_width: Option<f64>,
+    /// The distance between the baselines of the lines of text beside this row.
+    #[rust]
+    text_beside_line_spacing: f64,
 }
 
 impl ScriptHook for AvatarRow {
     fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
-        // A reload never reaches the avatars and label we built from templates,
+        // A reload never reaches the avatars we built from the template,
         // so we forget the receipts to make the next `set_avatar_row()` rebuild them.
         self.read_receipts = None;
     }
@@ -105,17 +115,14 @@ impl WidgetNode for AvatarRow {
     fn set_visible(&mut self, cx: &mut Cx, visible: bool) { self.deref.set_visible(cx, visible) }
     fn set_scroll_pos(&mut self, cx: &mut Cx, v: Vec2d) { self.deref.set_scroll_pos(cx, v) }
 
-    /// Visits the view's children plus the avatars and the "+N" label.
+    /// Visits the view's children plus the avatars.
     ///
-    /// The avatars and label come from templates, so the view doesn't know about them.
+    /// The avatars come from a template, so the view doesn't know about them.
     /// Listing them here lets Makepad's widget tree track them and drop them when needed.
     fn children(&self, visit: &mut dyn FnMut(LiveId, WidgetRef)) {
         self.deref.children(visit);
         for (i, (avatar, _)) in self.buttons.iter().enumerate() {
             visit(live_id_num!(avatar, i as u64), WidgetRef::clone(avatar));
-        }
-        if let Some(label) = &self.label {
-            visit(id!(plus_label), WidgetRef::clone(label));
         }
     }
     fn skip_widget_tree_search(&self) -> bool { true }
@@ -189,14 +196,27 @@ impl Widget for AvatarRow {
         // Avatars show a text placeholder while being fetched,
         // keep retrying them until their image arrives.
         self.update_undrawn_avatars(cx);
+        // The text beside us is a Fill that gets drawn after us, so it gets whatever width we leave.
+        let width_left = cx.turtle().unused_inner_width() - cx.turtle_next_walk_offset().x - walk.margin.width();
         cx.begin_turtle(walk, Layout::default());
-        for (avatar_ref, _) in self.buttons.iter_mut() {
-            let _ = avatar_ref.draw(cx, scope);
-        }
-        if self.read_receipts.as_ref().is_some_and(|r| r.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT) {
-            if let Some(label) = &mut self.label {
-                let _ = label.draw(cx, scope);
+        draw_stacked_avatars(cx, scope, self.buttons.iter().map(|(avatar_ref, _)| avatar_ref));
+        if !self.plus_text.is_empty() {
+            let mut plus_walk = self.plus_walk;
+            // We center the "+N" on our avatars without making their line any taller.
+            let avatars_height = cx.turtle().used_height();
+            plus_walk.margin.top = (avatars_height - self.plus_line_height) / 2.0;
+            plus_walk.margin.bottom = plus_walk.margin.top;
+            // If the text beside us would wrap anyway, the "+N" wraps under our avatars to give it more room.
+            let avatars_width = cx.turtle().used_width();
+            let width_for_text = width_left - avatars_width - self.plus_walk.margin.width() - self.plus_width;
+            if self.text_beside_width.is_some_and(|width| width > width_for_text) {
+                cx.turtle_new_line();
+                // Centered under our avatars.
+                plus_walk.margin.left = ((avatars_width - self.plus_width) / 2.0).max(0.0);
+                // It moves down by one line of the text beside us, so it lines up with that text's next line.
+                plus_walk.margin.top += self.text_beside_line_spacing - avatars_height;
             }
+            self.draw_text.draw_walk(cx, plus_walk, Align::default(), &self.plus_text);
         }
         cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
@@ -232,14 +252,12 @@ impl AvatarRow {
                     false,
                 ));
             }
-            let label = widget_ref_from_live_ptr(cx, self.plus_template).as_label();
+            self.plus_text.clear();
             if receipts_map.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
-                label.set_text(cx, &format!(
-                    " + {}",
-                    receipts_map.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT,
-                ));
+                self.plus_text = format!("+{}", receipts_map.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
+                self.plus_width = utils::unwrapped_text_width(cx, &self.draw_text, &self.plus_text);
+                self.plus_line_height = utils::text_line_height(cx, &self.draw_text);
             }
-            self.label = Some(label);
             self.read_receipts = Some(receipts_map.clone());
             // Tell the widget tree to pick up the list of new avatars
             cx.widget_tree_mark_dirty(self.widget_uid());
@@ -299,6 +317,23 @@ impl AvatarRowRef {
         if let Some(ref mut inner) = self.borrow_mut() {
             inner.set_avatar_row(cx, timeline_kind, receipts_map);
         }
+    }
+
+    /// Tells this row about the text the given label shows beside it.
+    ///
+    /// If that text would wrap, this row's "+N" wraps under its avatars to give the text more room.
+    pub fn set_text_beside(&self, cx: &mut Cx, label: &LabelRef, text: &str) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(label) = label.borrow() else { return };
+        let laidout = label.draw_text.layout(cx, 0.0, 0.0, None, false, Align::default(), text);
+        let font_scale = label.draw_text.font_scale as f64;
+        inner.text_beside_width = Some(if laidout.rows.len() > 1 {
+            f64::INFINITY
+        } else {
+            laidout.size_in_lpxs.width as f64 * font_scale
+        });
+        let first_row = &laidout.rows[0];
+        inner.text_beside_line_spacing = first_row.line_spacing_in_lpxs(first_row) as f64 * font_scale;
     }
 }
 

@@ -17,15 +17,12 @@ use crate::{
     LivePtr, widget_ref_from_live_ptr,
     home::{
         new_message_context_menu::{ContextMenuTrigger, MessageAbilities, MessageDetails},
-        room_read_receipt::{AvatarRowRef, AvatarRowWidgetRefExt},
+        room_read_receipt::{AvatarRowRef, AvatarRowWidgetExt, AvatarRowWidgetRefExt},
         room_screen::MessageAction,
     },
-    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, expand_arrow::ExpandArrow, hover_highlight::handle_hover_hit},
+    shared::{avatar::{AvatarRef, AvatarWidgetRefExt, draw_stacked_avatars}, expand_arrow::ExpandArrow, hover_highlight::handle_hover_hit},
     sliding_sync::TimelineKind,
 };
-
-/// How much each avatar in an [`AvatarStack`] overlaps the one before it.
-const STACKED_AVATAR_OVERLAP: f64 = 5.0;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -112,6 +109,10 @@ script_mod! {
 
         toggle := mod.widgets.GroupToggle {}
     }
+
+    // Read receipts beside a state event's text sit a bit higher than a message's,
+    // which puts their "+N" on the text's baseline.
+    let StateEventAvatarRow = mod.widgets.AvatarRow { margin +: {top: 2} }
 
     // The view used for each state event (non-messages) in a room's timeline.
     // It's called a small event because the timestamp, profile picture, and text are all smaller than messages.
@@ -241,7 +242,7 @@ script_mod! {
                 text: ""
             }
 
-            avatar_row := mod.widgets.AvatarRow {}
+            avatar_row := StateEventAvatarRow {}
         }
     }
 
@@ -373,7 +374,7 @@ script_mod! {
                 text: ""
             }
 
-            avatar_row := mod.widgets.AvatarRow {}
+            avatar_row := StateEventAvatarRow {}
         }
     }
 
@@ -1070,14 +1071,7 @@ impl Widget for AvatarStack {
         // Avatars show a text placeholder while being fetched; keep drawing them until their image arrives.
         self.update_undrawn_avatars(cx);
         cx.begin_turtle(walk, self.layout);
-        for (i, StackedAvatar { avatar, .. }) in self.avatars.iter_mut().enumerate() {
-            // Each avatar slightly overlaps the one before it.
-            let mut avatar_walk = avatar.walk(cx);
-            if i > 0 {
-                avatar_walk.margin.left = -STACKED_AVATAR_OVERLAP;
-            }
-            let _ = avatar.draw_walk(cx, scope, avatar_walk);
-        }
+        draw_stacked_avatars(cx, scope, self.avatars.iter().map(|StackedAvatar { avatar, .. }| avatar));
         cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
     }
@@ -1270,7 +1264,9 @@ impl StateEventGroupHeaderRef {
     /// in the meantime (`None` means it shows their user ID). See [`Self::names_still_pending()`].
     pub fn set_summary(&self, cx: &mut Cx, summary: &str, pending_names: Vec<(OwnedUserId, Option<String>)>) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.view.label(cx, ids!(summary)).set_text(cx, summary);
+            let summary_label = inner.view.label(cx, ids!(summary));
+            summary_label.set_text(cx, summary);
+            inner.view.avatar_row(cx, ids!(avatar_row)).set_text_beside(cx, &summary_label, summary);
             inner.pending_names = pending_names;
         }
     }
@@ -1418,6 +1414,13 @@ impl Widget for SmallStateEvent {
             self.animator.next_frame = cx.new_next_frame();
         }
         self.view.draw_walk(cx, scope, walk)
+    }
+
+    /// Sets the event's text, which its read receipts row makes room for if it wraps.
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
+        let content = self.view.label(cx, ids!(content));
+        content.set_text(cx, v);
+        self.view.avatar_row(cx, ids!(avatar_row)).set_text_beside(cx, &content, v);
     }
 }
 

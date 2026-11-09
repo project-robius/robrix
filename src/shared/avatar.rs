@@ -25,6 +25,9 @@ use crate::{
     utils::{self, RoomNameId},
 };
 
+/// How much each avatar drawn by [`draw_stacked_avatars()`] overlaps the one before it.
+const STACKED_AVATAR_OVERLAP: f64 = 5.0;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -572,6 +575,17 @@ impl AvatarRef {
         } else {
             (avatar_user_id.to_string(), false)
         }
+    }
+}
+
+/// Draws the given avatars in a row, each one slightly overlapping the one before it.
+pub fn draw_stacked_avatars<'a>(cx: &mut Cx2d, scope: &mut Scope, avatars: impl Iterator<Item = &'a AvatarRef>) {
+    for (i, avatar) in avatars.enumerate() {
+        let mut walk = avatar.walk(cx);
+        if i > 0 {
+            walk.margin.left = -STACKED_AVATAR_OVERLAP;
+        }
+        let _ = avatar.draw_walk(cx, scope, walk);
     }
 }
 
