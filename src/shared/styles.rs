@@ -18,6 +18,7 @@ script_mod! {
     mod.widgets.ICON_CHECKMARK        = crate_resource("self://resources/icons/checkmark.svg")
     mod.widgets.ICON_CHEVRON_DOWN     = crate_resource("self://resources/icons/chevron_down.svg")
     mod.widgets.ICON_CHEVRON_UP       = crate_resource("self://resources/icons/chevron_up.svg")
+    mod.widgets.ICON_CHEVRON_RIGHT    = crate_resource("self://resources/icons/chevron_right.svg")
     mod.widgets.ICON_CLOSE            = crate_resource("self://resources/icons/close.svg")
     mod.widgets.ICON_CLOSE_THIN       = crate_resource("self://resources/icons/close_thin.svg")
     mod.widgets.ICON_CLOUD_CHECKMARK  = crate_resource("self://resources/icons/cloud_checkmark.svg")

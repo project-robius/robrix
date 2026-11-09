@@ -48,6 +48,19 @@ script_mod! {
         text: "Clear filter"
     }
 
+    // A smaller ClearFilterButton for narrow layouts, with just the X and "Clear".
+    mod.widgets.CompactClearFilterButton = mod.widgets.ClearFilterButton {
+        padding: 6
+        flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+        spacing: 5
+        wrap_spacing: 3
+        icon_walk: Walk{width: 8, height: 8}
+        draw_text +: {
+            text_style: REGULAR_TEXT {font_size: 8}
+        }
+        text: "Clear"
+    }
+
     mod.widgets.RoomFilterInputBar = set_type_default() do #(RoomFilterInputBar::register_widget(vm)) {
         ..mod.widgets.RoundedView
 

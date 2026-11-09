@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, room::JoinRuleSummary, Mil
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, BubbleSelection, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::RoomsListEntryAction, rooms_list_header::RoomsListHeaderAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
+        home_screen::effective_is_desktop, invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_filter_bubbles::{BubbleFilters, BubbleSelection, RoomFilterBubblesAction}, room_screen::{invalidate_entire_room_timeline_states, input_bar_focus}, rooms_list_entry::{ICON_AND_NAME_MAX_WIDTH, ONLY_ICON_MAX_WIDTH, RoomsListEntryAction}, rooms_list_header::RoomsListHeaderAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesBarRef, SpacesListUpdate, enqueue_spaces_list_update}
     },
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
@@ -105,19 +105,20 @@ script_mod! {
         width: Fill, height: Fit,
         flow: Flow.Right{wrap: true, row_align: RowAlign.Center},
         align: Align{ x: 0.5, y: 0 }
-        padding: 15.0,
+        padding: Inset{top: 15, bottom: 15, left: 3, right: 3}
         spacing: 10,
         wrap_spacing: 10,
 
         spinner_and_label := View {
             width: Fit, height: Fit,
             flow: Right,
+            spacing: 8,
 
             loading_spinner := LoadingSpinner {
                 visible: false,
                 width: 13,
                 height: 13,
-                margin: Inset{right: 8, top: 2}
+                margin: Inset{top: 2}
                 draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                     stroke_width: 2.25
@@ -176,6 +177,10 @@ script_mod! {
             rooms_list_entry := RoomsListEntry {}
             empty := View {}
             status_label := mod.widgets.RoomsListStatusLabel {}
+            // For the narrower layouts, where the full-size "Clear filter" button might not fit.
+            compact_status_label := mod.widgets.RoomsListStatusLabel {
+                clear_filter_button := mod.widgets.CompactClearFilterButton {}
+            }
             bottom_filler := View {
                 width: Fill,
                 height: 100.0,
@@ -2044,9 +2049,20 @@ impl Widget for RoomsList {
                 }
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
-                    let item = list.item(cx, portal_list_index, id!(status_label));
+                    let row_width = cx.peek_walk_turtle(Walk::fill()).size.x;
+                    let template = if row_width > ICON_AND_NAME_MAX_WIDTH { id!(status_label) } else { id!(compact_status_label) };
+                    let item = list.item(cx, portal_list_index, template);
                     let label = item.label(cx, ids!(label));
                     let shows_spinner = self.is_selected_space_loading || self.is_mod_admin_loading();
+                    // In the narrowest layout, the only thing worth saying is that the list is empty.
+                    let is_list_empty = self.displayed_invited_rooms.is_empty() && self.displayed_joined_rooms.is_empty();
+                    let status: &str = if row_width > ONLY_ICON_MAX_WIDTH {
+                        &self.status
+                    } else if is_list_empty && self.is_initial_sync_done && !shows_spinner {
+                        "No rooms"
+                    } else {
+                        ""
+                    };
                     if let Some(mut spinner_and_label) = item.view(cx, ids!(spinner_and_label)).borrow_mut()
                         && let Some(mut inner) = label.borrow_mut()
                     {
@@ -2063,7 +2079,7 @@ impl Widget for RoomsList {
                         } else {
                             // The text only takes the width it needs, so the "Clear filter" button can fit beside it,
                             // but it still wraps onto centered lines if it doesn't fit on one.
-                            let text_width = utils::unwrapped_text_width(cx, &inner.draw_text, &self.status);
+                            let text_width = utils::unwrapped_text_width(cx, &inner.draw_text, status);
                             spinner_and_label.walk.width = Size::Fill {
                                 weight: 100.0,
                                 basis: FitBound::Abs(0.0),
@@ -2075,7 +2091,9 @@ impl Widget for RoomsList {
                             inner.align.x = 0.5;
                         }
                     }
-                    label.set_text(cx, &self.status);
+                    label.set_text(cx, status);
+                    label.set_visible(cx, !status.is_empty());
+                    item.view(cx, ids!(spinner_and_label)).set_visible(cx, shows_spinner || !status.is_empty());
                     item.child_by_path(ids!(loading_spinner))
                         .set_visible(cx, shows_spinner);
                     item.child_by_path(ids!(clear_filter_button))
