@@ -393,7 +393,7 @@ script_mod! {
             width: Fill, height: Fit
             font_size: 10.
             font_color: (MESSAGE_TEXT_COLOR)
-            body: "<p>Choose its name, who can join, whether it's encrypted, and who to invite.</p>"
+            body: "<p>To create a direct message (DM), it's easier to find a person above.</p>"
         }
 
         create_room_button := RobrixIconButton {
@@ -451,6 +451,8 @@ pub struct AddRoomScreen {
     #[rust] state: AddRoomState,
     /// Held while a room preview is shown, so that going back or pressing Escape cancels it.
     #[rust] cancel_scope: Option<CancelScope>,
+    /// How far down the user had scrolled when a room preview (or its loading view) replaced the room results.
+    #[rust] results_scroll_pos: Vec2d,
     /// The function to perform when the user clicks the `join_room_button`.
     #[rust(JoinButtonFunction::None)] join_function: JoinButtonFunction,
     #[rust] room_search: Search<RoomResults>,
@@ -1370,7 +1372,11 @@ impl AddRoomScreen {
 
     /// Sets our state, and holds a cancel scope while that state shows a room preview.
     fn set_state(&mut self, cx: &mut Cx, state: AddRoomState) {
+        let were_results_shown = self.are_room_results_shown();
         self.state = state;
+        if were_results_shown && !self.are_room_results_shown() {
+            self.results_scroll_pos = self.view.child_by_path(ids!(content)).as_view().scroll_pos();
+        }
         let shows_room_preview = matches!(
             self.state,
             AddRoomState::FetchedRoomPreview { .. } | AddRoomState::Knocked { .. } | AddRoomState::Joined { .. } | AddRoomState::Loaded { .. }
@@ -1392,6 +1398,8 @@ impl AddRoomScreen {
             cx.set_key_focus(Area::Empty);
         }
         self.set_state(cx, AddRoomState::WaitingOnUserInput);
+        // We go back to where the user was in the results, which are taller than the preview was.
+        self.view.child_by_path(ids!(content)).as_view().set_scroll_pos_no_clip(cx, self.results_scroll_pos);
         self.redraw(cx);
     }
 
