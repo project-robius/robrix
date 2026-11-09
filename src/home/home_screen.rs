@@ -233,9 +233,8 @@ script_mod! {
                             spacing: 2
                             align: Align{y: 0.5}
 
-                            toggle_rooms_sidebar_button := ToggleRoomsSideBarButton { margin: Inset{left: 2} }
                             // These are only shown if there's no window caption bar to show them, like on Android.
-                            nav_history_buttons := NavHistoryButtons { visible: false, margin: 0 }
+                            title_bar_buttons := TitleBarButtons { visible: false, margin: Inset{left: 2} }
 
                             CachedWidget {
                                 room_filter_input_bar := RoomFilterInputBar { is_main_filter: true }

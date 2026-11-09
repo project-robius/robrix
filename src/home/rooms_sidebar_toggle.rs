@@ -22,11 +22,7 @@ script_mod! {
         show_icon: (ICON_SIDEBAR_SHOW)
 
         button := mod.widgets.NavHistoryButton {
-            enabled: true
-            draw_icon +: {
-                svg: (ICON_SIDEBAR_HIDE)
-                color: (COLOR_TEXT)
-            }
+            draw_icon +: { svg: (ICON_SIDEBAR_HIDE) }
             icon_walk: Walk{width: 18, height: 18}
         }
     }
