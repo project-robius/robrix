@@ -82,10 +82,11 @@ script_mod! {
                 stroke_color = mix(self.border_color self.border_color_2 dir + dither)
             }
 
+            // The box reaches one anti-aliasing ramp past each side, so the shadow can't show through its side edges.
             sdf.box(
-                self.sdf_rect_pos.x
+                self.sdf_rect_pos.x - 1.0 / sdf.aa
                 self.sdf_rect_pos.y
-                self.sdf_rect_size.x
+                self.sdf_rect_size.x + 2.0 / sdf.aa
                 self.sdf_rect_size.y
                 max(1.0 self.border_radius)
             )
