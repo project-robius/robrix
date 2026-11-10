@@ -885,15 +885,15 @@ impl RoomInputBar {
             script_apply_eval!(cx, send_message_button, {
                 draw_icon.svg: mod.widgets.ICON_SEND_ENCRYPTED,
             });
-            // empty_text = "Send encrypted message…";
-            empty_text = "Message…";
+            empty_text = "Send encrypted message…";
+            // empty_text = "Message…";
         } else {
             apply_positive_button_style(cx, &mut send_message_button);
             script_apply_eval!(cx, send_message_button, {
                 draw_icon.svg: mod.widgets.ICON_SEND_UNENCRYPTED,
             });
-            // empty_text = "Send unencrypted message…";
-            empty_text = "Message…";
+            empty_text = "Send unencrypted message…";
+            // empty_text = "Message…";
         }
 
         self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
