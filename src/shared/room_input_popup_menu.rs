@@ -98,6 +98,8 @@ pub enum RoomInputPopupMenuAction {
     UploadFile,
     /// Emitted by the RoomInputPopupMenu when the send location button is clicked.
     SendCurrentLocation,
+    /// Posted by the RoomInputPopupMenu whenever it closes, as a plain action rather than a widget action.
+    Closed,
     #[default]
     None,
 }
@@ -175,6 +177,7 @@ impl RoomInputPopupMenu {
         self.cancel_scope = None;
         if !self.visible { return; }
         self.visible = false;
+        cx.action(RoomInputPopupMenuAction::Closed);
         if cx.has_key_focus(self.view.area()) {
             cx.revert_key_focus();
         }

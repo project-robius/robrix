@@ -25,7 +25,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
-use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneRef, EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, display_name_or_user_id, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, moderation::MemberModeration, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputRef, MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::{apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneRef, EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, display_name_or_user_id, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, moderation::MemberModeration, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::{BasicRoomDetails, attachment_buttons::{AttachmentButtonsRef, AttachmentButtonsWidgetExt}}, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputRef, MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::{apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -86,20 +86,8 @@ script_mod! {
                 align: Align{y: 1.0},
                 padding: 6,
 
-                open_popup_menu_button := RobrixIconButton {
-                    padding: 9
+                attachment_buttons := AttachmentButtons {
                     margin: Inset { top: 4, left: 4, right: 4, bottom: 5}
-                    spacing: 0,
-                    draw_icon +: {
-                        svg: (ICON_ADD)
-                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                    },
-                    draw_bg +: {
-                        color: (COLOR_BG_PREVIEW)
-                        color_hover: (COLOR_INPUT_BAR_ADD_BUTTON_BG_HOVER)
-                        color_down: (COLOR_INPUT_BAR_ADD_BUTTON_BG_DOWN)
-                    }
-                    icon_walk: Walk{width: 21, height: 21}
                 }
 
                 // A checkbox that enables TSP signing for the outgoing message.
@@ -211,7 +199,7 @@ struct ChildRefs {
     reply_preview_content: WidgetRef,
     input_bar: ViewRef,
     mentionable_text_input: MentionableTextInputRef,
-    open_popup_menu_button: ButtonRef,
+    attachment_buttons: AttachmentButtonsRef,
     send_message_button: ButtonRef,
     cancel_reply_button: ButtonRef,
     send_location_button: ButtonRef,
@@ -222,9 +210,9 @@ impl ScriptHook for RoomInputBar {
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             let send_on_enter = cx.global::<AppPreferencesGlobal>().0.send_on_enter;
-            self.mentionable_text_input(cx, ids!(mentionable_text_input))
-                .text_input_ref()
-                .set_submit_on_enter(send_on_enter);
+            let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
+            mentionable_text_input.text_input_ref().set_submit_on_enter(send_on_enter);
+            self.attachment_buttons(cx, ids!(attachment_buttons)).set_input(mentionable_text_input.speech_text_input_ref());
         });
     }
 
@@ -336,7 +324,7 @@ impl RoomInputBar {
         let ChildRefs {
             input_bar,
             mentionable_text_input,
-            open_popup_menu_button,
+            attachment_buttons,
             send_message_button,
             cancel_reply_button,
             send_location_button,
@@ -344,6 +332,7 @@ impl RoomInputBar {
             ..
         } = self.child_refs(cx).clone();
         let text_input = mentionable_text_input.text_input_ref();
+        let attachment_action = attachment_buttons.handle_actions(cx, actions);
 
         for action in actions {
             // Handle changes to the `send_on_enter` preference.
@@ -379,12 +368,8 @@ impl RoomInputBar {
             return;
         };
 
-        if open_popup_menu_button.clicked(actions) {
-            let button_rect = open_popup_menu_button.area().rect(cx);
-            cx.widget_action(
-                room_screen_widget_uid,
-                RoomInputPopupMenuAction::Show { button_rect },
-            );
+        if attachment_action != RoomInputPopupMenuAction::None {
+            cx.widget_action(room_screen_widget_uid, attachment_action);
         }
 
         // Handle the send location button being clicked.
@@ -501,6 +486,7 @@ impl RoomInputBar {
                     }
                 }
             }
+            attachment_buttons.update_for_input(cx, true);
         }
 
         // If the user starts/stops typing in the message input box,
@@ -550,7 +536,7 @@ impl RoomInputBar {
             reply_preview_content: self.view.widget(cx, ids!(replying_preview.reply_preview_content)),
             input_bar: self.view.view(cx, ids!(input_bar)),
             mentionable_text_input: self.view.mentionable_text_input(cx, ids!(mentionable_text_input)),
-            open_popup_menu_button: self.view.button(cx, ids!(open_popup_menu_button)),
+            attachment_buttons: self.view.attachment_buttons(cx, ids!(attachment_buttons)),
             send_message_button: self.view.button(cx, ids!(send_message_button)),
             cancel_reply_button: self.view.button(cx, ids!(cancel_reply_button)),
             send_location_button: self.view.button(cx, ids!(location_preview.send_location_button)),
@@ -1164,6 +1150,7 @@ impl RoomInputBarRef {
         // 1. Restore the state of the MentionableTextInput.
         inner.mentionable_text_input(cx, ids!(input_bar.mentionable_text_input))
             .restore_state(cx, mentionable_input_state);
+        inner.attachment_buttons(cx, ids!(input_bar.attachment_buttons)).update_for_input(cx, false);
 
         // 2. Restore the state of the replying-to preview.
         if let Some(replying_to) = replying_to {

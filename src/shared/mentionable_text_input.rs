@@ -42,33 +42,44 @@ script_mod! {
     mod.widgets.MentionableTextInput = #(MentionableTextInput::register_widget(vm)) {
         width: Fill,
         height: Fit
-        flow: Right
-        // Keep the emoji button at the bottom as the message grows taller.
-        align: Align{y: 1.0}
         allow_slash_commands: true
 
         speech_text_input := SpeechTextInput {
             mic_tooltip: "Dictate a message"
+            // 30 pt buttons, so the mic still fits above the emoji button in a two-line message.
+            mic_gutter: 38
+            // The emoji button plus the space between it and the mic.
+            extra_buttons_width: 32
+            button_spacing: 2
+            are_extra_buttons_in_corner: true
             text_input +: { is_multiline: true }
-        }
 
-        emoji_button := RobrixIconButton {
-            width: 38, height: 38
-            margin: Inset{left: 2}
-            padding: 0, spacing: 0
-            align: Align{x: 0.5, y: 0.5}
-            // Tapping it keeps the message focused, so the soft keyboard stays up while picking emoji.
-            grab_key_focus: false
-            hide_keyboard_on_tap: false
-            icon_walk: Walk{width: 22, height: 22}
-            draw_icon +: {
-                svg: (ICON_EMOJI)
-                color: (COLOR_SPEECH_BUTTON_ICON)
-            }
-            draw_bg +: {
-                color: (COLOR_TRANSPARENT)
-                color_hover: (COLOR_SPEECH_BUTTON_BG_HOVER)
-                color_down: (COLOR_SPEECH_BUTTON_BG_DOWN)
+            speech_overlay +: {
+                extra_buttons +: {
+                    emoji_button := RobrixIconButton {
+                        width: 30, height: 30
+                        margin: 0, padding: 0, spacing: 0
+                        align: Align{x: 0.5, y: 0.5}
+                        // Tapping it keeps the message focused, so the soft keyboard stays up while picking emoji.
+                        grab_key_focus: false
+                        hide_keyboard_on_tap: false
+                        icon_walk: Walk{width: 19, height: 19}
+                        draw_icon +: {
+                            svg: (ICON_EMOJI)
+                            color: (COLOR_SPEECH_BUTTON_ICON)
+                        }
+                        draw_bg +: {
+                            color: (COLOR_TRANSPARENT)
+                            color_hover: (COLOR_SPEECH_BUTTON_BG_HOVER)
+                            color_down: (COLOR_SPEECH_BUTTON_BG_DOWN)
+                        }
+                    }
+                }
+                speech_button +: {
+                    width: 30, height: 30
+                    margin: 0
+                    padding: 6
+                }
             }
         }
     }
@@ -618,7 +629,7 @@ impl MentionableTextInputRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.close_popup(cx);
         inner.speech_text_input_ref().cancel_dictation(cx);
-        inner.text_input_ref().restore_state(cx, state.text_input_state);
+        inner.speech_text_input_ref().restore_text_input_state(cx, state.text_input_state);
         inner.possible_mentions = state.possible_mentions;
         inner.mentioned_room_links = state.mentioned_room_links;
     }
