@@ -1,6 +1,6 @@
 //! An indicator that is shown nearby a message that has been edited.
 //!
-//! This widget is basically just a clickable label that shows the text "(edited)"
+//! This widget is basically just a clickable label that shows the text "edited"
 //! with an underline to indicate that it is clickable.
 //! Upon hover, it shows a tooltip with the date and time when the message was edited.
 //!
@@ -38,7 +38,7 @@ script_mod! {
 
             font_size: (mod.widgets.EDITED_INDICATOR_FONT_SIZE),
             font_color: (COLOR_TEXT_PURPLE),
-            body: "(<u>edited</u>)",
+            body: "<i><u>edited</u></i>",
         }
     }
 }

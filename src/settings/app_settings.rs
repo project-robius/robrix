@@ -483,7 +483,7 @@ script_mod! {
 
                 double_tap_to_react_toggle := mod.widgets.RobrixSettingsToggle {
                     active: true,
-                    text: "Double-tap a message to react with:"
+                    text: "Double-tap to react with:"
                 }
                 // Read-only while `double_tap_to_react_toggle` is off.
                 quick_reaction_input := RobrixTextInput {
