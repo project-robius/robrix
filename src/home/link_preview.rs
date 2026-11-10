@@ -92,7 +92,7 @@ script_mod! {
                 },
                 color: (COLOR_TEXT_MUTED),
             }
-            text: "No preview available, click to open"
+            text: "No preview available"
         }
     }
 

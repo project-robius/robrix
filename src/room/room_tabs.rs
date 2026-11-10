@@ -218,7 +218,7 @@ impl RoomTabs {
         dock: &DockRef,
         rooms: &FxHashMap<LiveId, SelectedRoom>,
     ) {
-        self.visible_tabs.clear();
+        let previously_visible_tabs = std::mem::take(&mut self.visible_tabs);
         self.controls.retain(|tab_id, _| rooms.contains_key(tab_id));
         let Some(geometry) = dock.borrow().map(|dock| dock.compact_dump(cx)) else { return };
         let tab_bar_rects: FxHashMap<_, _> = geometry.tab_headers.iter().filter_map(|tab| {
@@ -258,8 +258,13 @@ impl RoomTabs {
                 controls.action_bar = Some((body_uid, body.room_action_bar(cx, ids!(room_actions))));
             }
             let expanded = controls.action_bar.as_ref().is_some_and(|(_, action_bar)| action_bar.is_expanded());
-            controls.expand_button.set_visible(cx, !expanded);
-            controls.collapse_button.set_visible(cx, expanded);
+            for (button, visible) in [(&controls.expand_button, !expanded), (&controls.collapse_button, expanded)] {
+                // A hidden button never gets its hover-out, so we clear its hover as we hide it.
+                if !visible && button.visible() {
+                    button.reset_hover(cx);
+                }
+                button.set_visible(cx, visible);
+            }
             if controls.drawn_as != Some((is_active, is_focused)) {
                 controls.drawn_as = Some((is_active, is_focused));
                 for mut button in [controls.expand_button.clone(), controls.collapse_button.clone()] {
@@ -316,6 +321,13 @@ impl RoomTabs {
             }
             cx.pop_clip_rect();
             self.visible_tabs.push(*tab_id);
+        }
+        // A tab that scrolled out of the tab bar never gets its buttons' hover-outs either.
+        for tab_id in previously_visible_tabs.iter().filter(|tab_id| !self.visible_tabs.contains(*tab_id)) {
+            if let Some(controls) = self.controls.get(tab_id) {
+                controls.expand_button.reset_hover(cx);
+                controls.collapse_button.reset_hover(cx);
+            }
         }
     }
 
