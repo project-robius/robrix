@@ -97,7 +97,7 @@ script_mod! {
     }
 
     let FormToggle = mod.widgets.RobrixSettingsToggle {
-        margin: Inset{left: 0.5, top: 18, bottom: 0}
+        margin: Inset{left: 0.5, top: 16.5, bottom: -1.5}
     }
 
     let FormDropDown = mod.widgets.RobrixSettingsDropDown {

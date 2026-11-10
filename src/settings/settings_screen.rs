@@ -235,5 +235,11 @@ impl SettingsScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return; };
         inner.populate(cx, own_profile, app_state);
     }
+
+    /// Smoothly scrolls the settings back up to their top.
+    pub fn scroll_to_top(&self, cx: &mut Cx) {
+        let Some(inner) = self.borrow() else { return };
+        inner.view.view(cx, ids!(scroll_view)).smooth_scroll_to(cx, Vec2d::default());
+    }
 }
 
