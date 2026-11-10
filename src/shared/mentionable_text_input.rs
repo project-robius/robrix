@@ -46,11 +46,12 @@ script_mod! {
 
         speech_text_input := SpeechTextInput {
             mic_tooltip: "Dictate a message"
-            // 30 pt buttons, so the emoji button still fits above the mic in a two-line message.
+            // 30 pt buttons, so the mic still fits above the emoji button in a two-line message.
             mic_gutter: 38
             // The emoji button plus the space between it and the mic.
             extra_buttons_width: 32
             button_spacing: 2
+            are_extra_buttons_in_corner: true
             text_input +: { is_multiline: true }
 
             speech_overlay +: {

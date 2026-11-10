@@ -57,8 +57,8 @@ script_mod! {
             // single-line input, so any would push it past the bottom edge.
             padding: Inset{top: 0, bottom: 0, left: 4, right: 3}
 
-            // Buttons put here sit left of the mic, then move above it
-            // if the text would still wrap with them up there.
+            // Buttons put here sit beside the mic, then the two stack up
+            // if the text would still wrap beside just one of them.
             extra_buttons := View { width: Fit, height: Fit }
 
             // One widget for both states: the icon at rest, the face under `draw_meter` while recording.
@@ -142,6 +142,8 @@ pub struct SpeechTextInput {
     #[live] button_spacing: f64,
     /// Puts the buttons and their gutter on the input's left side, rather than its right.
     #[live] are_buttons_on_left: bool,
+    /// Keeps `extra_buttons` in the corner, so the mic is what moves up when the buttons stack.
+    #[live] are_extra_buttons_in_corner: bool,
     /// The microphone button's tooltip while no session is running.
     #[live] mic_tooltip: String,
     /// Whether to drop the sentence punctuation that recognizers end each transcript with,
@@ -165,8 +167,8 @@ pub struct SpeechTextInput {
     /// The inner text input, looked up once since we check its actions on every event.
     #[rust] text_input: OnceCell<TextInputRef>,
     #[rust] is_mic_shown: bool,
-    #[rust] are_extra_buttons_above_mic: bool,
-    /// Our width at the last draw, so we notice when a resize should move `extra_buttons`.
+    #[rust] are_buttons_stacked: bool,
+    /// Our width at the last draw, so we notice when a resize should stack or unstack the buttons.
     #[rust] last_drawn_width: f64,
     /// The inner text input's padding, as we last set it.
     #[rust] input_padding: Inset,
@@ -222,7 +224,7 @@ impl Widget for SpeechTextInput {
                 self.toggle(cx);
             }
             if self.extra_buttons_width > 0.0 && self.text_input_ref().changed(actions).is_some() {
-                self.update_extra_buttons_position(cx);
+                self.update_button_stacking(cx);
             }
         }
 
@@ -254,7 +256,7 @@ impl Widget for SpeechTextInput {
         let width = self.view.area().rect(cx).size.x;
         if width != self.last_drawn_width {
             self.last_drawn_width = width;
-            self.update_extra_buttons_position(cx);
+            self.update_button_stacking(cx);
         }
         DrawStep::done()
     }
@@ -267,7 +269,7 @@ impl Widget for SpeechTextInput {
     fn set_text(&mut self, cx: &mut Cx, text: &str) {
         self.cancel(cx);
         self.text_input_ref().set_text(cx, text);
-        self.update_extra_buttons_position(cx);
+        self.update_button_stacking(cx);
     }
 
     fn set_key_focus(&self, cx: &mut Cx) {
@@ -384,24 +386,24 @@ impl SpeechTextInput {
         // Without the mic, any extra buttons take its place.
         self.view.view(cx, ids!(speech_overlay)).set_visible(cx, show || self.extra_buttons_width > 0.0);
         self.speech_button().set_visible(cx, show);
-        self.are_extra_buttons_above_mic = self.should_extra_buttons_be_above_mic(cx);
+        self.are_buttons_stacked = self.should_stack_buttons(cx);
         self.apply_gutter(cx);
     }
 
-    /// Moves `extra_buttons` above the microphone or back beside it, as the text calls for.
-    fn update_extra_buttons_position(&mut self, cx: &mut Cx) {
-        let should_be_above = self.should_extra_buttons_be_above_mic(cx);
-        if should_be_above != self.are_extra_buttons_above_mic {
-            self.are_extra_buttons_above_mic = should_be_above;
+    /// Stacks the buttons or puts them back side by side, as the text calls for.
+    fn update_button_stacking(&mut self, cx: &mut Cx) {
+        let should_stack = self.should_stack_buttons(cx);
+        if should_stack != self.are_buttons_stacked {
+            self.are_buttons_stacked = should_stack;
             self.apply_gutter(cx);
             self.redraw(cx);
         }
     }
 
-    /// Returns whether the text would still wrap with `extra_buttons` moved above the microphone.
+    /// Returns whether the text would still wrap with the buttons stacked, leaving just one beside its line.
     ///
-    /// Only then do they move up, so the text can't fit on one line again and send them back down.
-    fn should_extra_buttons_be_above_mic(&self, cx: &mut Cx) -> bool {
+    /// Only then do they stack, so the text can't fit on one line again and unstack them.
+    fn should_stack_buttons(&self, cx: &mut Cx) -> bool {
         if !self.is_mic_shown || self.extra_buttons_width <= 0.0 || !self.text_input_ref().is_multiline() {
             return false;
         }
@@ -418,20 +420,20 @@ impl SpeechTextInput {
         laidout.size_in_lpxs.width as f64 * input.draw_text.font_scale as f64 > max_width + 0.5
     }
 
-    /// Sets the text input's padding and scroll bar inset to leave room for the buttons over it.
+    /// Sets the text input's padding to leave room for the buttons over it.
     ///
     /// In a multi-line input, the buttons are centered on the last line of text.
-    /// Once `extra_buttons` move above the microphone, they sit in the top corner,
+    /// Once they stack, the top one sits in the top corner,
     /// and the input grows tall enough to fit both.
     fn apply_gutter(&mut self, cx: &mut Cx) {
         let has_extra_buttons = self.extra_buttons_width > 0.0;
         let has_buttons = self.is_mic_shown || has_extra_buttons;
-        let is_above = self.are_extra_buttons_above_mic;
+        let is_stacked = self.are_buttons_stacked;
         let is_left = self.are_buttons_on_left;
         let mut padding = self.text_padding;
         if has_buttons {
             let mut gutter = self.mic_gutter;
-            if has_extra_buttons && self.is_mic_shown && !is_above {
+            if has_extra_buttons && self.is_mic_shown && !is_stacked {
                 gutter += self.extra_buttons_width;
             }
             if is_left { padding.left = gutter; } else { padding.right = gutter; }
@@ -451,22 +453,26 @@ impl SpeechTextInput {
             // The buttons sit this far in from the side edge, and from the top or bottom edge they're against.
             let inset = self.text_padding.bottom + (line_height - button_height) / 2.0;
             if let Some(mut overlay) = self.view.view(cx, ids!(speech_overlay)).borrow_mut() {
-                overlay.layout.flow = if is_above { Flow::Down } else { Flow::right() };
+                overlay.layout.flow = if is_stacked { Flow::Down } else { Flow::right() };
                 overlay.layout.spacing = self.button_spacing;
-                overlay.layout.distribute = if is_above { Distribute::SpaceBetween } else { Distribute::Start };
+                overlay.layout.distribute = if is_stacked { Distribute::SpaceBetween } else { Distribute::Start };
                 overlay.layout.padding.top = inset;
                 overlay.layout.padding.bottom = inset;
                 if is_left { overlay.layout.padding.left = inset; } else { overlay.layout.padding.right = inset; }
             }
             if let Size::Fit { max, .. } = text_input.walk(cx).height {
-                let min = is_above.then_some(FitBound::Abs(2.0 * inset + button_height + self.button_spacing + extra_buttons_height));
+                let min = is_stacked.then_some(FitBound::Abs(2.0 * inset + button_height + self.button_spacing + extra_buttons_height));
                 text_input.set_height(cx, Size::Fit { min, max });
             }
         }
-        if is_left && let Some(mut overlay) = self.view.view(cx, ids!(speech_overlay)).borrow_mut() {
-            overlay.layout.align.x = 0.0;
-            // The mic keeps the outer corner while `extra_buttons` sit beside it.
-            if (overlay.child_index(&speech_button) == Some(0)) == is_above {
+        if let Some(mut overlay) = self.view.view(cx, ids!(speech_overlay)).borrow_mut() {
+            if is_left {
+                overlay.layout.align.x = 0.0;
+            }
+            // The button in the corner comes last, except when the buttons sit side by side on the left.
+            let is_corner_button_first = is_left && !is_stacked;
+            let should_mic_be_first = is_corner_button_first != self.are_extra_buttons_in_corner;
+            if (overlay.child_index(&speech_button) == Some(0)) != should_mic_be_first {
                 overlay.swap_child(0, 1);
             }
         }
@@ -618,7 +624,7 @@ impl SpeechTextInputRef {
     pub fn restore_text_input_state(&self, cx: &mut Cx, state: TextInputState) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.text_input_ref().restore_state(cx, state);
-        inner.update_extra_buttons_position(cx);
+        inner.update_button_stacking(cx);
     }
 
     /// Returns whether the input's empty text would still fit on one line if the input were `narrower_by` narrower.
