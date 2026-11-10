@@ -605,6 +605,14 @@ impl Widget for HomeScreen {
                     Some(NavigationBarAction::GoToHome) => {
                         self.switch_to_tab(cx, app_state, SelectedTab::Home);
                     }
+                    // Tapping AddRoom while it's already shown scrolls it back up to its top.
+                    Some(NavigationBarAction::GoToAddRoom { search_for: None }) if app_state.selected_tab == SelectedTab::AddRoom => {
+                        if let Some(page) = self.view.page_flip(cx, ids!(home_screen_page_flip))
+                            .page(cx, page_for_tab(&SelectedTab::AddRoom))
+                        {
+                            page.add_room_screen(cx, ids!(add_room_screen)).scroll_to_top(cx);
+                        }
+                    }
                     Some(NavigationBarAction::GoToAddRoom { search_for }) => {
                         let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
                         // Skip searching for a clicked link (room/space) if the user has already left
@@ -661,6 +669,12 @@ impl Widget for HomeScreen {
                             } else {
                                 error!("BUG: failed to set active page to show settings screen.");
                             }
+                        }
+                        // Tapping Settings while it's already open scrolls it back up to its top.
+                        else if let Some(settings_page) = self.view.page_flip(cx, ids!(home_screen_page_flip))
+                            .page(cx, page_for_tab(&SelectedTab::Settings))
+                        {
+                            settings_page.settings_screen(cx, ids!(settings_screen)).scroll_to_top(cx);
                         }
                     }
                     Some(NavigationBarAction::CloseSettings) => {

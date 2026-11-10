@@ -258,8 +258,12 @@ script_mod! {
 
     // An on/off toggle styled to match other Robrix settings controls.
     mod.widgets.RobrixSettingsToggle = ToggleFlat {
-        margin: Inset{left: 0.5, top: 15, bottom: 10}
-        padding: Inset { left: 15}
+        // A label that's too long for our parent wraps onto more lines beside the toggle.
+        width: Fit{max: FitBound.Rel{base: Base.Parent, factor: 1.0}}
+        flow: Flow.Right{wrap: true}
+        margin: Inset{left: 0.5, top: 13.5, bottom: 8.5}
+        // The toggle is taller than a line of text, so this keeps it from getting cut off.
+        padding: Inset{left: 15, top: 1.5, bottom: 1.5}
         draw_bg +: {
             size: 21
             // An enabled toggle is Robrix purple with a white knob.
@@ -276,7 +280,7 @@ script_mod! {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
 
                 let sz_px = vec2(self.size * 1.6, self.size)
-                let center_px = vec2(sz_px.x * 0.5, self.rect_size.y * 0.5)
+                let center_px = vec2(sz_px.x * 0.5, self.rect_size.y * 0.5 + self.mark_box_offset_y)
                 let offset_px = vec2(0., center_px.y - sz_px.y * 0.5)
 
                 sdf.box(
@@ -448,7 +452,7 @@ script_mod! {
         }
 
         send_on_cmd_enter_toggle := mod.widgets.RobrixSettingsToggle {
-            margin: Inset{left: 6.5, top: 10, bottom: 10}
+            margin: Inset{left: 6.5, top: 8.5, bottom: 8.5}
             active: false,
             text: "" // we set this text dynamically based on the toggle state and target platform
         }

@@ -1774,6 +1774,12 @@ impl AddRoomScreenRef {
         inner.view.button(cx, ids!(search_for_room_button)).set_enabled(cx, true);
         inner.search_for_room(cx, address);
     }
+
+    /// Smoothly scrolls this screen back up to its top.
+    pub fn scroll_to_top(&self, cx: &mut Cx) {
+        let Some(inner) = self.borrow() else { return };
+        inner.view.child_by_path(ids!(content)).as_view().smooth_scroll_to(cx, Vec2d::default());
+    }
 }
 
 
