@@ -1787,7 +1787,7 @@ impl RoomScreen {
             RoomInputPopupMenuAction::SendCurrentLocation => {
                 room_input_bar.show_current_location_preview(cx);
             }
-            RoomInputPopupMenuAction::None => {}
+            RoomInputPopupMenuAction::Closed | RoomInputPopupMenuAction::None => {}
         }
     }
 

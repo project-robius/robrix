@@ -8,6 +8,7 @@ use ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, Owned
 use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
+pub mod attachment_buttons;
 pub mod message_list;
 pub mod pane_dock;
 pub mod pinned_messages_list;
@@ -28,6 +29,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     room_tab_hover_card::script_mod(vm);
     room_tabs::script_mod(vm);
     reply_preview::script_mod(vm);
+    attachment_buttons::script_mod(vm);
     room_input_bar::script_mod(vm);
     typing_notice::script_mod(vm);
     room_members_list::script_mod(vm);

@@ -246,14 +246,15 @@ impl EmojiPickerPopup {
         let (right, bottom) = (left + bounds.size.x, top + bounds.size.y);
         let available = bounds.size;
 
-        let anchor = match &self.anchor {
-            Anchor::InOverlay(rect) => rect.translate(origin),
+        let (anchor, input_rect) = match &self.anchor {
+            Anchor::InOverlay(rect) => (rect.translate(origin), None),
             // As wide as the emoji button, and as tall as the whole input.
             Anchor::Input { input, button } => {
                 let (input_rect, button_rect) = (input.area().rect(cx), button.area().rect(cx));
-                Rect { pos: dvec2(button_rect.pos.x, input_rect.pos.y), size: dvec2(button_rect.size.x, input_rect.size.y) }
+                let anchor = Rect { pos: dvec2(button_rect.pos.x, input_rect.pos.y), size: dvec2(button_rect.size.x, input_rect.size.y) };
+                (anchor, Some(input_rect))
             }
-            Anchor::None => Rect::default(),
+            Anchor::None => (Rect::default(), None),
         };
         self.anchor_rect = anchor;
         let is_for_input = matches!(self.purpose, Some(EmojiPickerPurpose::Insert { .. }));
@@ -265,7 +266,7 @@ impl EmojiPickerPopup {
             let x = left + (available.x - width) / 2.0;
             Rect { pos: dvec2(x, sheet_bottom - height), size: dvec2(width, height) }
         } else if is_for_input {
-            // A popover for a message input fills the space above or below it, lined up with the right edge of its button.
+            // A popover for a message input fills the space above or below it, centered on the input.
             let space_above = anchor.pos.y - ANCHOR_GAP - top;
             let space_below = bottom - (anchor.pos.y + anchor.size.y + ANCHOR_GAP);
             let is_above = space_above >= MAX_SIZE.y || space_above >= space_below;
@@ -279,7 +280,8 @@ impl EmojiPickerPopup {
                 let height = MAX_SIZE.y.min(available.y);
                 (if is_above { top } else { bottom - height }, height)
             };
-            let x = (anchor.pos.x + anchor.size.x - width).clamp(left, (right - width).max(left));
+            let input_rect = input_rect.unwrap_or(anchor);
+            let x = (input_rect.pos.x + (input_rect.size.x - width) / 2.0).clamp(left, (right - width).max(left));
             let y = y.clamp(top, (bottom - height).max(top));
             Rect { pos: dvec2(x, y), size: dvec2(width, height) }
         } else {
