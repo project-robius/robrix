@@ -442,32 +442,6 @@ script_mod! {
             body: "" // see UI_ZOOM_DESCRIPTION
         }
 
-
-        text_rendering_section := View {
-            width: Fill, height: Fit
-            flow: Down,
-
-            SubsectionLabel {
-                margin: Inset{top: 10}
-                text: "Text Rendering"
-            }
-
-            View {
-                width: Fill, height: Fit
-                flow: Down,
-                margin: Inset{left: 6},
-
-                simpler_text_rendering_toggle := mod.widgets.RobrixSettingsToggle {
-                    active: false,
-                    text: "Use simpler text rendering"
-                }
-                mod.widgets.SettingsSectionDescription {
-                    body: "<ul><li>Draws text faster on older devices, but it may look slightly softer.</li></ul>"
-                }
-            }
-        }
-
-
         SubsectionLabel {
             margin: Inset{top: 10}
             text: "Keyboard Shortcut to Send Message"
@@ -759,6 +733,30 @@ script_mod! {
             }
             send_typing_notices_description := mod.widgets.SettingsSectionDescription {
                 body: "" // set dynamically, see `SEND_TYPING_NOTICES_DESC`
+            }
+        }
+
+        text_rendering_section := View {
+            width: Fill, height: Fit
+            flow: Down,
+
+            SubsectionLabel {
+                margin: Inset{top: 10}
+                text: "Text Rendering"
+            }
+
+            View {
+                width: Fill, height: Fit
+                flow: Down,
+                margin: Inset{left: 6},
+
+                simpler_text_rendering_toggle := mod.widgets.RobrixSettingsToggle {
+                    active: false,
+                    text: "Use simpler text rendering"
+                }
+                mod.widgets.SettingsSectionDescription {
+                    body: "<ul><li>Draws text faster on older devices, but it may look slightly softer.</li></ul>"
+                }
             }
         }
     }
