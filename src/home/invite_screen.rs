@@ -307,6 +307,10 @@ pub enum LeaveRoomResultAction {
 /// Actions that tell an `InviteScreen` to refresh part of its content.
 #[derive(Debug)]
 pub enum InviteScreenAction {
+    /// The invitation's server metadata has been refreshed from a full room-list snapshot.
+    MetadataUpdated {
+        room_id: OwnedRoomId,
+    },
     /// We've fetched more info about who sent this invite.
     InviterInfoUpdated {
         room_id: OwnedRoomId,
@@ -368,6 +372,16 @@ impl Widget for InviteScreen {
                     if self.room_name_id.as_ref().is_some_and(|current| current.room_id() == room_name_id.room_id()) {
                         self.set_displayed_invite(cx, room_name_id);
                         break;
+                    }
+                    continue;
+                }
+                if let Some(InviteScreenAction::MetadataUpdated { room_id }) = action.downcast_ref() {
+                    if self.room_name_id.as_ref().is_some_and(|current| current.room_id() == room_id) {
+                        let room_name_id = get_invited_rooms(cx).borrow().get(room_id)
+                            .map(|invite| invite.room_name_id.clone());
+                        if let Some(room_name_id) = room_name_id {
+                            self.set_displayed_invite(cx, &room_name_id);
+                        }
                     }
                     continue;
                 }
