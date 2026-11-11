@@ -10,7 +10,7 @@ use crate::{
         hover_highlight::handle_hover_hit,
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetExt}, unread_badge::{UnreadBadgeRef, UnreadBadgeWidgetExt as _},
     },
-    utils::{self, relative_format}
+    utils::{self, relative_format, RoomNameId}
 };
 
 use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo};
@@ -489,7 +489,7 @@ impl RoomsListEntryContent {
             room_info.num_unread_mentions,
             room_info.num_unread_messages,
         );
-        self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
+        self.draw_common(cx, &room_info.room_avatar, &room_info.room_name_id, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
         self.child_refs(cx).tombstone_icon.set_visible(cx, room_info.is_tombstoned);
     }
@@ -519,7 +519,7 @@ impl RoomsListEntryContent {
         child_refs.tombstone_icon.set_visible(cx, false);
         child_refs.unread_badge.update_counts(false, 1, 0);
 
-        self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
+        self.draw_common(cx, &room_info.room_avatar, &room_info.room_name_id, room_info.is_selected);
     }
 
     /// Populates the widgets common to both invited and joined rooms list entries.
@@ -527,22 +527,14 @@ impl RoomsListEntryContent {
         &mut self,
         cx: &mut Cx,
         room_avatar: &FetchedRoomAvatar,
+        room_name_id: &RoomNameId,
         is_selected: bool,
     ) {
         // Only redraw the avatar if it changed
         if self.last_avatar.as_ref() != Some(room_avatar) {
-            match room_avatar {
-                FetchedRoomAvatar::Text(text) => {
-                    self.view.avatar(cx, ids!(avatar)).show_text(cx, None, None, text);
-                }
-                FetchedRoomAvatar::Image(avatar_image) => {
-                    let _ = self.view.avatar(cx, ids!(avatar)).show_image(
-                        cx,
-                        None, // Avatars in a RoomsListEntry shouldn't be clickable.
-                        |cx, img| utils::load_avatar_image(&img, cx, avatar_image),
-                    );
-                }
-            }
+            // A reused row shows this room's letter, not the last one's, while the image decodes.
+            // Avatars in a RoomsListEntry shouldn't be clickable.
+            self.view.avatar(cx, ids!(avatar)).show_room_avatar(cx, Some(room_avatar), room_name_id);
             self.last_avatar = Some(room_avatar.clone());
         }
 
