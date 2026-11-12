@@ -20,14 +20,17 @@ script_mod! {
 
 
     mod.widgets.TombstoneFooter = set_type_default() do #(TombstoneFooter::register_widget(vm)) {
-        ..mod.widgets.SolidView
+        // Its background comes from the RoomInputBar's `notices` view.
+        ..mod.widgets.View
 
         visible: false,
         width: Fill,
         height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
         align: Align{x: 0.5}
-        padding: Inset{top: 20, left: 20, bottom: 20, right: 16},
+        // Uneven so the content looks centered: the RoomInputBar's -4 bottom margin hides 4 of the bottom padding,
+        // and the text at the top has more space above its letters than the avatar at the bottom has below it.
+        padding: Inset{top: 14, left: 20, bottom: 26, right: 16},
         margin: Inset{right: 4} // ensure the scroll bar stays on screen
         spacing: 8
 
@@ -35,11 +38,6 @@ script_mod! {
         scroll_bars: mod.widgets.ScrollBars {
             show_scroll_x: false show_scroll_y: true
             scroll_bar_y.drag_scrolling: true
-        }
-
-        show_bg: true
-        draw_bg +: {
-            color: COLOR_SECONDARY
         }
 
         replacement_reason := Label {

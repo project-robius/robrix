@@ -47,6 +47,7 @@ use crate::home::small_state_event::{populate_small_state_event, populate_group_
 use crate::home::room_creation_item::{get_creation_item_to_redraw, populate_room_creation_item};
 use crate::home::timeline_items::{ChangedItems, ItemDraw, PendingKnocks, TimelineInfo, date_divider_text, divider_span_end, index_of_event, item_draw, uses_compact_view};
 use crate::room::{
+    membership::{RoomMembership, RoomMembershipChanged, get_or_fetch_room_membership, get_room_membership},
     pane_dock::{RoomPaneDockAction, RoomPaneDockWidgetExt, RoomPaneDockWidgetRefExt, SavedRoomPane},
     pinned_messages_list::{PinnedMessagesListAction, confirm_unpin_message},
     room_action_bar::{RoomActionBarAction, RoomActionBarWidgetExt},
@@ -843,6 +844,11 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// Our membership in this room if we aren't in it (anymore),
+    /// in which case we show the timeline that we have but don't let the user do anything in it.
+    #[rust] not_joined: Option<RoomMembership>,
+    /// What the user had typed in a room that we just rejoined, to put into that room's new timeline.
+    #[rust] rejoin_input_bar_state: Option<RoomInputBarState>,
     /// Whether this screen was revealed beneath another view due to a swipe gesture,
     /// in which case it doesn't yet count as having opened that room (for marking it as read).
     #[rust] is_revealed_by_swipe: bool,
@@ -887,17 +893,14 @@ impl ScriptHook for RoomScreen {
         // A script reload changes the RoomScreen's children; invalidate the ones we cached.
         self.cached_refs = None;
         vm.with_cx_mut(|cx| {
+            // The reapply also resets the RoomInputBar, so we need to re-update its state.
+            if self.tl_state.is_some() || self.not_joined.is_some() {
+                self.update_input_bar_mode(cx);
+            }
             if let Some(tl_state) = self.tl_state.as_ref() {
-                // The reapply also resets the RoomInputBar, so we need to re-update its state.
-                let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
-                room_input_bar.update_room_state(
-                    cx,
-                    tl_state.kind.room_id(),
-                    tl_state.tombstone_info.as_ref(),
-                    tl_state.user_power,
-                );
                 // Restore the send button's flag, colors, and encryption state too.
-                room_input_bar.update_encryption_state(cx, tl_state.is_encrypted);
+                self.view.room_input_bar(cx, ids!(room_input_bar))
+                    .update_encryption_state(cx, tl_state.is_encrypted);
                 self.view.redraw(cx);
             }
         });
@@ -1181,6 +1184,14 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
+                // We left, got removed from, or got back into this room.
+                if let Some(RoomMembershipChanged { room_id }) = action.downcast_ref()
+                    && self.timeline_kind.as_ref().is_some_and(|k| k.room_id() == room_id)
+                {
+                    self.update_membership(cx);
+                    continue;
+                }
+
                 if let Some(AppStateAction::RoomNameUpdated(new_room_name)) = action.downcast_ref()
                     && let Some(room_name_id) = self.room_name_id.as_mut()
                     && room_name_id.room_id() == new_room_name.room_id()
@@ -1338,7 +1349,10 @@ impl Widget for RoomScreen {
             // If this RoomScreen is waiting to show a thread timeline (not the main room timeline),
             // then we need to retry showing the timeline now (upon a Signal),
             // because the thread timeline may have been successfully created.
-            if self.tl_state.is_none() && self.timeline_kind.is_some() {
+            if self.tl_state.is_none() && self.timeline_kind.is_some()
+                // A room we aren't in has no timeline to wait for.
+                && self.not_joined.is_none()
+            {
                 self.show_timeline(cx);
             }
 
@@ -1513,7 +1527,7 @@ impl Widget for RoomScreen {
             restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
             return restore_status_view.draw(cx, scope);
         }
-        if self.tl_state.is_none() {
+        if self.tl_state.is_none() && self.not_joined.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
@@ -1521,6 +1535,10 @@ impl Widget for RoomScreen {
 
         self.update_top_space_visibility(cx);
         let RoomScreenWidgetRefs { portal_list, top_space, jump_to_bottom_button, .. } = self.cached_widget_refs(cx);
+        // Without a timeline, there's no bottom to jump to.
+        if self.tl_state.is_none() {
+            jump_to_bottom_button.update_visibility(cx, true);
+        }
 
         let room_screen_widget_uid = self.widget_uid();
         let mut is_list_drawn = false;
@@ -1531,10 +1549,15 @@ impl Widget for RoomScreen {
                 error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
                 continue;
             };
-            is_list_drawn = true;
             let Some(tl_state) = self.tl_state.as_mut() else {
-                return DrawStep::done();
+                // We have no timeline for a room we aren't in, so we only show the membership footer.
+                list_ref.set_item_range(cx, 0, 0);
+                while list_ref.next_visible_item(cx).is_some() { }
+                continue;
             };
+            is_list_drawn = true;
+            // We can't do anything in a room we aren't in, so we don't offer to.
+            let user_power = if self.not_joined.is_some() { UserPowerLevels::empty() } else { tl_state.user_power };
             // Re-populate all items after a reload, since it resets their widgets,
             // even if it happened while this timeline state was parked.
             if tl_state.drawn_reload_generation != cx.reload_generation {
@@ -1578,7 +1601,7 @@ impl Widget for RoomScreen {
                         event,
                         item_id,
                         &tl_state.kind,
-                        &tl_state.user_power,
+                        &user_power,
                         &self.pinned_events,
                         false,
                         false,
@@ -1623,7 +1646,7 @@ impl Widget for RoomScreen {
                                 &mut tl_state.link_preview_cache,
                                 &tl_state.fetched_thread_summaries,
                                 &mut tl_state.pending_thread_summary_fetches,
-                                &tl_state.user_power,
+                                &user_power,
                                 &self.pinned_events,
                                 &tl_state.pending_downloads,
                                 &tl_state.expanded_reply_previews,
@@ -1645,7 +1668,7 @@ impl Widget for RoomScreen {
                             small_event_details(event),
                             item_drawn_status,
                             shows_collapse_line,
-                            shows_invite_button && tl_state.user_power.can_invite(),
+                            shows_invite_button && user_power.can_invite(),
                         ),
                         ItemDraw::DateDivider(millis) => {
                             let (item, existed) = list.item_with_existed(cx, item_id, id!(DateDivider));
@@ -1691,7 +1714,8 @@ impl Widget for RoomScreen {
 
             // If the list is not filling the viewport (and back pagination isn't already in-progress),
             // then we need to back paginate the timeline until we have enough history to fill the viewport.
-            if !tl_state.backwards_pagination.is_loading()
+            if self.not_joined.is_none()
+                && !tl_state.backwards_pagination.is_loading()
                 && !tl_state.failed_recently()
                 && tl_state.backwards_pagination.needs_more_history(
                     false,
@@ -1703,7 +1727,7 @@ impl Widget for RoomScreen {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
                 tl_state.paginate_backwards();
             }
-            top_space.set_visible(cx, tl_state.backwards_pagination.is_loading());
+            top_space.set_visible(cx, self.not_joined.is_none() && tl_state.backwards_pagination.is_loading());
         }
 
         if is_list_drawn {
@@ -2174,6 +2198,13 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
+                TimelineUpdate::EditSendFailed { event_id, edited_text } => {
+                    // The edited message can be far up the timeline, so we search all of it.
+                    let event_tl_item = index_of_event(&tl.items, &event_id, tl.items.len(), tl.items.len())
+                        .and_then(|index| tl.items.get(index)?.as_event().cloned());
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .restore_failed_edit(cx, event_tl_item, tl.kind.clone(), edited_text);
+                }
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
                     // save the list of typing users for future use after the loop exits.
@@ -2197,7 +2228,7 @@ impl RoomScreen {
                 TimelineUpdate::UserPowerLevels(user_power_levels) => {
                     tl.user_power = user_power_levels;
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), user_power_levels);
+                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), user_power_levels, self.not_joined.as_ref());
                     // We need to redraw all events in order to reflect the new power levels,
                     // e.g., for the message context menu to be correctly populated.
                     tl.content_drawn_since_last_update.clear();
@@ -2206,7 +2237,7 @@ impl RoomScreen {
                 TimelineUpdate::Tombstoned(successor_room_details) => {
                     tl.tombstone_info = Some(successor_room_details);
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), tl.user_power);
+                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), tl.user_power, self.not_joined.as_ref());
                 }
                 TimelineUpdate::RoomEncrypted => {
                     tl.is_encrypted = true;
@@ -3234,10 +3265,20 @@ impl RoomScreen {
             }
             timeline_state_store::TakeResult::Missing => {
                 let Some(timeline_endpoints) = take_timeline_endpoints(&kind) else {
+                    // A room we aren't in never gets loaded, so we just show our membership in it.
+                    if self.not_joined.is_some() {
+                        self.is_loaded = true;
+                        self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
+                        self.update_input_bar_mode(cx);
+                        self.redraw(cx);
+                        return;
+                    }
                     // The rooms list never loads an outdated room (one that a newer room replaced),
                     // so if this room isn't loaded yet, we ask for it to be loaded in case it's one of those.
                     if !cx.has_global::<RoomsListRef>() || !cx.get_global::<RoomsListRef>().is_room_loaded(&room_id) {
                         submit_async_request(MatrixRequest::LoadOutdatedRoom { room_id: room_id.clone() });
+                        // It might also be a room we aren't in anymore, which we get told about if so.
+                        get_or_fetch_room_membership(cx, &room_id);
                     }
                     if let Some(thread_root_event_id) = kind.thread_root_event_id() {
                         submit_async_request(MatrixRequest::CreateThreadTimeline {
@@ -3295,7 +3336,10 @@ impl RoomScreen {
                     link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                     fetched_thread_summaries: HashMap::new(),
                     pending_thread_summary_fetches: HashSet::new(),
-                    saved_state: SavedState::default(),
+                    saved_state: SavedState {
+                        room_input_bar_state: self.rejoin_input_bar_state.take().unwrap_or_default(),
+                        ..Default::default()
+                    },
                     message_highlight_animation_state: MessageHighlightAnimationState::default(),
                     paginate_again_when_done: false,
                     last_pagination_error_at: None,
@@ -3623,6 +3667,7 @@ impl RoomScreen {
             saved_room_input_bar_state,
             tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
+            self.not_joined.as_ref(),
             tl_state.is_encrypted,
         );
     }
@@ -3641,6 +3686,67 @@ impl RoomScreen {
                 local_only: false,
             });
         }
+    }
+
+    /// Sets what the input bar shows based on the current room's tombstone state,
+    /// our power levels in it, and whether we're still in it.
+    fn update_input_bar_mode(&mut self, cx: &mut Cx) {
+        let Some(kind) = self.timeline_kind.as_ref() else { return };
+        let (tombstone_info, user_power) = match self.tl_state.as_ref() {
+            Some(tl) => (tl.tombstone_info.as_ref(), tl.user_power),
+            None => (None, UserPowerLevels::empty()),
+        };
+        self.view.room_input_bar(cx, ids!(room_input_bar))
+            .update_room_state(cx, kind.room_id(), tombstone_info, user_power, self.not_joined.as_ref());
+    }
+
+    /// Applies our latest membership in this screen's room, e.g., after we left it or got kicked.
+    fn update_membership(&mut self, cx: &mut Cx) {
+        let Some(kind) = self.timeline_kind.clone() else { return };
+        let not_joined = get_room_membership(cx, kind.room_id())
+            .filter(|membership| membership.state != RoomState::Joined);
+        if self.not_joined == not_joined { return; }
+        let was_joined = self.not_joined.is_none();
+        self.not_joined = not_joined;
+
+        // We're back in this room, but if the backend dropped its timeline when we left,
+        // we have to wait for the rooms list to load it again.
+        if self.not_joined.is_none()
+            && (self.tl_state.is_none() || timeline_state_store::is_invalidated(&kind))
+        {
+            // The dead timeline's saved state gets dropped, so we hold on to what the user had typed.
+            if self.tl_state.is_some() {
+                self.rejoin_input_bar_state = Some(self.view.room_input_bar(cx, ids!(room_input_bar)).save_state());
+            }
+            self.hide_timeline();
+            self.is_loaded = false;
+            self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, true);
+            if let Some(room_name_id) = self.room_name_id.take() {
+                self.set_displayed_room(cx, &room_name_id, kind.thread_root_event_id().cloned());
+            }
+            self.redraw(cx);
+            return;
+        }
+
+        if was_joined {
+            // Nothing that was in progress can be finished in a room we aren't in.
+            self.read_receipt_state.clear();
+            self.focus_input_bar_on_show = false;
+            self.room_input_popup_menu(cx, ids!(room_input_popup_menu)).close(cx);
+            self.view.typing_notice(cx, ids!(typing_notice)).show_or_hide(cx, &[], Animate::No);
+        }
+        // A room we aren't in has no timeline to wait for.
+        if self.not_joined.is_some() && self.tl_state.is_none() {
+            self.is_loaded = true;
+            self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
+        }
+        self.update_input_bar_mode(cx);
+        // Redraw every item, since what the user can do with each one has changed.
+        if let Some(tl) = self.tl_state.as_mut() {
+            tl.content_drawn_since_last_update.clear();
+            tl.profile_drawn_since_last_update.clear();
+        }
+        self.redraw(cx);
     }
 
     fn handle_room_action_bar_action(&mut self, cx: &mut Cx, action: RoomActionBarAction) {
@@ -3689,6 +3795,7 @@ impl RoomScreen {
         if self.timeline_kind.as_ref() != Some(&timeline_kind) {
             self.deferred_jump = None;
             self.focus_input_bar_on_show = false;
+            self.rejoin_input_bar_state = None;
         }
 
         // If this timeline is already displayed, we don't need to do anything major,
@@ -3696,6 +3803,8 @@ impl RoomScreen {
         if self.tl_state.is_some() && self.timeline_kind.as_ref().is_some_and(|k| k == &timeline_kind) {
             self.room_name_id = Some(room_name_id.clone());
             self.view.room_pane_dock(cx, ids!(room_pane_dock)).set_room_name(cx, room_name_id);
+            // Our membership might have changed while this screen wasn't getting any actions.
+            self.update_membership(cx);
             return;
         }
 
@@ -3715,6 +3824,8 @@ impl RoomScreen {
 
         self.room_name_id = Some(room_name_id.clone());
         self.timeline_kind = Some(timeline_kind.clone());
+        self.not_joined = get_room_membership(cx, room_name_id.room_id())
+            .filter(|membership| membership.state != RoomState::Joined);
         self.view.room_action_bar(cx, ids!(room_actions)).set_room_id(cx, Some(room_name_id.room_id().clone()));
 
         // Tell the room input bar which room/thread we're now displaying.
@@ -3742,6 +3853,8 @@ impl RoomScreen {
 
         self.room_name_id = None;
         self.timeline_kind = None;
+        self.not_joined = None;
+        self.rejoin_input_bar_state = None;
         self.deferred_jump = None;
         self.focus_input_bar_on_show = false;
         self.pinned_events.clear();
@@ -3760,7 +3873,9 @@ impl RoomScreen {
         cx: &mut Cx,
         portal_list: &PortalListRef,
     ) {
-        if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior == MarkAsReadBehavior::Manual {
+        if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior == MarkAsReadBehavior::Manual
+            || self.not_joined.is_some()
+        {
             return;
         }
         let Some(tl_state) = self.tl_state.as_mut() else { return };
@@ -3886,7 +4001,7 @@ impl RoomScreen {
         actions: &ActionsBuf,
         portal_list: &PortalListRef,
     ) {
-        if !portal_list.reached_start(actions) { return };
+        if !portal_list.reached_start(actions) || self.not_joined.is_some() { return };
         let Some(tl) = self.tl_state.as_mut() else { return };
         if tl.backwards_pagination.is_fully_paginated() { return };
         log!("Timeline hit first item in {}", tl.kind);
@@ -3897,7 +4012,9 @@ impl RoomScreen {
     ///
     /// We keep the indicator visible until the UI has actually processed the new items.
     fn update_top_space_visibility(&mut self, cx: &mut Cx) {
-        let is_loading = self.tl_state.as_ref().is_some_and(|tl| tl.backwards_pagination.is_loading());
+        // A room we aren't in can't load any more of its history.
+        let is_loading = self.not_joined.is_none()
+            && self.tl_state.as_ref().is_some_and(|tl| tl.backwards_pagination.is_loading());
         self.cached_widget_refs(cx).top_space.set_visible(cx, is_loading);
     }
 }
@@ -4113,6 +4230,12 @@ pub enum TimelineUpdate {
     MessageEdited {
         timeline_event_item_id: TimelineEventItemId,
         result: Result<(), matrix_sdk_ui::timeline::Error>,
+    },
+    /// An edit that we had queued failed to send, so its text should go back into the editing pane.
+    EditSendFailed {
+        /// The message that was being edited.
+        event_id: OwnedEventId,
+        edited_text: String,
     },
     /// A notice that the room's members have been fetched from the server,
     /// though the success or failure of the request is not yet known until the client
@@ -5250,6 +5373,7 @@ fn populate_message_view(
             timeline_kind,
             timeline_event_id,
             item_id,
+            user_power_levels.can_send_reaction(),
         );
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
         let is_reply_fully_drawn = draw_replied_to_message(

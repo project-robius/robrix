@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedServerName};
 
-use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, rooms_list::{InviteState, RoomsListRef, set_invite_state}}, room::BasicRoomDetails, sliding_sync::{MatrixRequest, submit_async_request}, utils::{self, RoomNameId}};
+use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction, is_invite_pending}, rooms_list::{InviteState, RoomsListRef, set_invite_state}}, room::BasicRoomDetails, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::{self, RoomNameId}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -219,6 +219,19 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         let mut needs_redraw = false;
 
         if accept_buttons.clicked(actions) {
+            // This invite may have ended while we were asking, e.g., if it was accepted in another client,
+            // in which case rejecting it would make us leave the room that we just joined.
+            if matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_))
+                && !is_invite_pending(cx, kind.room_id())
+            {
+                enqueue_popup_notification("This invite is no longer valid.", PopupKind::Warning, Some(5.0));
+                cx.action(JoinLeaveRoomModalAction::Close {
+                    room_id: kind.room_id().clone(),
+                    was_internal: true,
+                });
+                self.reset_state();
+                return;
+            }
             let title: Cow<str>;
             let description: String;
             let accept_button_text: &str;

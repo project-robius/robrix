@@ -8,7 +8,7 @@ use std::{ops::Deref, rc::Rc};
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary}};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview}, room_preview_cache::{self, CachedRoomPreview}, shared::{avatar::AvatarWidgetRefExt, collapsible_html::handle_link_clicked, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, membership::{RoomMembership, RoomMembershipChanged, get_or_fetch_room_membership, get_room_membership}}, room_preview_cache::{self, CachedRoomPreview}, shared::{avatar::AvatarWidgetRefExt, collapsible_html::handle_link_clicked, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 use super::rooms_list::{AcceptedInviteKind, InviteState, InviterInfo, RoomsListAction, get_invited_rooms, set_invite_state};
 
@@ -333,6 +333,11 @@ pub struct InviteScreen {
     #[rust] all_rooms_loaded: bool,
     #[rust] is_space: bool,
     #[rust] room_preview: Option<Rc<FetchedRoomPreview>>,
+    /// Our membership in this room if this invite ended without us rejecting it here,
+    /// e.g., if it was rejected in another client or taken back by whoever sent it.
+    #[rust] ended_by: Option<RoomMembership>,
+    /// Whether this invite ended because we rejected it here.
+    #[rust] was_rejected_here: bool,
 }
 
 impl Widget for InviteScreen {
@@ -387,12 +392,18 @@ impl Widget for InviteScreen {
                     }
                     continue;
                 }
+                if let Some(RoomMembershipChanged { room_id }) = action.downcast_ref() {
+                    if self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id) {
+                        self.update_membership(cx);
+                    }
+                    continue;
+                }
             }
 
             let Some(info) = self.info.as_ref() else { return; };
             // Handle button clicks to accept or decline the invite
             if let Some(modifiers) = self.view.button(cx, ids!(cancel_button)).clicked_modifiers(actions) {
-                if modifiers.shift {
+                if modifiers.shift && is_invite_pending(cx, info.room_id()) {
                     submit_async_request(MatrixRequest::LeaveRoom {
                         room_id: info.room_id().clone(),
                     });
@@ -417,7 +428,7 @@ impl Widget for InviteScreen {
                 }));
             }
             if let Some(modifiers) = self.view.button(cx, ids!(accept_button)).clicked_modifiers(actions) {
-                if modifiers.shift {
+                if modifiers.shift && is_invite_pending(cx, info.room_id()) {
                     submit_async_request(MatrixRequest::JoinRoom {
                         room_id: info.room_id().clone(),
                         alias: None,
@@ -433,6 +444,8 @@ impl Widget for InviteScreen {
                 }
             }
 
+            // A request can fail because this invite had already ended, e.g., in another client.
+            let mut is_recheck_needed = false;
             for action in actions {
                 match action.downcast_ref() {
                     // The success/failure popups are shown by the backend task, which is
@@ -443,6 +456,7 @@ impl Widget for InviteScreen {
                     }
                     Some(JoinRoomResultAction::Failed { room_id, .. }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
+                        is_recheck_needed = true;
                         continue;
                     }
                     _ => {}
@@ -451,10 +465,14 @@ impl Widget for InviteScreen {
                 match action.downcast_ref() {
                     Some(LeaveRoomResultAction::Left { room_id }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::RoomLeft;
+                        // We rejected this invite here, so that's what we say happened to it.
+                        self.ended_by = None;
+                        self.was_rejected_here = true;
                         continue;
                     }
                     Some(LeaveRoomResultAction::Failed { room_id, .. }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
+                        is_recheck_needed = true;
                         continue;
                     }
                     _ => {}
@@ -478,9 +496,13 @@ impl Widget for InviteScreen {
                         if let Some(state) = current {
                             self.invite_state = state;
                         }
+                        is_recheck_needed = true;
                     }
                     continue;
                 }
+            }
+            if is_recheck_needed {
+                self.update_membership(cx);
             }
         }
 
@@ -502,6 +524,9 @@ impl Widget for InviteScreen {
             // If we don't have any info, just return.
             return self.view.draw_walk(cx, scope, walk);
         };
+
+        // An invite that had ended can come back, e.g., if we get invited again.
+        let is_ended = self.invite_state == InviteState::RoomLeft;
 
         // First, populate the inviter info, if we have it.
         let inviter_view = self.view.view(cx, ids!(inviter_view));
@@ -539,7 +564,10 @@ impl Widget for InviteScreen {
                 inviter_name.set_text(cx, inviter.user_id.as_str());
                 inviter_user_id.set_visible(cx, false);
             }
-            (true, "has invited you to join:")
+            (true, if is_ended { "invited you to join:" } else { "has invited you to join:" })
+        }
+        else if is_ended {
+            (false, "You were invited to join:")
         }
         else {
             (false, "You have been invited to join:")
@@ -607,6 +635,11 @@ impl Widget for InviteScreen {
             cx,
             info.inviter.as_ref().is_some_and(|i| !is_user_blocked(&i.user_id)),
         );
+        cancel_button.set_visible(cx, !is_ended);
+        accept_button.set_visible(cx, !is_ended);
+        if !is_ended {
+            self.view.label(cx, ids!(completion_label)).set_text(cx, "");
+        }
         let join_text = match self.is_space { true => "Join Space", false => "Join Room" };
         match self.invite_state {
             InviteState::WaitingOnUserInput => {
@@ -641,10 +674,12 @@ impl Widget for InviteScreen {
                 cancel_button.set_visible(cx, false);
                 accept_button.set_visible(cx, false);
                 reject_and_block_button.set_visible(cx, false);
-                self.view.label(cx, ids!(completion_label)).set_text(
-                    cx,
-                    "Invite successfully rejected. You may close this invite.",
-                );
+                let completion_text = match self.ended_by.as_ref() {
+                    Some(membership) => invite_ended_text(membership, room_or_space),
+                    None if self.was_rejected_here => String::from("Invite successfully rejected. You may close this invite."),
+                    None => String::from("This invite is no longer valid. You may close this invite."),
+                };
+                self.view.label(cx, ids!(completion_label)).set_text(cx, &completion_text);
             }
         }
 
@@ -656,6 +691,7 @@ impl InviteScreen {
     /// Sets the ID of the invited room that will be displayed by this screen.
     pub fn set_displayed_invite(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
         self.room_name_id = Some(room_name_id.clone());
+        self.ended_by = None;
         if let Some(invite) = get_invited_rooms(cx)
             .borrow()
             .get(room_name_id.room_id())
@@ -674,12 +710,16 @@ impl InviteScreen {
                 join_rule: invite.join_rule.clone(),
             });
             self.invite_state = invite.invite_state;
+            // The rooms list only marks an invite as left once we've rejected it here.
+            self.was_rejected_here = invite.invite_state == InviteState::RoomLeft;
             self.is_space = invite.is_space;
             self.is_loaded = true;
             self.all_rooms_loaded = true;
             self.room_preview = None;
             self.update_room_preview(cx);
             self.redraw(cx);
+            // The rooms list might not have removed an invite that just ended.
+            self.update_membership(cx);
         }
         // If this invite has already been accepted (e.g., in another client, or while Robrix was offline),
         // we need to handle that and upgrade this screen to the corresponding joined room's RoomScreen.
@@ -697,6 +737,12 @@ impl InviteScreen {
                 RoomsListAction::InviteAccepted { room_name_id, kind: AcceptedInviteKind::Room },
             );
             return;
+        }
+        // The rooms list doesn't have this invite, which may mean that it ended (not that it's still loading),
+        // e.g., if we accepted an invite to a space or rejected this invite in another client.
+        else if get_or_fetch_room_membership(cx, room_name_id.room_id()).is_some() {
+            self.update_membership(cx);
+            if self.is_loaded { return; }
         }
 
         let restore_status_view = self.view.restore_status_view(cx, ids!(restore_status_view));
@@ -726,10 +772,60 @@ impl InviteScreen {
         self.room_preview = None;
         self.invite_state = InviteState::default();
         self.is_space = false;
+        self.ended_by = None;
+        self.was_rejected_here = false;
         self.is_loaded = false;
         self.all_rooms_loaded = false;
         self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
         self.redraw(cx);
+    }
+
+    /// Checks our membership in this room to see if this invite ended in some way
+    /// that the rooms list doesn't tell us about, e.g., if it was rejected in another client.
+    fn update_membership(&mut self, cx: &mut Cx) {
+        let Some(room_name_id) = self.room_name_id.clone() else { return };
+        let Some(membership) = get_room_membership(cx, room_name_id.room_id()) else { return };
+        match membership.state {
+            // We got invited again after this invite had ended.
+            RoomState::Invited => if self.ended_by.is_some() {
+                self.is_loaded = false;
+                self.set_displayed_invite(cx, &room_name_id);
+            }
+            // The rooms list never loads a joined space, so we ask where to show it.
+            // If we're still showing this invite, the rooms list does that once it removes this invite.
+            RoomState::Joined if membership.is_space && !self.is_loaded => {
+                if let Some(rooms_list) = cx.get_global_ref::<RoomsListRef>().cloned() {
+                    rooms_list.resolve_joined_space_invite(cx, &room_name_id);
+                }
+            }
+            // The rooms list tells us when it has loaded a joined room.
+            RoomState::Joined => {}
+            RoomState::Left | RoomState::Banned | RoomState::Knocked => {
+                // We're rejecting or have rejected this invite ourselves, which we already show.
+                if self.invite_state == InviteState::WaitingForLeaveResult
+                    || (self.invite_state == InviteState::RoomLeft && self.was_rejected_here)
+                {
+                    return;
+                }
+                self.info.get_or_insert_with(|| InviteDetails {
+                    room_info: BasicRoomDetails::NameAndAvatar {
+                        room_avatar: utils::avatar_from_room_name(room_name_id.name_for_avatar()),
+                        room_name_id,
+                    },
+                    inviter: None,
+                    canonical_alias: None,
+                    topic: None,
+                    join_rule: None,
+                });
+                self.is_space = membership.is_space;
+                self.ended_by = Some(membership);
+                self.was_rejected_here = false;
+                self.invite_state = InviteState::RoomLeft;
+                self.is_loaded = true;
+                self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
+                self.redraw(cx);
+            }
+        }
     }
 
     /// If the room preview is none, this fetches it from the room preview cache.
@@ -762,5 +858,26 @@ impl InviteScreenRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.hide_displayed_invite(cx);
         }
+    }
+}
+
+/// Returns whether we still have a pending invite to the given room, which isn't the case
+/// if that invite was already accepted, rejected, or taken back, e.g., in another client.
+pub fn is_invite_pending(cx: &mut Cx, room_id: &OwnedRoomId) -> bool {
+    get_invited_rooms(cx).borrow().contains_key(room_id)
+        && get_room_membership(cx, room_id).is_none_or(|membership| membership.state == RoomState::Invited)
+}
+
+/// Returns the text to show for an invite that ended in some way other than us rejecting it here.
+fn invite_ended_text(membership: &RoomMembership, room_or_space: &str) -> String {
+    let by = membership.removed_by.as_ref().map(|by| format!(" by {by}")).unwrap_or_default();
+    let what_happened = match membership.state {
+        RoomState::Banned => format!("You were banned from this {room_or_space}{by}."),
+        RoomState::Left if membership.removed_by.is_some() => format!("This invite was taken back{by}."),
+        _ => String::from("This invite is no longer valid."),
+    };
+    match &membership.reason {
+        Some(reason) => format!("{what_happened}\nReason: {reason}\nYou may close this invite."),
+        None => what_happened + " You may close this invite.",
     }
 }

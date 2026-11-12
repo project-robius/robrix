@@ -16,6 +16,7 @@
 //! * A button to send the message.
 //! * The editing pane, which is shown when the user is editing a previous message.
 //! * A tombstone footer, which is shown if the room has been tombstoned (replaced).
+//! * A membership footer, which is shown if the user is no longer in the room.
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
 //!
 
@@ -28,6 +29,7 @@ use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
 use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneRef, EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, display_name_or_user_id, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, moderation::MemberModeration, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::{BasicRoomDetails, attachment_buttons::{AttachmentButtonsRef, AttachmentButtonsWidgetExt}}, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputRef, MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::{apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::room::{membership::RoomMembership, room_membership_footer::RoomMembershipFooterWidgetExt};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -82,11 +84,50 @@ script_mod! {
             }
         }
 
-        // Below that, display one of multiple possible views:
-        // * the message input bar (buttons and message TextInput).
-        // * a notice that the user can't send messages to this room.
-        // * if this room was tombstoned, a "footer" view showing the successor room info.
-        // * the EditingPane, which slides up as an overlay in front of the other views below.
+        // Below that, if the user can't post here, display one of these notices instead of the message input bar.
+        // They sit outside the overlay below so that an in-progress edit can't cover them.
+        notices := RoundedYView {
+            width: Fill, height: Fit
+            flow: Down
+
+            // Rounded at the top like the RoomInputBar and EditingPane. The sides are inset by the RoomInputBar's
+            // -4 margins, so that the rounded corners aren't clipped off.
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_SECONDARY)
+                border_radius: vec2(4.0, 0.0)
+                border_inset: vec4(4.0, 0.0, 4.0, 0.0)
+            }
+
+            // A notice that the user can't send messages to this room.
+            can_not_send_message_notice := View {
+                visible: false
+                // Uneven so the text looks centered: the RoomInputBar's -4 bottom margin hides 4 of the bottom padding.
+                padding: Inset{top: 18, bottom: 22, left: 20, right: 20}
+                align: Align{x: 0.5, y: 0.5}
+                width: Fill, height: Fit
+
+                text := Label {
+                    width: Fill,
+                    flow: Flow.Right{wrap: true},
+                    align: Align{x: 0.5, y: 0.5}
+                    draw_text +: {
+                        color: (COLOR_TEXT)
+                        text_style: theme.font_italic {font_size: 12.2}
+                    }
+                    text: "You don't have permission to post to this room.",
+                }
+            }
+
+            // If this room was tombstoned, a "footer" view showing the successor room info.
+            tombstone_footer := TombstoneFooter { }
+
+            // If the user isn't in this room anymore, a footer saying why, with any way to re-join.
+            membership_footer := RoomMembershipFooter { }
+        }
+
+        // Below that, display the message input bar (buttons and message TextInput),
+        // or the EditingPane, which slides up as an overlay in front of it.
         overlay_wrapper := View {
             width: Fill,
             // The banners and previews above take up some of the input bar's max height,
@@ -142,29 +183,6 @@ script_mod! {
                 }
             }
 
-            can_not_send_message_notice := SolidView {
-                visible: false
-                padding: 20
-                align: Align{x: 0.5, y: 0.5}
-                width: Fill, height: Fit
-
-                show_bg: true
-                draw_bg.color: (COLOR_SECONDARY)
-
-                text := Label {
-                    width: Fill,
-                    flow: Flow.Right{wrap: true},
-                    align: Align{x: 0.5, y: 0.5}
-                    draw_text +: {
-                        color: (COLOR_TEXT)
-                        text_style: theme.font_italic {font_size: 12.2}
-                    }
-                    text: "You don't have permission to post to this room.",
-                }
-            }
-
-            tombstone_footer := TombstoneFooter { }
-
             editing_pane := EditingPane { }
         }
     }
@@ -181,11 +199,17 @@ enum RoomInputBarMode<'a> {
         room_id: &'a OwnedRoomId,
         successor: &'a SuccessorRoomDetails,
     },
+    /// The user isn't in this room anymore, so show the membership footer.
+    NotJoined {
+        room_id: &'a OwnedRoomId,
+        membership: &'a RoomMembership,
+    },
 }
 
 /// The input bar at the bottom of a RoomScreen that allows the user to send messages, upload files, etc.
 ///
 /// It also shows the tombstone footer for rooms that have been tombstoned,
+/// the membership footer for rooms that the user is no longer in,
 /// or a notice that the user cannot send messages to this room.
 #[derive(Script, Widget)]
 pub struct RoomInputBar {
@@ -225,6 +249,7 @@ struct ChildRefs {
     replying_preview: ViewRef,
     reply_preview_content: WidgetRef,
     reply_preview_bottom_line: WidgetRef,
+    notices: ViewRef,
     overlay_wrapper: ViewRef,
     input_bar: ViewRef,
     mentionable_text_input: MentionableTextInputRef,
@@ -294,10 +319,33 @@ impl Widget for RoomInputBar {
             replying_preview,
             reply_preview_content,
             reply_preview_bottom_line,
+            notices,
+            overlay_wrapper,
             input_bar,
             editing_pane,
             ..
         } = self.child_refs(cx).clone();
+        // Where we reach into the screen's bottom safe area (e.g., under iOS's home indicator),
+        // our bottom-most view extends into it, so that its own color fills that area.
+        let safe_area_overlap = {
+            let parent = cx.turtle().rect();
+            let insets = cx.display_context.safe_area_insets;
+            let safe_area_top = cx.display_context.screen_size.y - insets.bottom;
+            (parent.pos.y + parent.size.y - safe_area_top).max(0.0).min(insets.bottom)
+        };
+        let is_notice_shown = !input_bar.visible();
+        let is_notice_at_bottom = is_notice_shown && !editing_pane.is_currently_shown(cx);
+        if let Some(mut inner) = notices.borrow_mut() {
+            inner.layout.padding.bottom = if is_notice_at_bottom { safe_area_overlap } else { 0.0 };
+        }
+        if let Some(mut inner) = overlay_wrapper.borrow_mut() {
+            inner.layout.padding.bottom = if is_notice_at_bottom { 0.0 } else { safe_area_overlap };
+            // An edit below a notice overlaps it a bit, so the notice fills in behind the edit's rounded corners.
+            inner.walk.margin.top = if is_notice_shown && !is_notice_at_bottom { -5.0 } else { 0.0 };
+        }
+        // A notice at our very top has its own rounded corners, so we don't draw our background behind it.
+        self.view.show_bg = !(is_notice_shown && banners_and_previews.area().rect(cx).size.y < 0.5);
+
         // Shrink the input_bar's height as the editing pane slides in,
         // and grow it back as the editing pane slides out.
         // slide=1.0 → editing pane hidden → input_bar at full Fit height.
@@ -373,6 +421,11 @@ impl Widget for RoomInputBar {
         }
         if min_banners_and_previews_height != self.min_banners_and_previews_height {
             self.min_banners_and_previews_height = min_banners_and_previews_height;
+            self.next_frame = cx.new_next_frame();
+        }
+        // We only learn a notice's height once it's drawn, and a squeezed edit only regrows a bit per draw,
+        // so we redraw until the height we reserve for them stops changing.
+        if (self.get_min_input_height(cx) - min_input_height).abs() > 0.5 {
             self.next_frame = cx.new_next_frame();
         }
         step
@@ -627,6 +680,7 @@ impl RoomInputBar {
             replying_preview: self.view.view(cx, ids!(replying_preview)),
             reply_preview_content: self.view.widget(cx, ids!(replying_preview.reply_preview_content)),
             reply_preview_bottom_line: self.view.widget(cx, ids!(replying_preview.bottom_line)),
+            notices: self.view.view(cx, ids!(notices)),
             overlay_wrapper: self.view.view(cx, ids!(overlay_wrapper)),
             input_bar: self.view.view(cx, ids!(input_bar)),
             mentionable_text_input: self.view.mentionable_text_input(cx, ids!(mentionable_text_input)),
@@ -641,17 +695,21 @@ impl RoomInputBar {
     /// Returns the height that the views below the banners and previews need.
     ///
     /// That's enough for the text input there to show one full line,
-    /// or for a notice shown there instead to be shown in full.
+    /// or for a notice shown there instead to be shown in full, plus any in-progress edit below it.
     fn get_min_input_height(&mut self, cx: &mut Cx) -> f64 {
         let ChildRefs {
+            notices,
             overlay_wrapper,
             input_bar,
             mentionable_text_input,
             editing_pane,
             ..
         } = self.child_refs(cx).clone();
+        // At most one notice is shown, and an in-progress edit can stay shown below it.
+        let notices_height = notices.area().rect(cx).size.y;
+        let safe_area_padding = overlay_wrapper.borrow().map_or(0.0, |inner| inner.layout.padding.bottom);
         if editing_pane.is_currently_shown(cx) {
-            return editing_pane.get_min_height(cx);
+            return notices_height + editing_pane.get_min_height(cx) + safe_area_padding;
         }
         if input_bar.visible() {
             let speech_text_input = mentionable_text_input.speech_text_input_ref();
@@ -662,15 +720,9 @@ impl RoomInputBar {
             // The buttons beside the text input can make the input bar even taller than that.
             let extra_text_height = mentionable_text_input.text_input_ref().area().rect(cx).size.y
                 - speech_text_input.get_min_text_input_height(cx);
-            return min_height.max(self.input_bar_natural_height - extra_text_height.max(0.0));
+            return min_height.max(self.input_bar_natural_height - extra_text_height.max(0.0)) + safe_area_padding;
         }
-        let mut notice_height: f64 = 0.0;
-        overlay_wrapper.children(&mut |_id, child| {
-            if child.visible() {
-                notice_height = notice_height.max(child.area().rect(cx).size.y + child.walk(cx).margin.height());
-            }
-        });
-        notice_height
+        notices_height
     }
 
     /// Runs the given slash command action within this room.
@@ -910,9 +962,37 @@ impl RoomInputBar {
             ShowEditingPaneBehavior::RestoreExisting { editing_pane_state } => {
                 editing_pane.restore_state(cx, editing_pane_state, timeline_kind);
             }
+            ShowEditingPaneBehavior::RestoreFailed { event_tl_item, edited_text } => {
+                editing_pane.show_failed_edit(cx, event_tl_item, timeline_kind, &edited_text);
+            }
         };
 
         self.redraw(cx);
+    }
+
+    /// Puts an edit that failed to send back into the editing pane, so the user doesn't lose what they typed.
+    ///
+    /// The `event_tl_item` is the message that was being edited, if this timeline still has it.
+    fn restore_failed_edit(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: Option<EventTimelineItem>,
+        timeline_kind: TimelineKind,
+        edited_text: String,
+    ) {
+        let editing_pane = self.view.editing_pane(cx, ids!(editing_pane));
+        // We must not replace another edit that the user has started since then.
+        if let Some(event_tl_item) = event_tl_item.filter(|_| !editing_pane.is_editing()) {
+            let behavior = ShowEditingPaneBehavior::RestoreFailed { event_tl_item, edited_text: edited_text.clone() };
+            self.show_editing_pane(cx, behavior, timeline_kind);
+            if editing_pane.is_editing() { return; }
+        }
+        cx.copy_to_clipboard(&edited_text);
+        enqueue_popup_notification(
+            "Your edit couldn't be put back in the editor, so it was copied to the clipboard.",
+            PopupKind::Warning,
+            None,
+        );
     }
 
     /// This should be invoked after the EditingPane has been fully hidden.
@@ -928,18 +1008,22 @@ impl RoomInputBar {
     } 
 
     /// Updates the room state to set which mode and views are shown in the RoomInputBar.
+    ///
+    /// The `not_joined` membership should only be `Some` if the user isn't in this room (anymore).
     fn update_room_state(
         &mut self,
         cx: &mut Cx,
         room_id: &OwnedRoomId,
         tombstone_info: Option<&SuccessorRoomDetails>,
         user_power_levels: UserPowerLevels,
+        not_joined: Option<&RoomMembership>,
     ) {
         // If the room is tombstoned, that takes precedence over anything else.
-        let mode = match tombstone_info {
-            Some(successor) => RoomInputBarMode::Tombstoned { room_id, successor },
-            None if user_power_levels.can_send_message() => RoomInputBarMode::Input,
-            None => RoomInputBarMode::CannotSend,
+        let mode = match (tombstone_info, not_joined) {
+            (Some(successor), _) => RoomInputBarMode::Tombstoned { room_id, successor },
+            (None, Some(membership)) => RoomInputBarMode::NotJoined { room_id, membership },
+            (None, None) if user_power_levels.can_send_message() => RoomInputBarMode::Input,
+            (None, None) => RoomInputBarMode::CannotSend,
         };
         self.view.view(cx, ids!(input_bar))
             .set_visible(cx, matches!(mode, RoomInputBarMode::Input));
@@ -953,10 +1037,19 @@ impl RoomInputBar {
             tombstone_footer.hide(cx);
         }
 
-        // The user can't post here anymore, so cancel any in-progress edit, reply, input, etc.
-        if !matches!(mode, RoomInputBarMode::Input) {
+        let membership_footer = self.room_membership_footer(cx, ids!(membership_footer));
+        if let RoomInputBarMode::NotJoined { room_id, membership } = mode {
+            membership_footer.show(cx, room_id, membership);
+        } else {
+            membership_footer.hide(cx);
+        }
+
+        // An edit that the user is in the middle of stays shown so they don't lose it, but it can't be sent.
+        let is_input_mode = matches!(mode, RoomInputBarMode::Input);
+        self.editing_pane(cx, ids!(editing_pane)).set_submit_blocked(!is_input_mode);
+        // The user can't post here anymore, so cancel any in-progress reply, dictation, etc.
+        if !is_input_mode {
             self.cancel_dictation(cx);
-            self.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
             self.was_replying_preview_visible = false;
             self.clear_replying_to(cx);
             self.view.location_preview(cx, ids!(location_preview)).clear();
@@ -1158,9 +1251,10 @@ impl RoomInputBarRef {
         room_id: &OwnedRoomId,
         tombstone_info: Option<&SuccessorRoomDetails>,
         user_power_levels: UserPowerLevels,
+        not_joined: Option<&RoomMembership>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_room_state(cx, room_id, tombstone_info, user_power_levels);
+        inner.update_room_state(cx, room_id, tombstone_info, user_power_levels, not_joined);
     }
 
     /// Updates the message input's placeholder based on this room's encryption status.
@@ -1195,6 +1289,18 @@ impl RoomInputBarRef {
         inner.show_current_location_preview(cx);
     }
 
+    /// See [`RoomInputBar::restore_failed_edit()`].
+    pub fn restore_failed_edit(
+        &self,
+        cx: &mut Cx,
+        event_tl_item: Option<EventTimelineItem>,
+        timeline_kind: TimelineKind,
+        edited_text: String,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_failed_edit(cx, event_tl_item, timeline_kind, edited_text);
+    }
+
     /// Forwards the result of an edit request to the `EditingPane` widget
     /// within this `RoomInputBar`.
     pub fn handle_edit_result(
@@ -1220,6 +1326,8 @@ impl RoomInputBarRef {
         let room_id = timeline_kind.room_id().to_owned();
         if inner.timeline_kind.as_ref() != Some(&timeline_kind) {
             inner.cancel_dictation(cx);
+            // The previous timeline's edit was saved with its state, and must not be shown for this one.
+            inner.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
         }
         inner.room_screen_widget_uid = Some(room_screen_widget_uid);
         inner.timeline_kind = Some(timeline_kind);
@@ -1259,6 +1367,7 @@ impl RoomInputBarRef {
         saved_state: RoomInputBarState,
         user_power_levels: UserPowerLevels,
         tombstone_info: Option<&SuccessorRoomDetails>,
+        not_joined: Option<&RoomMembership>,
         is_encrypted: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
@@ -1306,8 +1415,8 @@ impl RoomInputBarRef {
             .as_upload_progress_view()
             .restore_state(cx, upload);
 
-        // 5. Apply this room's tombstone state and the user's power levels.
-        inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels);
+        // 5. Apply this room's tombstone state, the user's power levels, and their membership.
+        inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels, not_joined);
     }
 
     /// See [`UploadProgressView::on_timeline_reconnected()`].
@@ -1431,5 +1540,10 @@ enum ShowEditingPaneBehavior {
     /// reopening a room that had an `EditingPane` open when it was closed.
     RestoreExisting {
         editing_pane_state: EditingPaneState,
+    },
+    /// Show an edit that failed to send, so the user gets back what they had typed.
+    RestoreFailed {
+        event_tl_item: EventTimelineItem,
+        edited_text: String,
     },
 }

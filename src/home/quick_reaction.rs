@@ -5,9 +5,9 @@
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
-    home::{event_reaction_list::get_typed_reaction, new_message_context_menu::{MessageAbilities, MessageDetails}, room_screen::MessageAction},
+    home::{event_reaction_list::{REACTING_NOT_ALLOWED, get_typed_reaction}, new_message_context_menu::{MessageAbilities, MessageDetails}, room_screen::MessageAction},
     settings::app_preferences::AppPreferencesGlobal,
-    shared::double_tap::Tap,
+    shared::{double_tap::Tap, popup_list::{PopupKind, enqueue_popup_notification}},
 };
 
 /// The reaction that double-tapping a message toggles on it, 👍 by default.
@@ -51,7 +51,21 @@ impl QuickReactionTaps {
             return;
         }
         let prefs = &cx.global::<AppPreferencesGlobal>().0;
-        if !prefs.double_tap_to_react || !details.abilities.contains(MessageAbilities::CanReact) {
+        if !prefs.double_tap_to_react {
+            return;
+        }
+        if !details.abilities.contains(MessageAbilities::CanReact) {
+            // A double tap has nothing to show for itself, so we always say why it didn't work.
+            let reason = if !details.abilities.contains(MessageAbilities::IsMessage) {
+                "You can only react to messages."
+            } else if !details.abilities.contains(MessageAbilities::CanReactInRoom) {
+                REACTING_NOT_ALLOWED
+            } else if !details.abilities.contains(MessageAbilities::HasEventId) {
+                "You can't react to a message that hasn't been sent yet."
+            } else {
+                "You can't react to a deleted message."
+            };
+            enqueue_popup_notification(reason, PopupKind::Warning, Some(4.0));
             return;
         }
         let reaction = prefs.quick_reaction.as_str().to_owned();

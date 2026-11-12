@@ -21,7 +21,7 @@ use crate::{
         create_room_modal::{CreateRoomModalAction, CreateRoomModalWidgetRefExt}, event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, home_screen::{MainViewVariantChangedAction, ScreenRestoredAction}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, leave_space_modal::{LeaveSpaceModalAction, LeaveSpaceModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, nav_history::{GoForwardAction, NavHistory, can_navigate_history}, nav_history_menu::{ShowNavHistoryMenuAction, show_nav_history_menu}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{DropDecodedImagesAction, InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state, drop_docked_pane_data}, rooms_list::{RoomsListAction, RoomsListRef, clear_all_invited_rooms}, rooms_list_header::{RoomsListHeaderAction, SyncStatusGlobal, get_last_synced_at}, space_lobby::clear_space_lobby_states, title_bar_buttons::enable_title_bar_buttons
     }, join_leave_room_modal::{
         JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, get_keyboard_height, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, inline_image::clear_inline_image_cache, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{RecentEmojis, RecentEmojisAction, clear_recent_emojis, handle_recent_emojis_action, restore_recent_emojis, save_recent_emojis}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::{UserVerificationRequestAction, VerificationAction}, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::{user_profile_cache::{clear_user_profile_cache, process_user_profile_updates}, user_verification_cache::{clear_user_verification_cache, process_user_verification_updates}}, room::{BasicRoomDetails, membership::{clear_room_membership_cache, process_room_membership_updates}, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, AppPreferencesGlobal, Appearance, AppearanceGlobal, UiZoom, set_img_msg_fit_max_height}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}, text_rendering::apply_simpler_text_rendering}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, close_context_menus, get_keyboard_height, is_context_menu_shown, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, inline_image::clear_inline_image_cache, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{RecentEmojis, RecentEmojisAction, clear_recent_emojis, handle_recent_emojis_action, restore_recent_emojis, save_recent_emojis}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::{UserVerificationRequestAction, VerificationAction}, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
         show_dm_room_creation_confirmation,
@@ -309,6 +309,7 @@ impl MatchEvent for App {
         process_user_verification_updates(cx);
         process_avatar_updates(cx);
         process_room_preview_updates(cx);
+        process_room_membership_updates(cx);
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -397,6 +398,9 @@ impl MatchEvent for App {
                 if self.app_state.logged_in {
                     log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
                     cancel_all_dictation();
+                    // The next session only reports membership changes that happen after it starts,
+                    // so our cached memberships could go stale (or belong to a different account).
+                    clear_room_membership_cache(cx);
                     self.app_state.logged_in = false;
                     self.app_state.recovery_state = RecoveryState::Unknown;
                     self.update_login_visibility(cx);
@@ -867,6 +871,7 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_avatar_cache(cx);
     clear_inline_image_cache(cx);
     clear_room_preview_cache(cx);
+    clear_room_membership_cache(cx);
     clear_recent_emojis(cx);
 }
 

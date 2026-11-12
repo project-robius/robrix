@@ -186,6 +186,8 @@ bitflags! {
         const CanReport = 1 << 11;
         /// Whether this is a message-like event (e.g., a message, sticker, or poll) rather than a state event.
         const IsMessage = 1 << 12;
+        /// Whether the user is allowed to react to anything in this room.
+        const CanReactInRoom = 1 << 13;
     }
 }
 impl MessageAbilities {
@@ -207,8 +209,10 @@ impl MessageAbilities {
             MessageType::Image(_) | MessageType::Video(_) | MessageType::File(_) | MessageType::Audio(_),
         ));
         let is_redacted = content.is_redacted();
+        // An edit or a reply is a new message, which the user must be allowed to send.
+        let can_send_message = user_power_levels.can_send_message();
         abilities.set(Self::IsMessage, is_message);
-        abilities.set(Self::CanEdit, event_tl_item.is_editable() && !is_unsent_upload);
+        abilities.set(Self::CanEdit, can_send_message && event_tl_item.is_editable() && !is_unsent_upload);
         // For unsent messages, we show "Cancel Sending" instead of "Delete".
         if is_message && !is_local_echo && !is_redacted {
             abilities.set(Self::CanDelete, if event_tl_item.is_own() {
@@ -227,7 +231,7 @@ impl MessageAbilities {
             Some(EventSendState::NotSentYet { .. }) => abilities.set(Self::CanCancelSend, true),
             _ => {}
         }
-        let can_reply_to = event_tl_item.can_be_replied_to();
+        let can_reply_to = can_send_message && event_tl_item.can_be_replied_to();
         abilities.set(Self::CanReplyTo, can_reply_to);
         // No point offering "reply in thread" from within a thread, since the message is already in one.
         abilities.set(Self::CanReplyInThread, can_reply_to && is_message && !is_thread_timeline);
@@ -241,6 +245,7 @@ impl MessageAbilities {
                 abilities.set(Self::CanPin, true);
             }
         }
+        abilities.set(Self::CanReactInRoom, user_power_levels.can_send_reaction());
         abilities.set(
             Self::CanReact,
             // don't let the user react to unsent messages, that doesn't make sense
