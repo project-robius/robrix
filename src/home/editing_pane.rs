@@ -86,7 +86,8 @@ script_mod! {
 
         edit_text_input := MentionableTextInput {
             width: Fill
-            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+            // Only take the height that's left below the header.
+            height: Fit{max: FitBound.Rel{base: Base.Unused, factor: 1.0}}
             margin: Inset{ bottom: 5, top: 5 }
             // Editing sends an edit rather than a new message, so slash commands don't apply.
             allow_slash_commands: false
@@ -99,7 +100,7 @@ script_mod! {
 
         visible: false,
         width: Fill,
-        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+        height: Fit
         align: Align{x: 0.5, y: 1.0}
 
         editing_content := mod.widgets.EditingContent { }
@@ -418,6 +419,13 @@ impl Widget for EditingPane {
             self.visible = false;
         };
 
+        // Our own height animates, so we cap our content by our parent's max height instead.
+        let editing_content = self.view(cx, ids!(editing_content));
+        let max_height = cx.current_turtle_max_height();
+        if let Some(mut ec) = editing_content.borrow_mut() {
+            ec.walk.max_height = max_height.map(FitBound::Abs);
+        }
+
         // Animate both the layout height and content position simultaneously:
         // 1. walk.height grows from 0 to ch (and shrinks back during hide),
         //    so the RoomInputBar border grows/shrinks smoothly.
@@ -432,7 +440,7 @@ impl Widget for EditingPane {
             } else {
                 10000.0
             };
-            if let Some(mut ec) = self.view(cx, ids!(editing_content)).borrow_mut() {
+            if let Some(mut ec) = editing_content.borrow_mut() {
                 ec.walk.margin.top = offset;
                 ec.walk.margin.bottom = -offset;
             }
@@ -445,7 +453,7 @@ impl Widget for EditingPane {
             }
         } else {
             // Fully shown or not animating: reset margins.
-            if let Some(mut ec) = self.view(cx, ids!(editing_content)).borrow_mut() {
+            if let Some(mut ec) = editing_content.borrow_mut() {
                 ec.walk.margin.top = 0.0;
                 ec.walk.margin.bottom = 0.0;
             }
@@ -454,7 +462,7 @@ impl Widget for EditingPane {
         let step = self.view.draw_walk(cx, scope, walk);
 
         // Read area rect AFTER drawing to capture this frame's layout.
-        let ec_height = self.view(cx, ids!(editing_content)).area().rect(cx).size.y;
+        let ec_height = editing_content.area().rect(cx).size.y;
         if ec_height > 0.0 {
             self.last_content_height = ec_height;
         }
@@ -622,6 +630,15 @@ impl EditingPaneRef {
     /// Returns the current slide value (0.0 = fully shown, 1.0 = fully hidden).
     pub fn slide(&self) -> f32 {
         self.borrow().map_or(1.0, |inner| inner.slide)
+    }
+
+    /// Returns the smallest height this pane can be while still showing a full line of its text input.
+    pub fn get_min_height(&self, cx: &mut Cx) -> f64 {
+        let Some(inner) = self.borrow() else { return 0.0 };
+        let content_height = inner.view(cx, ids!(editing_content)).area().rect(cx).size.y;
+        let input = inner.mentionable_text_input(cx, ids!(editing_content.edit_text_input));
+        let text_input_height = input.text_input_ref().area().rect(cx).size.y;
+        content_height - text_input_height + input.speech_text_input_ref().get_min_text_input_height(cx)
     }
 
     /// See [`EditingPane::handle_edit_result()`].

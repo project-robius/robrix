@@ -641,6 +641,29 @@ impl SpeechTextInputRef {
             <= width - inner.input_padding.left - inner.input_padding.right - narrower_by
     }
 
+    /// Returns the smallest height our text input can be while still showing a full line of text,
+    /// or our stacked buttons if they're taller.
+    pub fn get_min_text_input_height(&self, cx: &mut Cx) -> f64 {
+        let Some(inner) = self.borrow() else { return 0.0 };
+        let text_input = inner.text_input_ref();
+        let one_line_height = get_line_height(cx, &text_input).unwrap_or(0.0) + inner.text_padding.height();
+        let stacked_buttons_height = match text_input.walk(cx).height {
+            Size::Fit { min: Some(FitBound::Abs(height)), .. } => height,
+            _ => 0.0,
+        };
+        one_line_height.max(stacked_buttons_height)
+    }
+
+    /// Returns how much height an ancestor's max must leave us, so our text input still shows a full line.
+    ///
+    /// A multi-line TextInput subtracts its own padding again when it fits itself
+    /// into an ancestor's max height, so we count that padding twice here.
+    pub fn get_min_height_for_ancestors(&self, cx: &mut Cx) -> f64 {
+        let min_text_input_height = self.get_min_text_input_height(cx);
+        let Some(inner) = self.borrow() else { return 0.0 };
+        min_text_input_height + inner.text_padding.height() + inner.view.layout.padding.height()
+    }
+
     /// Like [`Self::cancel_dictation()`] for callers without a `Cx`:
     /// releases the microphone and cancel scope now.
     pub fn release_microphone(&self) {

@@ -683,12 +683,6 @@ script_mod! {
                     // Below that, display a typing notice when other users in the room are typing.
                     typing_notice := TypingNotice { }
 
-                    // Below that, warn about any room member whose identity was reset.
-                    identity_reset_banner := IdentityResetBanner { }
-
-                    // Below that, warn about a failed message that is holding up this room's send queue.
-                    failed_send_banner := FailedSendBanner { }
-
                     room_input_bar := RoomInputBar { }
                 }
 
