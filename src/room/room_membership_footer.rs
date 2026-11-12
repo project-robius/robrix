@@ -25,7 +25,9 @@ script_mod! {
         width: Fill, height: Fit
         flow: Down,
         align: Align{x: 0.5}
-        padding: 20
+        // Uneven so the content looks centered: the RoomInputBar's -4 bottom margin hides 4 of the bottom padding,
+        // and the text has more space above its letters than below them.
+        padding: Inset{top: 16, bottom: 24, left: 20, right: 20}
         spacing: 12
 
         show_bg: true
