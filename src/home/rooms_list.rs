@@ -1193,6 +1193,11 @@ impl RoomsList {
                             self.all_known_rooms_order.truncate(length);
                             needs_sort = true;
                         }
+                        VecDiff::Reset { values } => {
+                            self.all_known_rooms_order = values.into();
+                            needs_sort = true;
+                            did_bulk_load_rooms = true;
+                        }
                     }
                 }
             }
@@ -1211,7 +1216,7 @@ impl RoomsList {
             enqueue_spaces_list_update(SpacesListUpdate::InvitedSpacesChanged);
             cx.action(RoomFilterBubblesAction::HasInvites(!self.invited_rooms.borrow().is_empty()));
         }
-        // Rooms loaded in bulk (which ends with an Append) don't have their power levels yet,
+        // Rooms loaded in bulk (which ends with an Append or a Reset) don't have their power levels yet,
         // so we fetch those now if the initial sync is done or the Mod/Admin bubble needs them.
         if did_bulk_load_rooms && (self.is_initial_sync_done || self.is_mod_admin_active()) {
             self.request_missing_power_levels(cx);
