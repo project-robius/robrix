@@ -158,6 +158,8 @@ pub struct EditingPane {
 
     #[rust] info: Option<EditingPaneInfo>,
     #[rust] is_animating_out: bool,
+    /// Whether this edit can't be sent right now, e.g., because the user can no longer post in this room.
+    #[rust] is_submit_blocked: bool,
     #[rust] last_content_height: f64,
     /// Used to force this widget's parent to do a re-draw
     /// after the hide animation completes on this pane.
@@ -246,6 +248,14 @@ impl Widget for EditingPane {
             if self.button(cx, ids!(accept_button)).clicked(actions)
                 || edit_text_input.returned(actions).is_some()
             {
+                if self.is_submit_blocked {
+                    enqueue_popup_notification(
+                        "You can't send this edit because you can't post in this room right now.",
+                        PopupKind::Warning,
+                        Some(5.0),
+                    );
+                    return;
+                }
                 // The edit is the text as shown now, so stop adding dictated words to it.
                 mentionable_input.cancel_dictation(cx);
                 let edited_text = mentionable_input.add_via_to_room_links(edit_text_input.text().trim());
@@ -478,6 +488,36 @@ impl EditingPane {
         self.visible
     }
 
+    /// Returns whether the user is in the middle of an edit, i.e., this pane is shown and isn't closing.
+    pub fn is_editing(&self) -> bool {
+        self.visible && !self.is_animating_out
+    }
+
+    /// Sets whether the edit in this pane can be sent. The pane stays shown either way,
+    /// so the user never loses what they typed, and trying to send it tells them why they can't.
+    pub fn set_submit_blocked(&mut self, is_blocked: bool) {
+        self.is_submit_blocked = is_blocked;
+    }
+
+    /// Shows this pane to edit the given event again, with the text of an edit that failed to send.
+    pub fn show_failed_edit(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        timeline_kind: TimelineKind,
+        edited_text: &str,
+    ) {
+        self.show(cx, event_tl_item, timeline_kind);
+        if !self.is_editing() { return; }
+        let edit_text_input = self.mentionable_text_input(cx, ids!(editing_content.edit_text_input));
+        edit_text_input.set_text(cx, edited_text);
+        edit_text_input.text_input_ref().set_cursor(
+            cx,
+            Cursor { index: edited_text.len(), prefer_next_row: false },
+            false,
+        );
+    }
+
     /// Call this when the result of an edit operation is received.
     ///
     /// This will handle the result, and either show a success message
@@ -671,6 +711,29 @@ impl EditingPaneRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.restore_state(cx, editing_pane_state, timeline_kind);
+    }
+
+    /// See [`EditingPane::is_editing()`].
+    pub fn is_editing(&self) -> bool {
+        self.borrow().is_some_and(|inner| inner.is_editing())
+    }
+
+    /// See [`EditingPane::set_submit_blocked()`].
+    pub fn set_submit_blocked(&self, is_blocked: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_submit_blocked(is_blocked);
+    }
+
+    /// See [`EditingPane::show_failed_edit()`].
+    pub fn show_failed_edit(
+        &self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        timeline_kind: TimelineKind,
+        edited_text: &str,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show_failed_edit(cx, event_tl_item, timeline_kind, edited_text);
     }
 
     /// Hides the editing pane immediately and clears its state without animating it out.

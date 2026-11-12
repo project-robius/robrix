@@ -2,7 +2,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
-use crate::{home::rooms_list::{InviteState, set_invite_state}, sliding_sync::{MatrixRequest, submit_async_request}};
+use crate::{home::{invite_screen::is_invite_pending, rooms_list::{InviteState, set_invite_state}}, sliding_sync::{MatrixRequest, submit_async_request}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -126,7 +126,12 @@ impl WidgetMatchEvent for BlockUserModal {
         let confirmed = self.view.button(cx, ids!(block_button)).clicked(actions)
             || self.view.button(cx, ids!(unblock_button)).clicked(actions);
         if !confirmed { return }
-        let Some(request) = self.request.take() else { return };
+        let Some(mut request) = self.request.take() else { return };
+        // That invite may have ended while we were asking, e.g., if it was accepted in another client,
+        // in which case rejecting it would make us leave the room that we just joined.
+        if request.reject_invite_to.as_ref().is_some_and(|room_id| !is_invite_pending(cx, room_id)) {
+            request.reject_invite_to = None;
+        }
 
         submit_async_request(MatrixRequest::BlockUser {
             user_id: request.user_id.clone(),

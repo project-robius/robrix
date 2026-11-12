@@ -776,6 +776,28 @@ impl RoomsList {
         }
     }
 
+    /// Asks which space's dock should show the lobby of a space whose invite was just accepted.
+    ///
+    /// The answer is a `JoinedSpaceAncestor` action, upon which we emit an `InviteAccepted` action.
+    fn resolve_joined_space_invite(&self, cx: &mut Cx, space_name_id: &RoomNameId) {
+        let was_sent = self.space_request_sender.as_ref().is_some_and(|sender|
+            sender.send(SpaceRequest::ResolveJoinedSpaceAncestor {
+                space_name_id: space_name_id.clone(),
+                was_invite: true,
+            }).is_ok()
+        );
+        if !was_sent {
+            error!("Couldn't determine where joined space {} should be shown; opening it here.", space_name_id.room_id());
+            cx.widget_action(
+                self.widget_uid(),
+                RoomsListAction::InviteAccepted {
+                    room_name_id: space_name_id.clone(),
+                    kind: AcceptedInviteKind::Space { dock_space: None },
+                },
+            );
+        }
+    }
+
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
         let mut num_updates: usize = 0;
@@ -988,27 +1010,9 @@ impl RoomsList {
 
                         // A joined space never comes back as a joined room, so this is our only
                         // chance to ask where its SpaceLobbyScreen should be shown.
-                        if (removed.is_space || is_space) && matches!(
-                            removed.invite_state,
-                            InviteState::WaitingForJoinResult | InviteState::WaitingForJoinedRoom,
-                        ) {
-                            let was_sent = self.space_request_sender.as_ref().is_some_and(|sender|
-                                sender.send(SpaceRequest::ResolveJoinedSpaceAncestor {
-                                    space_name_id: removed.room_name_id.clone(),
-                                    was_invite: true,
-                                }).is_ok()
-                            );
-                            if !was_sent {
-                                error!("Couldn't determine where joined space {room_id} should be shown; opening it here.");
-                                cx.widget_action(
-                                    self.widget_uid(),
-                                    RoomsListAction::InviteAccepted {
-                                        room_name_id: removed.room_name_id.clone(),
-                                        kind: AcceptedInviteKind::Space { dock_space: None },
-                                    },
-                                );
-                            }
-                            // if we DID send the request, we wait for the `JoinedSpaceAncestor` response.
+                        // This includes an invite that was accepted elsewhere, e.g., in another client.
+                        if (removed.is_space || is_space) && new_state == RoomState::Joined {
+                            self.resolve_joined_space_invite(cx, &removed.room_name_id);
                         }
                     }
 
@@ -2230,6 +2234,12 @@ impl RoomsListRef {
     /// to the background space service.
     pub fn get_space_request_sender(&self) -> Option<UnboundedSender<SpaceRequest>> {
         self.borrow()?.space_request_sender.clone()
+    }
+
+    /// See [`RoomsList::resolve_joined_space_invite()`].
+    pub fn resolve_joined_space_invite(&self, cx: &mut Cx, space_name_id: &RoomNameId) {
+        let Some(inner) = self.borrow() else { return };
+        inner.resolve_joined_space_invite(cx, space_name_id);
     }
 
     /// Starts fetching the given space's children if we don't have the full list of them yet.

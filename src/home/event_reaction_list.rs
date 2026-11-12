@@ -1,6 +1,6 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache;
-use crate::shared::{emoji_catalog::{get_emoji_catalog, get_shortcode}, inline_image::{InlineImageRef, InlineImageWidgetRefExt}, recent_emojis::record_emoji_pick};
+use crate::shared::{emoji_catalog::{get_emoji_catalog, get_shortcode}, inline_image::{InlineImageRef, InlineImageWidgetRefExt}, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::record_emoji_pick};
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest, TimelineKind};
 use indexmap::IndexMap;
 use makepad_widgets::*;
@@ -154,6 +154,8 @@ pub struct ReactionList {
 
     #[rust] timeline_kind: Option<TimelineKind>,
     #[rust] timeline_event_id: Option<TimelineEventItemId>,
+    /// Whether the user can react in this room, in which case clicking a reaction toggles it.
+    #[rust] is_reacting_allowed: bool,
 
     /// A cheap hash of the last reaction list populuated in this widget.
     /// Consists of: `(reaction count, total senders, num sent by me)`.
@@ -217,6 +219,10 @@ impl Widget for ReactionList {
                     }
                     // Otherwise, a primary click/press over the button should toggle the reaction.
                     else if fue.is_primary_hit() && fue.was_tap() {
+                        if !self.is_reacting_allowed {
+                            enqueue_popup_notification(REACTING_NOT_ALLOWED, PopupKind::Warning, Some(4.0));
+                            break;
+                        }
                         let Some(kind) = &self.timeline_kind else { return };
                         let Some(timeline_event_id) = &self.timeline_event_id else {
                             return;
@@ -299,6 +305,8 @@ impl ReactionListRef {
     ///
     /// The given `timeline_event_item_id` is the ID of the event that these reactions are for.
     /// Required by Matrix API
+    ///
+    /// If `is_reacting_allowed` is false, clicking a reaction won't toggle it.
     pub fn set_list(
         &mut self,
         cx: &mut Cx,
@@ -306,8 +314,10 @@ impl ReactionListRef {
         timeline_kind: &TimelineKind,
         timeline_event_item_id: &TimelineEventItemId,
         _id: usize,
+        is_reacting_allowed: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
+        inner.is_reacting_allowed = is_reacting_allowed;
         let Some(curr_user_id) = current_user_id() else { return };
         let Some(event_tl_item_reactions) = event_tl_item_reactions else {
             inner.children.clear();
@@ -491,3 +501,6 @@ pub fn toggle_reaction(
         });
     }
 }
+
+/// What we tell the user when they try to react in a room where they aren't allowed to.
+pub const REACTING_NOT_ALLOWED: &str = "You don't have permission to react in this room.";
