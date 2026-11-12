@@ -557,14 +557,7 @@ impl MatrixLinkPill {
             if let CachedRoomPreview::Loaded { preview, room_avatar } =
                 room_preview_cache::get_or_fetch_room_preview(cx, room_or_alias_id, via)
             {
-                // `RoomNameId::Display` would print "Room ID !xyz:server" for
-                // empty names; the pill should show just the bare room ID
-                // instead, matching the pre-cache behavior.
-                let resolved_name = if preview.room_name_id.is_empty() {
-                    preview.room_name_id.room_id().as_str().to_owned()
-                } else {
-                    preview.room_name_id.to_string()
-                };
+                let resolved_name = preview.room_name_id.to_string();
                 // For @room mentions, show "@room" as the title, not the room name.
                 let display_name = if is_room_mention { "@room" } else { resolved_name.as_str() };
                 if matches!(matrix_id, MatrixId::Event(..)) {
@@ -572,7 +565,12 @@ impl MatrixLinkPill {
                 } else {
                     self.label(cx, ids!(title)).set_text(cx, display_name);
                 }
-                let avatar_final = self.populate_avatar(cx, &room_avatar, display_name);
+                let avatar_name = if is_room_mention {
+                    display_name
+                } else {
+                    preview.room_name_id.first_letter().unwrap_or("?")
+                };
+                let avatar_final = self.populate_avatar(cx, &room_avatar, avatar_name);
                 self.is_waiting_for_data = !avatar_final;
                 return;
             }

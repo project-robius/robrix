@@ -281,8 +281,10 @@ impl Widget for LeaveSpaceModal {
                 let Some(item) = list.item(cx, key, id!(room_row)) else { continue };
                 let is_joined = is_joined(info);
                 if !self.populated_rows.contains(&index) {
-                    item.child_by_path(ids!(info.title)).set_text(cx, &info.name);
-                    let subtitle = match (info.is_space(), is_joined, info.canonical_alias.as_ref()) {
+                    let name = info.room_name_id.display();
+                    item.child_by_path(ids!(info.title)).set_text(cx, &name);
+                    let alias = info.canonical_alias.as_ref().filter(|alias| alias.as_str() != name);
+                    let subtitle = match (info.is_space(), is_joined, alias) {
                         (true, false, _) => "Subspace (not joined)".into(),
                         (true, true, Some(alias)) => format!("Subspace  ·  {alias}"),
                         (true, true, None) => "Subspace".into(),
@@ -293,7 +295,7 @@ impl Widget for LeaveSpaceModal {
                     subtitle_label.set_visible(cx, !subtitle.is_empty());
                     subtitle_label.set_text(cx, &subtitle);
                     let notice_label = item.child_by_path(ids!(info.notice));
-                    let other_spaces = self.other_spaces.get(&info.id);
+                    let other_spaces = self.other_spaces.get(info.room_name_id.room_id());
                     notice_label.set_visible(cx, other_spaces.is_some());
                     if let Some(other_spaces) = other_spaces {
                         notice_label.set_text(cx, &format!("Also in {}", other_spaces.join(", ")));
@@ -317,16 +319,16 @@ impl Widget for LeaveSpaceModal {
                     );
                     if item.avatar(cx, ids!(avatar)).show_room(
                         cx,
-                        &info.id,
+                        info.room_name_id.room_id(),
                         info.avatar.uri(),
-                        Some(&info.name),
+                        info.room_name_id.name_for_avatar(),
                         TextAvatarBgColor::Default,
                     ) {
                         self.populated_rows.insert(index);
                     }
                 }
                 let checkbox = item.check_box(cx, ids!(checkbox));
-                let is_selected = self.selected_rooms.contains(&info.id);
+                let is_selected = self.selected_rooms.contains(info.room_name_id.room_id());
                 if checkbox.active(cx) != is_selected {
                     checkbox.set_active(cx, is_selected, Animate::No);
                 }
@@ -377,7 +379,7 @@ impl WidgetMatchEvent for LeaveSpaceModal {
                 Some(SpaceRoomListAction::UpdatedChildren { space_id, .. })
                     if self.requested_spaces.contains(space_id) =>
                 {
-                    Self::request_children(cx, RoomNameId::empty(space_id.clone()));
+                    Self::request_children(cx, RoomNameId::new(RoomDisplayName::Empty, space_id.clone(), true));
                     did_loading_change = true;
                 }
                 Some(
@@ -442,7 +444,7 @@ impl WidgetMatchEvent for LeaveSpaceModal {
         if let Some(index) = tapped_row.map(|key| key.0 as usize)
             && let Some(TreeEntry::Item { info, .. }) = self.tree_entries.get(index)
         {
-            self.set_row_selected(index, !self.selected_rooms.contains(&info.id));
+            self.set_row_selected(index, !self.selected_rooms.contains(info.room_name_id.room_id()));
         }
         if tapped_row.is_some() || hover_changed {
             self.redraw(cx);
@@ -491,10 +493,7 @@ impl LeaveSpaceModal {
     fn add_children(&mut self, cx: &mut Cx, space_id: &OwnedRoomId, children: &Vector<SpaceRoom>) {
         for subspace in children.iter().filter(|child| child.is_space()) {
             if self.requested_spaces.insert(subspace.room_id.clone()) {
-                Self::request_children(cx, RoomNameId::new(
-                    RoomDisplayName::Named(subspace.display_name.clone()),
-                    subspace.room_id.clone(),
-                ));
+                Self::request_children(cx, RoomNameId::from_space_room(subspace));
             }
         }
         let mut all_children = children.clone();
@@ -538,8 +537,8 @@ impl LeaveSpaceModal {
             let mut counted = FxHashSet::default();
             for entry in &self.tree_entries {
                 if let TreeEntry::Item { info, .. } = entry
-                    && self.selected_rooms.contains(&info.id)
-                    && counted.insert(&info.id)
+                    && self.selected_rooms.contains(info.room_name_id.room_id())
+                    && counted.insert(info.room_name_id.room_id())
                 {
                     if info.is_space() { num_subspaces += 1 } else { num_rooms += 1 }
                 }
@@ -685,7 +684,7 @@ fn is_joined(info: &SpaceRoomInfo) -> bool {
 /// Returns the IDs of the rooms and subspaces that the user has joined among the given entries.
 fn get_joined_room_ids(tree_entries: &[TreeEntry]) -> impl Iterator<Item = &OwnedRoomId> {
     tree_entries.iter().filter_map(|entry| match entry {
-        TreeEntry::Item { info, .. } if is_joined(info) => Some(&info.id),
+        TreeEntry::Item { info, .. } if is_joined(info) => Some(info.room_name_id.room_id()),
         _ => None,
     })
 }

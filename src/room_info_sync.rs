@@ -12,7 +12,7 @@ use tokio::{runtime::Handle, sync::{broadcast::error::RecvError, mpsc::Unbounded
 use crate::{
     room::{PredecessorRoomDetails, room_info::{NOTIFICATION_MODES, RoomInfoAction, RoomInfoDetails, RoomNotificationModes}},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
-    utils::RoomNameId,
+    utils::{RoomNameId, get_name_or_alias},
 };
 
 /// Posts the given room's info and notification modes initially, whenever they change, and whenever
@@ -124,7 +124,7 @@ fn get_room_info_details(room: &Room) -> RoomInfoDetails {
         predecessor_room: room.predecessor_room()
             .map(|predecessor| PredecessorRoomDetails::new(
                 predecessor.room_id,
-                room.cached_display_name(),
+                Some(get_name_or_alias(room.cached_display_name(), room.canonical_alias().as_deref(), &room.alt_aliases())),
                 room.creators().as_deref().and_then(<[_]>::first).map(|creator| &**creator),
             )),
     }

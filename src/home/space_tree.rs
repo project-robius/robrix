@@ -11,7 +11,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     shared::avatar::AvatarState,
     space_service_sync::SpaceRoomExt,
-    utils::replace_linebreaks_separators,
+    utils::{RoomNameId, replace_linebreaks_separators},
 };
 
 
@@ -151,8 +151,7 @@ impl Widget for TreeLines {
 /// The subset of info in [`SpaceRoom`] that we display for each room/space.
 #[derive(Debug)]
 pub struct SpaceRoomInfo {
-    pub id: OwnedRoomId,
-    pub name: String,
+    pub room_name_id: RoomNameId,
     pub canonical_alias: Option<OwnedRoomAliasId>,
     pub topic: Option<String>,
     pub avatar: AvatarState,
@@ -173,8 +172,7 @@ impl SpaceRoomInfo {
 impl From<&SpaceRoom> for SpaceRoomInfo {
     fn from(space_room: &SpaceRoom) -> Self {
         SpaceRoomInfo {
-            id: space_room.room_id.clone(),
-            name: space_room.display_name.clone(),
+            room_name_id: RoomNameId::from_space_room(space_room),
             canonical_alias: space_room.canonical_alias.clone(),
             topic: space_room.topic.as_ref().map(|t| {
                 replace_linebreaks_separators(t.trim(), false).into_owned()
@@ -191,10 +189,9 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
 impl From<SpaceRoom> for SpaceRoomInfo {
     fn from(space_room: SpaceRoom) -> Self {
         SpaceRoomInfo {
+            room_name_id: RoomNameId::from_space_room(&space_room),
             children_count: space_room.is_space().then_some(space_room.children_count),
             canonical_alias: space_room.canonical_alias,
-            id: space_room.room_id,
-            name: space_room.display_name,
             topic: space_room.topic.map(|t| {
                 replace_linebreaks_separators(t.trim(), false).into_owned()
             }),

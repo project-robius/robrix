@@ -369,7 +369,10 @@ impl Widget for InviteScreen {
         // Handle any updates to this invite screen, e.g., it's been loaded or more inviter info has been fetched.
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) = action.downcast_ref() {
+                if let Some(
+                    AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }
+                    | AppStateAction::RoomNameUpdated(room_name_id)
+                ) = action.downcast_ref() {
                     if self.room_name_id.as_ref().is_some_and(|current| current.room_id() == room_name_id.room_id()) {
                         self.set_displayed_invite(cx, room_name_id);
                         break;
@@ -600,9 +603,10 @@ impl Widget for InviteScreen {
 
         // Third, show extra details about the room/space.
         // These come from the invite itself, except the member count, which only the room preview has.
+        let alias = info.canonical_alias.as_ref().map(|a| a.as_str()).filter(|alias| *alias != invite_room_label);
         let room_alias = room_view.label(cx, ids!(room_alias));
-        room_alias.set_visible(cx, info.canonical_alias.is_some());
-        room_alias.set_text(cx, info.canonical_alias.as_ref().map_or("", |a| a.as_str()));
+        room_alias.set_visible(cx, alias.is_some());
+        room_alias.set_text(cx, alias.unwrap_or_default());
 
         let join_rule = info.join_rule.as_ref().map(|rule| match rule {
             JoinRuleSummary::Public => "🌐  Public",

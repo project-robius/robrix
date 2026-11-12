@@ -15,7 +15,7 @@ use emojis::Emoji;
 use makepad_widgets::*;
 use crate::{
     shared::{avatar::{TextAvatarBgColor, AvatarWidgetRefExt}, context_menu::{get_keyboard_height, get_popup_bounds}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::set_view_bg_color},
-    utils::RoomNameId,
+    utils::{self, RoomNameId},
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedUserId};
 
@@ -585,8 +585,8 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             let new_widget = list.item(cx, index, id!(row));
             new_widget.label(cx, ids!(info.title)).set_text(cx, "Notify the entire room");
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, "@room");
-            let first = room_name.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "@".into());
-            new_widget.avatar(cx, ids!(avatar)).show_text(cx, Some(TextAvatarBgColor::Accent), None, &first);
+            let first = utils::room_name_first_letter(room_name).unwrap_or("@");
+            new_widget.avatar(cx, ids!(avatar)).show_text(cx, Some(TextAvatarBgColor::Accent), None, first);
             new_widget
         }
         MentionItem::Room(candidate) => {
@@ -597,7 +597,10 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
                 candidate.room_name_id.to_string()
             };
             new_widget.label(cx, ids!(info.title)).set_text(cx, &name);
-            let alias = candidate.alias.as_ref().map(|a| a.as_str()).unwrap_or("");
+            let alias = candidate.alias.as_ref()
+                .map(|a| a.as_str())
+                .filter(|alias| *alias != candidate.room_name_id.display())
+                .unwrap_or("");
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, alias);
             new_widget.avatar(cx, ids!(avatar)).show_room(cx, candidate.room_name_id.room_id(), candidate.avatar_url.as_ref(), candidate.room_name_id.name_for_avatar(), TextAvatarBgColor::UnknownRoom);
             new_widget

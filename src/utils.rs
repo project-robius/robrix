@@ -5,13 +5,14 @@ use url::Url;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, log, Align, Cx, DrawText, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, matrix_uri::MatrixId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, RoomId}, RoomDisplayName};
-use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, matrix_uri::MatrixId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, RoomAliasId, RoomId}, RoomDisplayName};
+use matrix_sdk_ui::{spaces::SpaceRoom, timeline::{EventTimelineItem, PaginationError, TimelineDetails}};
 
 use crate::{
     room::FetchedRoomAvatar,
     shared::{avatar::AvatarImage, popup_list::{enqueue_popup_notification, PopupKind}},
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
+    space_service_sync::SpaceRoomExt,
 };
 
 /// The scheme for GEO links, used for location messages in Matrix.
@@ -1212,6 +1213,24 @@ pub fn alias_localpart(alias: &OwnedRoomAliasId) -> &str {
         .unwrap_or_else(|| alias.as_str())
 }
 
+/// Returns the given room name, or if the room has none, its canonical alias or else its first alt alias.
+///
+/// We always use the full alias, e.g., `#foo:matrix.org`, rather than the SDK's name for such a room, `foo`.
+pub fn get_name_or_alias(
+    display_name: Option<RoomDisplayName>,
+    canonical_alias: Option<&RoomAliasId>,
+    alt_aliases: &[OwnedRoomAliasId],
+) -> RoomDisplayName {
+    let alias = canonical_alias.or_else(|| alt_aliases.first().map(|alias| &**alias));
+    match (display_name, alias) {
+        (None | Some(RoomDisplayName::Empty | RoomDisplayName::Aliased(_)), Some(alias)) => {
+            RoomDisplayName::Aliased(alias.as_str().to_owned())
+        }
+        (Some(display_name), _) => display_name,
+        (None, None) => RoomDisplayName::Empty,
+    }
+}
+
 /// Converts a byte index in a string to the corresponding grapheme index
 pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
     let mut current_byte_pos = 0;
@@ -1245,32 +1264,63 @@ pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usi
 /// the name string is ignored for purposes of equality testing.
 ///
 /// This type combines `RoomDisplayName` with `OwnedRoomId` to provide:
-/// * Automatic fallback to room ID when displaying empty/unknown room names.
+/// * Automatic fallback to an `Unnamed Room (ID: ...)` or `Unnamed Space (ID: ...)` label when displaying empty/unknown room names.
 /// * Type-safe room name handling throughout the codebase.
 /// * Simplified `Display` implementation that doesn't require passing room_id separately.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct RoomNameId {
     display_name: RoomDisplayName,
     room_id: OwnedRoomId,
+    #[serde(default)]
+    is_space: bool,
 }
 
 impl RoomNameId {
     /// Create a new `RoomNameId` with the given display name and room ID.
-    pub fn new(display_name: RoomDisplayName, room_id: OwnedRoomId) -> Self {
-        Self { display_name, room_id }
+    pub fn new(display_name: RoomDisplayName, room_id: OwnedRoomId, is_space: bool) -> Self {
+        Self { display_name, room_id, is_space }
     }
 
-    /// Creates a new `RoomNameId` with an empty display name.
+    /// Creates a new `RoomNameId` for a room with an empty display name.
     pub fn empty(room_id: OwnedRoomId) -> Self {
-        Self::new(RoomDisplayName::Empty, room_id)
+        Self::new(RoomDisplayName::Empty, room_id, false)
     }
 
     /// Creates a new `RoomNameId` from a `Room`.
     pub async fn from_room(room: &matrix_sdk::Room) -> Self {
         Self::new(
-            room.display_name().await.unwrap_or(RoomDisplayName::Empty),
+            get_name_or_alias(room.display_name().await.ok(), room.canonical_alias().as_deref(), &room.alt_aliases()),
             room.room_id().to_owned(),
+            room.is_space(),
         )
+    }
+
+    /// Creates a new `RoomNameId` from a room or space within a space.
+    ///
+    /// `SpaceRoom` only has the SDK's computed name as a string, so we work out which kind of name it is.
+    pub fn from_space_room(space_room: &SpaceRoom) -> Self {
+        let display_name = match (space_room.name.as_deref(), &space_room.canonical_alias) {
+            (Some(name), _) if !name.is_empty() => Some(RoomDisplayName::Named(name.trim().to_owned())),
+            // The SDK only names rooms after heroes with display names, else it says "Empty Room" or "N people".
+            (_, None) if space_room.heroes.iter().flatten().any(|hero| hero.display_name.is_some()) => {
+                // If everyone else left, the SDK's name is its label for an `EmptyWas` name.
+                Some(match space_room.display_name.strip_prefix("Empty Room (was ").and_then(|names| names.strip_suffix(')')) {
+                    Some(names) => RoomDisplayName::EmptyWas(names.to_owned()),
+                    None => RoomDisplayName::Calculated(space_room.display_name.clone()),
+                })
+            }
+            _ => None,
+        };
+        Self::new(
+            get_name_or_alias(display_name, space_room.canonical_alias.as_deref(), &[]),
+            space_room.room_id.clone(),
+            space_room.is_space(),
+        )
+    }
+
+    /// Deserializes the name of a space, which older saved app states didn't mark as a space.
+    pub fn deserialize_space<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::deserialize(deserializer).map(|space_name_id| Self { is_space: true, ..space_name_id })
     }
 
     /// Returns an efficient displayable/string representation.
@@ -1279,7 +1329,11 @@ impl RoomNameId {
             RoomDisplayName::Named(n)
             | RoomDisplayName::Aliased(n)
             | RoomDisplayName::Calculated(n) => Cow::Borrowed(n),
-            RoomDisplayName::Empty => Cow::Owned(format!("Room ID {}", self.room_id)),
+            RoomDisplayName::Empty => Cow::Owned(format!(
+                "Unnamed {} (ID: {})",
+                if self.is_space { "Space" } else { "Room" },
+                self.room_id,
+            )),
             RoomDisplayName::EmptyWas(name) => Cow::Owned(format!("Empty Room (was \"{name}\")")),
         }
     }
@@ -1302,12 +1356,16 @@ impl RoomNameId {
         matches!(self.display_name, RoomDisplayName::Empty)
     }
 
+    pub fn set_is_space(&mut self, is_space: bool) {
+        self.is_space = is_space;
+    }
+
     /// Get the display name as a string for avatar generation.
     ///
     /// Returns `None` for `RoomDisplayName::Empty` (no name to use for avatar).
     /// For `EmptyWas`, returns the previous name (preserving the old name for avatar).
     /// For other variants, returns the string representation.
-    /// Unlike `Display::to_string()`, this does NOT fall back to the room ID for Empty names.
+    /// Unlike `Display::to_string()`, this does NOT fall back to the `Unnamed Room/Space (ID: ...)` label for Empty names.
     pub fn name_for_avatar(&self) -> Option<&str> {
         match &self.display_name {
             RoomDisplayName::Empty => None,
@@ -1316,6 +1374,20 @@ impl RoomNameId {
             | RoomDisplayName::Aliased(name)
             | RoomDisplayName::Calculated(name)
             | RoomDisplayName::Named(name) => Some(name.as_str()),
+        }
+    }
+
+    /// Returns the first letter of this room's name for a text avatar, skipping any `#` or `!` sigil.
+    pub fn first_letter(&self) -> Option<&str> {
+        self.name_for_avatar().and_then(room_name_first_letter)
+    }
+
+    /// Returns the name to match search terms against, which for a room named after its alias
+    /// is just the alias's localpart, since that's how we match aliases.
+    pub fn name_for_search(&self) -> Option<&str> {
+        match &self.display_name {
+            RoomDisplayName::Aliased(alias) => Some(<&RoomAliasId>::try_from(alias.as_str()).map_or(alias.as_str(), RoomAliasId::alias)),
+            _ => self.name_for_avatar(),
         }
     }
 
@@ -1368,46 +1440,39 @@ impl AsRef<OwnedRoomId> for RoomNameId {
     }
 }
 
-/// Display implementation that automatically handles Empty names by falling back to room ID.
-///
-/// - `Empty` → displays room ID
-/// - `EmptyWas(name)` → displays "Empty Room (was "name")"
-/// - Other variants → displays the name as-is
+/// See [`RoomNameId::display()`].
 impl std::fmt::Display for RoomNameId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.display_name {
-            RoomDisplayName::Empty => write!(f, "Room ID {}", self.room_id),
-            RoomDisplayName::EmptyWas(name) => write!(f, "Empty Room (was \"{}\")", name),
-            other => write!(f, "{}", other),
-        }
+        f.write_str(&self.display())
     }
 }
 impl From<(RoomDisplayName, OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (RoomDisplayName, OwnedRoomId)) -> Self {
-        Self::new(display_name, room_id)
+        Self::new(display_name, room_id, false)
     }
 }
 impl From<(&RoomDisplayName, &OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (&RoomDisplayName, &OwnedRoomId)) -> Self {
-        Self::new(display_name.clone(), room_id.clone())
+        Self::new(display_name.clone(), room_id.clone(), false)
     }
 }
 impl From<(Option<RoomDisplayName>, OwnedRoomId)> for RoomNameId {
     fn from((display_name, room_id): (Option<RoomDisplayName>, OwnedRoomId)) -> Self {
-        Self::new(display_name.unwrap_or(RoomDisplayName::Empty), room_id)
+        Self::new(display_name.unwrap_or(RoomDisplayName::Empty), room_id, false)
     }
+}
+
+/// Returns the first character of the given room name that isn't a `#` or `!` sigil.
+pub fn room_name_first_letter(room_name: &str) -> Option<&str> {
+    room_name.graphemes(true).find(|&g| g != "#" && g != "!")
 }
 
 /// Returns a text avatar string containing the first character of the room name.
 ///
 /// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
 pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
-    let first = room_name.and_then(|rn| rn
-        .graphemes(true)
-        .find(|&g| g != "#" && g != "!")
-        .map(ToString::to_string)
-    ).unwrap_or_else(|| String::from("?"));
-    FetchedRoomAvatar::Text(first)
+    let first = room_name.and_then(room_name_first_letter).unwrap_or("?");
+    FetchedRoomAvatar::Text(first.to_owned())
 }
 
 /// Returns whether a soft keyboard is the only keyboard, so focusing a text input brings it up.

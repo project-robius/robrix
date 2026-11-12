@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{RoomDisplayName, RoomState};
+use matrix_sdk::RoomState;
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
@@ -258,7 +258,7 @@ impl SpacesBarEntry {
                         |cx, img_ref| utils::load_avatar_image(&img_ref, cx, image),
                     );
                     if res.is_err() {
-                        avatar_ref.show_text(cx, None, None, &space_name);
+                        avatar_ref.show_text(cx, None, None, space_name_id.first_letter().unwrap_or("?"));
                     }
                 }
             }
@@ -333,8 +333,7 @@ pub enum SpacesListUpdate {
     },
     /// Update the displayable name for the given space.
     UpdateSpaceName {
-        space_id: OwnedRoomId,
-        new_space_name: String,
+        new_space_name: RoomNameId,
     },
     /// Update the topic for the given space.
     UpdateSpaceTopic {
@@ -662,16 +661,13 @@ impl SpacesBar {
                     }
                 }
 
-                SpacesListUpdate::UpdateSpaceName { space_id, new_space_name } => {
-                    if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
-                        space.space_name_id = RoomNameId::new(
-                            RoomDisplayName::Named(new_space_name),
-                            space_id.clone(),
-                        );
+                SpacesListUpdate::UpdateSpaceName { new_space_name } => {
+                    if let Some(space) = self.all_joined_spaces.get_mut(new_space_name.room_id()) {
+                        space.space_name_id = new_space_name;
                         cx.action(AppStateAction::RoomNameUpdated(space.space_name_id.clone()));
                         should_regenerate_displayed_spaces = true;
                     } else {
-                        error!("Error: couldn't find space {space_id} to update space name");
+                        error!("Error: couldn't find space {} to update space name", new_space_name.room_id());
                     }
                 }
 

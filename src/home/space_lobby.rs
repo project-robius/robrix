@@ -1190,8 +1190,7 @@ impl Widget for SpaceLobbyScreen {
                 |cx, img| utils::load_avatar_image(&img, cx, image),
             ).is_err()
         }) {
-            let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
-                .and_then(|name| utils::user_name_first_letter(name));
+            let first_char = self.space_name_id.as_ref().and_then(RoomNameId::first_letter);
             parent_avatar_ref.show_text(cx, None, None, first_char.unwrap_or("S"));
         }
         
@@ -1241,13 +1240,13 @@ impl Widget for SpaceLobbyScreen {
                             let show_view_button = show_leave_button && !info.is_space();
                             let item = if info.is_space() {
                                 let item = list.item(cx, item_id, id!(subspace_entry));
-                                let is_expanded = self.expanded_spaces.contains(&info.id);
+                                let is_expanded = self.expanded_spaces.contains(info.room_name_id.room_id());
                                 let mut show_buttons_view = false;
                                 let mut need_snap = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
-                                    let id_changed = inner.room_id.as_ref() != Some(&info.id);
+                                    let id_changed = inner.room_id.as_ref() != Some(info.room_name_id.room_id());
                                     need_snap = id_changed || inner.is_expanded != is_expanded;
-                                    inner.room_id = Some(info.id.clone());
+                                    inner.room_id = Some(info.room_name_id.room_id().clone());
                                     inner.is_space = true;
                                     inner.is_expanded = is_expanded;
                                     if id_changed {
@@ -1270,8 +1269,8 @@ impl Widget for SpaceLobbyScreen {
                                 let item = list.item(cx, item_id, id!(room_entry));
                                 let mut show_buttons_view = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
-                                    let id_changed = inner.room_id.as_ref() != Some(&info.id);
-                                    inner.room_id = Some(info.id.clone());
+                                    let id_changed = inner.room_id.as_ref() != Some(info.room_name_id.room_id());
+                                    inner.room_id = Some(info.room_name_id.room_id().clone());
                                     inner.is_space = false;
                                     if id_changed {
                                         inner.show_buttons_view = false;
@@ -1289,11 +1288,11 @@ impl Widget for SpaceLobbyScreen {
                             item.child_by_path(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
 
                             // Below, draw things that are common to child rooms and subspaces.
-                            item.child_by_path(ids!(main_entry.content.name_label)).as_label().set_text(cx, &info.name);
+                            item.child_by_path(ids!(main_entry.content.name_label)).as_label().set_text(cx, &info.room_name_id.display());
 
                             // Display avatar from stored data, or fetch from cache, or show initials
                             let avatar_ref = item.child_by_path(ids!(main_entry.avatar)).as_avatar();
-                            let first_char = utils::user_name_first_letter(&info.name);
+                            let first_char = info.room_name_id.first_letter();
                             let mut drew_avatar = false;
 
                             match &info.avatar {
@@ -1413,12 +1412,11 @@ impl Widget for SpaceLobbyScreen {
 impl SpaceLobbyScreen {
     /// Finds the given room/space ID in the tree and returns its basic details (including name).
     fn basic_room_details_for(&self, room_id: &OwnedRoomId) -> BasicRoomDetails {
-        let room_name = self.tree_entries.iter().find_map(|entry| match entry {
-            TreeEntry::Item { info, .. } if &info.id == room_id => Some(info.name.clone()),
-            _ => None,
-        });
-        let room_name_id: RoomNameId = room_name
-            .map(|name| RoomNameId::new(RoomDisplayName::Named(name), room_id.clone()))
+        let room_name_id = self.tree_entries.iter()
+            .find_map(|entry| match entry {
+                TreeEntry::Item { info, .. } if info.room_name_id.room_id() == room_id => Some(info.room_name_id.clone()),
+                _ => None,
+            })
             .unwrap_or_else(|| RoomNameId::empty(room_id.clone()));
         BasicRoomDetails::Name(room_name_id)
     }
@@ -1511,8 +1509,8 @@ impl SpaceLobbyScreen {
 
     /// Returns whether the given [`SpaceRoomInfo`] matches the filter keywords.
     fn matches_filter(info: &SpaceRoomInfo, keywords: &str) -> bool {
-        info.name.to_lowercase().contains(keywords)
-            || info.id.as_str().to_lowercase().contains(keywords)
+        info.room_name_id.display().to_lowercase().contains(keywords)
+            || info.room_name_id.room_id().as_str().to_lowercase().contains(keywords)
             || info.canonical_alias.as_ref()
                 .is_some_and(|a| a.as_str().to_lowercase().contains(keywords))
             || info.topic.as_ref()
@@ -1609,10 +1607,7 @@ impl SpaceLobbyScreen {
         self.children_cache.values()
             .flatten()
             .find(|sr| &sr.room_id == space_id)
-            .map_or_else(
-                || RoomNameId::empty(space_id.clone()),
-                |sr| RoomNameId::new(RoomDisplayName::Named(sr.display_name.clone()), space_id.clone()),
-            )
+            .map_or_else(|| RoomNameId::new(RoomDisplayName::Empty, space_id.clone(), true), RoomNameId::from_space_room)
     }
 
     /// Requests details about the given space.
@@ -1695,7 +1690,7 @@ impl SpaceLobbyScreen {
         // TODO: move avatar setting to `draw_walk()`
         // Set parent avatar
         let avatar_ref = self.view.avatar(cx, ids!(header.parent_space_row.parent_space_title.parent_avatar));
-        let first_char = utils::user_name_first_letter(&space_name);
+        let first_char = space_name_id.first_letter();
         avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
 
         self.redraw(cx);

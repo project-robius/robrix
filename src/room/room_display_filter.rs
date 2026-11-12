@@ -2,9 +2,9 @@ use std::{
     borrow::Cow, cmp::Ordering, collections::{BTreeMap, HashSet}, ops::Deref
 };
 use bitflags::bitflags;
-use matrix_sdk::{RoomDisplayName, ruma::{
+use matrix_sdk::ruma::{
     OwnedRoomAliasId, RoomAliasId, RoomId, events::tag::{TagName, Tags}
-}};
+};
 
 use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, home::spaces_bar::JoinedSpaceInfo, sliding_sync::UserPowerLevels};
 
@@ -36,13 +36,7 @@ impl FilterableRoom for JoinedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        match self.room_name_id.display_name() {
-            RoomDisplayName::Aliased(name)
-            | RoomDisplayName::Calculated(name)
-            | RoomDisplayName::Named(name) => Cow::Borrowed(name),
-            RoomDisplayName::EmptyWas(name) => format!("Empty was {name}").into(),
-            RoomDisplayName::Empty => "Empty".into(),
-        }
+        self.room_name_id.display()
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -88,13 +82,7 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        match self.room_name_id.display_name() {
-            RoomDisplayName::Aliased(name)
-            | RoomDisplayName::Calculated(name)
-            | RoomDisplayName::Named(name) => Cow::Borrowed(name),
-            RoomDisplayName::EmptyWas(name) => format!("Empty was {name}").into(),
-            RoomDisplayName::Empty => "Empty".into(),
-        }
+        self.room_name_id.display()
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -140,13 +128,7 @@ impl FilterableRoom for JoinedSpaceInfo {
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        match self.space_name_id.display_name() {
-            RoomDisplayName::Aliased(name)
-            | RoomDisplayName::Calculated(name)
-            | RoomDisplayName::EmptyWas(name)
-            | RoomDisplayName::Named(name) => name.into(),
-            RoomDisplayName::Empty => self.space_name_id.to_string().into(),
-        }
+        self.space_name_id.display()
     }
 
     fn unread_mentions(&self) -> u64 {
