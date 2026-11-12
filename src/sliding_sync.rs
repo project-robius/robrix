@@ -38,7 +38,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, create_room_modal::{CreateRoomAction, NewRoomDetails, create_room}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::{stringify_send_error, upload_percent}, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, create_room_modal::{CreateRoomAction, NewRoomDetails, create_room}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::NavigationBarAction, room_screen::{InviteResultAction, RoomLink, RoomLinkDestination, RoomLinkResolved, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::{RoomListSyncStatus, RoomsListHeaderAction}, send_status_indicator::{stringify_send_error, upload_percent}, timeline_items::index_of_event, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, moderation::{self, MemberModeration, ReportTarget, UserMessage}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -4320,6 +4320,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // On subsequent iterations of the login loop (after a post-auth setup failure), it is `None`,
     // which causes the loop to wait for the user to submit a new manual login request.
     let mut initial_client_opt = new_login_opt;
+    // The account whose session ended without a logout, e.g., because its token expired.
+    let mut expired_user_id: Option<OwnedUserId> = None;
 
     'login_loop: loop {
         let (client, _sync_token) = match initial_client_opt.take() {
@@ -4363,6 +4365,15 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         let logged_in_user_id: OwnedUserId = client.user_id()
             .expect("BUG: Client::user_id() returned None after successful login!")
             .to_owned();
+        // Logging in as a different account than the expired one starts fresh, as if we had logged out.
+        if expired_user_id.take().is_some_and(|expired| expired != logged_in_user_id) {
+            log!("Logged in as a different account; clearing the previous account's state.");
+            Cx::post_action(MainDesktopUiAction::CloseAllTabs { on_close_all: Arc::new(Notify::new()) });
+            Cx::post_action(NavigationBarAction::CloseSettings);
+            if let Err(e) = clear_app_state(&LogoutConfig::default()).await {
+                error!("Failed to clear the previous account's state: {e}");
+            }
+        }
         let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
         enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
@@ -4560,6 +4571,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         if was_token_expired || was_logout {
             if was_token_expired {
                 log!("Token expired; cleaning up session state and waiting for re-login.");
+                expired_user_id = Some(logged_in_user_id.clone());
             } else {
                 log!("Logout in progress; cleaning up session state and waiting for re-login.");
             }

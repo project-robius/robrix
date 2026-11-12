@@ -19,7 +19,8 @@ script_mod! {
 
 
     mod.widgets.RoomMembershipFooter = set_type_default() do #(RoomMembershipFooter::register_widget(vm)) {
-        ..mod.widgets.SolidView
+        // Its background comes from the RoomInputBar's `notices` view.
+        ..mod.widgets.View
 
         visible: false,
         width: Fill, height: Fit
@@ -29,11 +30,6 @@ script_mod! {
         // and the text has more space above its letters than below them.
         padding: Inset{top: 16, bottom: 24, left: 20, right: 20}
         spacing: 12
-
-        show_bg: true
-        draw_bg +: {
-            color: COLOR_SECONDARY
-        }
 
         membership_status := Label {
             width: Fill, height: Fit,

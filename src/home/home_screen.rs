@@ -374,8 +374,17 @@ script_mod! {
                                 }
                             }
                             body +: {
+                                // The RoomInputBar fills the bottom safe area itself, with its bottom view's own color.
+                                padding: Inset{
+                                    left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                                    right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                                }
                                 room_screen := mod.widgets.RoomScreen {
                                     room_actions +: {visible: false}
+                                    // Its panel's background fills the bottom safe area too, but its content stays above it.
+                                    keyboard_view +: { room_screen_wrapper +: { user_profile_sliding_pane +: { main_content +: {
+                                        padding: Inset{bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM)}
+                                    }}}}
                                 }
                             }
                         }
@@ -1002,6 +1011,8 @@ impl Widget for HomeScreen {
                     self.view.stack_navigation(cx, ids!(view_stack)).end_interactive_transition_without_animation(cx);
                     self.interactive_pop_place = None;
                     self.interactive_push_place = None;
+                    // The next login starts from the rooms list, not from the last account's open room.
+                    self.view.stack_navigation(cx, ids!(view_stack)).pop_to_root(cx);
                 }
 
                 match action.downcast_ref() {

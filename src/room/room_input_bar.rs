@@ -86,20 +86,26 @@ script_mod! {
 
         // Below that, if the user can't post here, display one of these notices instead of the message input bar.
         // They sit outside the overlay below so that an in-progress edit can't cover them.
-        notices := View {
+        notices := RoundedYView {
             width: Fill, height: Fit
             flow: Down
 
+            // Rounded at the top like the RoomInputBar and EditingPane. The sides are inset by the RoomInputBar's
+            // -4 margins, so that the rounded corners aren't clipped off.
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_SECONDARY)
+                border_radius: vec2(4.0, 0.0)
+                border_inset: vec4(4.0, 0.0, 4.0, 0.0)
+            }
+
             // A notice that the user can't send messages to this room.
-            can_not_send_message_notice := SolidView {
+            can_not_send_message_notice := View {
                 visible: false
                 // Uneven so the text looks centered: the RoomInputBar's -4 bottom margin hides 4 of the bottom padding.
                 padding: Inset{top: 18, bottom: 22, left: 20, right: 20}
                 align: Align{x: 0.5, y: 0.5}
                 width: Fill, height: Fit
-
-                show_bg: true
-                draw_bg.color: (COLOR_SECONDARY)
 
                 text := Label {
                     width: Fill,
@@ -244,6 +250,7 @@ struct ChildRefs {
     reply_preview_content: WidgetRef,
     reply_preview_bottom_line: WidgetRef,
     notices: ViewRef,
+    overlay_wrapper: ViewRef,
     input_bar: ViewRef,
     mentionable_text_input: MentionableTextInputRef,
     attachment_buttons: AttachmentButtonsRef,
@@ -312,10 +319,33 @@ impl Widget for RoomInputBar {
             replying_preview,
             reply_preview_content,
             reply_preview_bottom_line,
+            notices,
+            overlay_wrapper,
             input_bar,
             editing_pane,
             ..
         } = self.child_refs(cx).clone();
+        // Where we reach into the screen's bottom safe area (e.g., under iOS's home indicator),
+        // our bottom-most view extends into it, so that its own color fills that area.
+        let safe_area_overlap = {
+            let parent = cx.turtle().rect();
+            let insets = cx.display_context.safe_area_insets;
+            let safe_area_top = cx.display_context.screen_size.y - insets.bottom;
+            (parent.pos.y + parent.size.y - safe_area_top).max(0.0).min(insets.bottom)
+        };
+        let is_notice_shown = !input_bar.visible();
+        let is_notice_at_bottom = is_notice_shown && !editing_pane.is_currently_shown(cx);
+        if let Some(mut inner) = notices.borrow_mut() {
+            inner.layout.padding.bottom = if is_notice_at_bottom { safe_area_overlap } else { 0.0 };
+        }
+        if let Some(mut inner) = overlay_wrapper.borrow_mut() {
+            inner.layout.padding.bottom = if is_notice_at_bottom { 0.0 } else { safe_area_overlap };
+            // An edit below a notice overlaps it a bit, so the notice fills in behind the edit's rounded corners.
+            inner.walk.margin.top = if is_notice_shown && !is_notice_at_bottom { -5.0 } else { 0.0 };
+        }
+        // A notice at our very top has its own rounded corners, so we don't draw our background behind it.
+        self.view.show_bg = !(is_notice_shown && banners_and_previews.area().rect(cx).size.y < 0.5);
+
         // Shrink the input_bar's height as the editing pane slides in,
         // and grow it back as the editing pane slides out.
         // slide=1.0 → editing pane hidden → input_bar at full Fit height.
@@ -651,6 +681,7 @@ impl RoomInputBar {
             reply_preview_content: self.view.widget(cx, ids!(replying_preview.reply_preview_content)),
             reply_preview_bottom_line: self.view.widget(cx, ids!(replying_preview.bottom_line)),
             notices: self.view.view(cx, ids!(notices)),
+            overlay_wrapper: self.view.view(cx, ids!(overlay_wrapper)),
             input_bar: self.view.view(cx, ids!(input_bar)),
             mentionable_text_input: self.view.mentionable_text_input(cx, ids!(mentionable_text_input)),
             attachment_buttons: self.view.attachment_buttons(cx, ids!(attachment_buttons)),
@@ -668,6 +699,7 @@ impl RoomInputBar {
     fn get_min_input_height(&mut self, cx: &mut Cx) -> f64 {
         let ChildRefs {
             notices,
+            overlay_wrapper,
             input_bar,
             mentionable_text_input,
             editing_pane,
@@ -675,8 +707,9 @@ impl RoomInputBar {
         } = self.child_refs(cx).clone();
         // At most one notice is shown, and an in-progress edit can stay shown below it.
         let notices_height = notices.area().rect(cx).size.y;
+        let safe_area_padding = overlay_wrapper.borrow().map_or(0.0, |inner| inner.layout.padding.bottom);
         if editing_pane.is_currently_shown(cx) {
-            return notices_height + editing_pane.get_min_height(cx);
+            return notices_height + editing_pane.get_min_height(cx) + safe_area_padding;
         }
         if input_bar.visible() {
             let speech_text_input = mentionable_text_input.speech_text_input_ref();
@@ -687,7 +720,7 @@ impl RoomInputBar {
             // The buttons beside the text input can make the input bar even taller than that.
             let extra_text_height = mentionable_text_input.text_input_ref().area().rect(cx).size.y
                 - speech_text_input.get_min_text_input_height(cx);
-            return min_height.max(self.input_bar_natural_height - extra_text_height.max(0.0));
+            return min_height.max(self.input_bar_natural_height - extra_text_height.max(0.0)) + safe_area_padding;
         }
         notices_height
     }
