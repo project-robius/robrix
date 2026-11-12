@@ -938,6 +938,8 @@ impl AppMain for App {
         crate::home::tombstone_footer::script_mod(vm);
         crate::home::editing_pane::script_mod(vm);
         crate::home::upload_progress::script_mod(vm);
+        crate::home::identity_reset_banner::script_mod(vm);
+        crate::home::failed_send_banner::script_mod(vm);
         crate::room::script_mod(vm);
         crate::join_leave_room_modal::script_mod(vm);
         crate::block_user_modal::script_mod(vm);

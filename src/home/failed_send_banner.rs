@@ -24,7 +24,7 @@ script_mod! {
         height: Fit,
         flow: Down,
         spacing: 10,
-        margin: Inset{left: 4, right: 4, bottom: 4},
+        margin: Inset{left: 10, right: 10, top: 6},
         padding: Inset{left: 12.0, top: 10.0, bottom: 10.0, right: 10.0}
 
         show_bg: true

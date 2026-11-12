@@ -1,8 +1,10 @@
 //! The RoomInputBar widget contains all components related to sending messages/content to a room.
 //!
-//! The RoomInputBar is capped to a maximum height of 75% of the containing RoomScreen's height.
+//! The RoomInputBar is capped to a maximum height of 75% of the containing RoomScreen's height,
+//! but it always shows at least one full line of its text input, and its warning banners in full.
 //!
 //! The widgets included in the RoomInputBar are:
+//! * banners that warn about a room member's identity being reset or a message that failed to send.
 //! * a preview of the message the user is replying to.
 //! * the location preview (which allows you to send your current location to the room),
 //!   plus a menu item to show the location preview.
@@ -59,14 +61,28 @@ script_mod! {
             // shadow_offset: vec2(0.0,0.0)
         }
 
-        // The top-most element is a preview of the message that the user is replying to, if any.
-        replying_preview := ReplyingPreview { }
+        // Everything above the message input, which always leaves room for one line of it.
+        banners_and_previews := View {
+            width: Fill, height: Fit
+            flow: Down
 
-        // Below that, display a preview of the current location that a user is about to send.
-        location_preview := LocationPreview { }
+            // The top-most elements warn about any room member whose identity was reset,
+            // and about a failed message that is holding up this room's send queue.
+            identity_reset_banner := IdentityResetBanner { }
+            failed_send_banner := FailedSendBanner { }
 
-        // Upload progress view (shown when a file upload is in progress)
-        upload_progress_view := UploadProgressView { }
+            // Below that, display a preview of the current location that a user is about to send.
+            location_preview := LocationPreview { }
+
+            // Upload progress view (shown when a file upload is in progress)
+            upload_progress_view := UploadProgressView { }
+
+            // Below that, a preview of the message that the user is replying to, if any,
+            // which collapses to fit in the height that's left.
+            replying_preview := ReplyingPreview {
+                height: Fit{max: FitBound.Rel{base: Base.Unused, factor: 1.0}}
+            }
+        }
 
         // Below that, display one of multiple possible views:
         // * the message input bar (buttons and message TextInput).
@@ -75,13 +91,15 @@ script_mod! {
         // * the EditingPane, which slides up as an overlay in front of the other views below.
         overlay_wrapper := View {
             width: Fill,
-            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+            // The banners and previews above take up some of the input bar's max height,
+            // so this only gets what's left of it.
+            height: Fit{max: FitBound.Rel{base: Base.Unused, factor: 1.0}}
             flow: Overlay,
 
             // Below that, display a view that holds the message input bar and send button.
             input_bar := View {
                 width: Fill,
-                height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+                height: Fit
                 flow: Right
                 // Bottom-align everything to ensure that buttons always stick to the bottom
                 // even when the mentionable_text_input box is very tall.
@@ -192,6 +210,13 @@ pub struct RoomInputBar {
     /// Cached natural Fit height of the input_bar, used as the animation
     /// target when the editing pane is being hidden.
     #[rust] input_bar_natural_height: f64,
+    /// The height of the banners and previews with the replying preview's content fully collapsed,
+    /// as of when we last drew them.
+    #[rust] min_banners_and_previews_height: f64,
+    /// The height of the views below the replying preview's content, within the replying preview.
+    #[rust] height_below_reply_preview_content: f64,
+    /// Used to redraw once more after the banners and previews changed height.
+    #[rust] next_frame: NextFrame,
     /// Whether the currently-displayed room is encrypted, used to style the send button.
     #[rust] is_encrypted: bool,
     /// Whether the send button is currently enabled (the message input is non-empty).
@@ -206,7 +231,11 @@ pub struct RoomInputBar {
 
 #[derive(Clone)]
 struct ChildRefs {
+    banners_and_previews: ViewRef,
+    replying_preview: ViewRef,
     reply_preview_content: WidgetRef,
+    reply_preview_bottom_line: WidgetRef,
+    overlay_wrapper: ViewRef,
     input_bar: ViewRef,
     mentionable_text_input: MentionableTextInputRef,
     attachment_buttons: AttachmentButtonsRef,
@@ -233,6 +262,11 @@ impl ScriptHook for RoomInputBar {
 
 impl Widget for RoomInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Redraw after the banners and previews changed height (see draw_walk).
+        if self.next_frame.is_event(event).is_some() {
+            self.redraw(cx);
+        }
+
         let reply_preview_content_area = self.child_refs(cx).reply_preview_content.area();
         match event.hits(cx, reply_preview_content_area) {
             // If the hit occurred on the replying message preview, jump to it.
@@ -264,8 +298,16 @@ impl Widget for RoomInputBar {
         self.view.handle_event(cx, event, scope);
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let ChildRefs { reply_preview_content, input_bar, editing_pane, .. } = self.child_refs(cx).clone();
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, mut walk: Walk) -> DrawStep {
+        let ChildRefs {
+            banners_and_previews,
+            replying_preview,
+            reply_preview_content,
+            reply_preview_bottom_line,
+            input_bar,
+            editing_pane,
+            ..
+        } = self.child_refs(cx).clone();
         // Shrink the input_bar's height as the editing pane slides in,
         // and grow it back as the editing pane slides out.
         // slide=1.0 → editing pane hidden → input_bar at full Fit height.
@@ -295,7 +337,55 @@ impl Widget for RoomInputBar {
 
         reply_preview_content.set_visible(cx, true);
 
-        self.view.draw_walk(cx, scope, walk)
+        // Views are laid out top-down, so we reserve the input's minimum height before drawing the
+        // banners and previews above it. Those are shown in full even past our usual max height,
+        // except for the replying preview's content, which collapses to fit in what's left.
+        let min_input_height = self.get_min_input_height(cx);
+        let available_height = {
+            let parent = cx.turtle();
+            parent.unused_height() - parent.padding().bottom - walk.margin.height()
+        };
+        let max_height = cx.walk_max_height(walk)
+            .unwrap_or(available_height)
+            .max(min_input_height + self.min_banners_and_previews_height)
+            .min(available_height);
+        walk.height = Size::fit();
+        walk.max_height = Some(FitBound::Abs(max_height));
+        if let Some(mut inner) = banners_and_previews.borrow_mut() {
+            inner.walk.max_height = Some(FitBound::Abs((max_height - min_input_height).max(0.0)));
+        }
+        // A replying preview without room for its header is hidden rather than cut off.
+        let does_everything_fit = max_height >= min_input_height + self.min_banners_and_previews_height;
+        if let Some(mut inner) = replying_preview.borrow_mut() {
+            inner.walk.max_height = (!does_everything_fit).then_some(FitBound::Abs(0.0));
+        }
+        reply_preview_content.as_collapsible_preview()
+            .set_reserved_height_below(self.height_below_reply_preview_content);
+
+        let step = self.view.draw_walk(cx, scope, walk);
+
+        // Measure the views that the next draw has to make room for.
+        // A clipped view's children still have their full heights, so we measure those.
+        let mut min_banners_and_previews_height = 0.0;
+        banners_and_previews.children(&mut |id, child| {
+            if id != live_id!(replying_preview) && child.visible() {
+                min_banners_and_previews_height += child.area().rect(cx).size.y
+                    + child.walk(cx).margin.height();
+            }
+        });
+        if replying_preview.visible() {
+            let preview_rect = replying_preview.area().rect(cx);
+            let line_rect = reply_preview_bottom_line.area().rect(cx);
+            let content_rect = reply_preview_content.area().rect(cx);
+            let preview_bottom = line_rect.pos.y + line_rect.size.y;
+            min_banners_and_previews_height += preview_bottom - preview_rect.pos.y - content_rect.size.y;
+            self.height_below_reply_preview_content = preview_bottom - content_rect.pos.y - content_rect.size.y;
+        }
+        if min_banners_and_previews_height != self.min_banners_and_previews_height {
+            self.min_banners_and_previews_height = min_banners_and_previews_height;
+            self.next_frame = cx.new_next_frame();
+        }
+        step
     }
 
     /// Gives key focus to the inner message text input.
@@ -543,7 +633,11 @@ impl RoomInputBar {
 
     fn child_refs(&mut self, cx: &mut Cx) -> &ChildRefs {
         self.child_refs.get_or_insert_with(|| ChildRefs {
+            banners_and_previews: self.view.view(cx, ids!(banners_and_previews)),
+            replying_preview: self.view.view(cx, ids!(replying_preview)),
             reply_preview_content: self.view.widget(cx, ids!(replying_preview.reply_preview_content)),
+            reply_preview_bottom_line: self.view.widget(cx, ids!(replying_preview.bottom_line)),
+            overlay_wrapper: self.view.view(cx, ids!(overlay_wrapper)),
             input_bar: self.view.view(cx, ids!(input_bar)),
             mentionable_text_input: self.view.mentionable_text_input(cx, ids!(mentionable_text_input)),
             attachment_buttons: self.view.attachment_buttons(cx, ids!(attachment_buttons)),
@@ -552,6 +646,41 @@ impl RoomInputBar {
             send_location_button: self.view.button(cx, ids!(location_preview.send_location_button)),
             editing_pane: self.view.editing_pane(cx, ids!(editing_pane)),
         })
+    }
+
+    /// Returns the height that the views below the banners and previews need.
+    ///
+    /// That's enough for the text input there to show one full line,
+    /// or for a notice shown there instead to be shown in full.
+    fn get_min_input_height(&mut self, cx: &mut Cx) -> f64 {
+        let ChildRefs {
+            overlay_wrapper,
+            input_bar,
+            mentionable_text_input,
+            editing_pane,
+            ..
+        } = self.child_refs(cx).clone();
+        if editing_pane.is_currently_shown(cx) {
+            return editing_pane.get_min_height(cx);
+        }
+        if input_bar.visible() {
+            let speech_text_input = mentionable_text_input.speech_text_input_ref();
+            let paddings_height = mentionable_text_input.borrow()
+                .map_or(0.0, |inner| inner.layout.padding.height())
+                + input_bar.borrow().map_or(0.0, |inner| inner.layout.padding.height());
+            let min_height = speech_text_input.get_min_height_for_ancestors(cx) + paddings_height;
+            // The buttons beside the text input can make the input bar even taller than that.
+            let extra_text_height = mentionable_text_input.text_input_ref().area().rect(cx).size.y
+                - speech_text_input.get_min_text_input_height(cx);
+            return min_height.max(self.input_bar_natural_height - extra_text_height.max(0.0));
+        }
+        let mut notice_height: f64 = 0.0;
+        overlay_wrapper.children(&mut |_id, child| {
+            if child.visible() {
+                notice_height = notice_height.max(child.area().rect(cx).size.y + child.walk(cx).margin.height());
+            }
+        });
+        notice_height
     }
 
     /// Runs the given slash command action within this room.
@@ -663,7 +792,7 @@ impl RoomInputBar {
         // 1. Populate and show the ReplyingPreview, of course.
         let replying_preview = self.view(cx, ids!(replying_preview));
         let (replying_preview_username, _) = replying_preview
-            .avatar(cx, ids!(reply_preview_content.preview_content.reply_preview_avatar))
+            .avatar(cx, ids!(replying_to_sender.reply_preview_avatar))
             .set_avatar_and_get_username(
                 cx,
                 timeline_kind,
@@ -674,7 +803,7 @@ impl RoomInputBar {
             );
 
         replying_preview
-            .label(cx, ids!(reply_preview_content.preview_content.reply_preview_username))
+            .label(cx, ids!(replying_to_sender.reply_preview_username))
             .set_text(cx, replying_preview_username.as_str());
 
         populate_preview_of_timeline_item(

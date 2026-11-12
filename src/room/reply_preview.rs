@@ -13,6 +13,39 @@ script_mod! {
     use mod.widgets.*
 
 
+    // The sender of a replied-to message: their avatar and name.
+    mod.widgets.ReplyPreviewSender = View {
+        width: Fill
+        height: Fit
+        flow: Right
+        align: Align{y: 0.5}
+
+        reply_preview_avatar := Avatar {
+            width: 19.,
+            height: 19.,
+            text_view +: {
+                text +: {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: 6.0 }
+                    }
+                }
+            }
+        }
+
+        reply_preview_username := Label {
+            width: Fill,
+            flow: Flow.Right { wrap: false },
+            margin: Inset{ left: 5.0, top: 2 }
+            max_lines: 1
+            text_overflow: Ellipsis
+            draw_text +: {
+                text_style: USERNAME_TEXT_STYLE { font_size: 10 },
+                color: (USERNAME_TEXT_COLOR)
+            }
+            text: "<Username not available>"
+        }
+    }
+
     // We render the reply preview content into a CachedView (an off-screen texture)
     // so that we can apply a fade-to-transparent effect towards the bottom.
     mod.widgets.ReplyPreviewContent = CachedView {
@@ -33,37 +66,8 @@ script_mod! {
             }
         }
 
-        View {
-            width: Fill
-            height: Fit
-            flow: Right
+        reply_preview_sender := mod.widgets.ReplyPreviewSender {
             margin: Inset{ bottom: 10.0, top: 0.0, right: 5.0 }
-            align: Align{y: 0.5}
-
-            reply_preview_avatar := Avatar {
-                width: 19.,
-                height: 19.,
-                text_view +: {
-                    text +: {
-                        draw_text +: {
-                            text_style: theme.font_regular { font_size: 6.0 }
-                        }
-                    }
-                }
-            }
-
-            reply_preview_username := Label {
-                width: Fill,
-                flow: Flow.Right { wrap: false },
-                margin: Inset{ left: 5.0, top: 2 }
-                max_lines: 1
-                text_overflow: Ellipsis
-                draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE { font_size: 10 },
-                    color: (USERNAME_TEXT_COLOR)
-                }
-                text: "<Username not available>"
-            }
         }
 
         reply_preview_body := HtmlOrPlaintext {
@@ -157,7 +161,7 @@ script_mod! {
         flow: Down
         padding: Inset{ left: 9, right: 9 }
 
-        // Displays a "Replying to" label and a cancel button
+        // Displays a "Replying to" label, the sender, and a cancel button
         // above the preview of the message being replied to.
         View {
             width: Fill
@@ -166,17 +170,35 @@ script_mod! {
             align: Align{y: 0.5}
             padding: Inset{left: 14, right: 6, top: 10, bottom: 0}
 
-            Label {
-                width: Fill,
-                flow: Flow.Right { wrap: true },
-                // Vertically align the text with the X icon in the cancel_reply_button
-                padding: Inset{top: 5}
+            // The sender moves to the next line only if they don't fit beside "Replying to:".
+            View {
+                width: Fill
+                height: Fit
+                flow: Flow.Right { wrap: true, row_align: RowAlign.Baseline }
+                spacing: 8
+                wrap_spacing: 4
 
-                draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE {},
-                    color: (COLOR_INPUT_BAR_HEADER_TEXT),
+                Label {
+                    width: Fit,
+                    // Start at the row's left edge, like a sender who wrapped to the next line.
+                    padding: 0
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {},
+                        color: (COLOR_TEXT_MUTED),
+                    }
+                    text: "Replying to:"
                 }
-                text: "Replying to:"
+
+                // The avatar and name stay together, so they wrap to the next line as one.
+                replying_to_sender := mod.widgets.ReplyPreviewSender {
+                    width: Fit
+                    reply_preview_username +: {
+                        width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}
+                        // A Label's padding counts twice, which would push a full-width name past its max width.
+                        padding: 0
+                        margin: Inset{ left: 4.0 }
+                    }
+                }
             }
 
             cancel_reply_button := RobrixNegativeIconButton {
@@ -194,9 +216,11 @@ script_mod! {
         reply_preview_content := mod.widgets.CollapsiblePreview {
             visible: true
             expandable: false
+            // The sender is shown beside "Replying to:" instead.
+            preview_content +: { reply_preview_sender +: { visible: false } }
         }
 
-        LineH {
+        bottom_line := LineH {
             margin: Inset{top: 4, left: 5, right: 5}
         }
     }
@@ -245,6 +269,8 @@ pub struct CollapsiblePreview {
     #[live] show_left_bar: bool,
     /// How far the left bar extends below the bottom of this reply preview.
     #[live] left_bar_overhang: f64,
+    /// How much of our parent's max height to leave for the views below us.
+    #[rust] reserved_height_below: f64,
     #[rust] is_expanded: bool,
     #[rust] collapsible: bool,
     #[rust] last_drawn_height: f64,
@@ -297,9 +323,24 @@ impl Widget for CollapsiblePreview {
             reply_collapse_button: self.view.widget(cx, ids!(reply_collapse_button)),
         }).clone();
 
+        // If our parent has a max height, we also collapse to fit in what's left of it.
+        let max_height = cx.current_turtle_max_height().map(|parent_max_height| {
+            let parent = cx.turtle();
+            parent_max_height - parent.used_height() - parent.padding().bottom
+                - walk.margin.height() - self.reserved_height_below
+        });
+        let full_show_threshold = max_height.map_or(
+            REPLY_PREVIEW_FULL_SHOW_THRESHOLD,
+            |height| height.min(REPLY_PREVIEW_FULL_SHOW_THRESHOLD),
+        );
+        let collapsed_height = max_height.map_or(
+            REPLY_PREVIEW_COLLAPSED_HEIGHT,
+            |height| height.clamp(0.0, REPLY_PREVIEW_COLLAPSED_HEIGHT),
+        );
+
         // We only use the off-screen cachedview for too-tall reply previews that should be collapsed,
         // as they need the fade effect. Normal small reply previews just draw directly.
-        let predict_collapsed = self.last_drawn_height > REPLY_PREVIEW_FULL_SHOW_THRESHOLD
+        let predict_collapsed = self.last_drawn_height > full_show_threshold
             && !(self.expandable && self.is_expanded);
         if let Some(mut inner) = preview_content.borrow_mut() {
             let optimize = if predict_collapsed { ViewOptimize::Texture } else { ViewOptimize::None };
@@ -324,16 +365,18 @@ impl Widget for CollapsiblePreview {
             self.last_drawn_height = body_rect.pos.y + body_rect.size.y
                 + REPLY_PREVIEW_BODY_BOTTOM_PADDING - content_rect.pos.y;
         }
-        self.collapsible = self.last_drawn_height > REPLY_PREVIEW_FULL_SHOW_THRESHOLD;
+        self.collapsible = self.last_drawn_height > full_show_threshold;
         let collapsed = self.collapsible && !(self.expandable && self.is_expanded);
 
         // Only apply the fade effect if it was collapsed.
         if predict_collapsed {
             let (fade_start, fade_end, enabled) = if collapsed {
                 // Bottom fade band of the collapsed window, as fractions of the texture height.
+                // It's shorter for a preview collapsed to fit in less space, so the fade keeps its proportions.
+                let fade_height = REPLY_PREVIEW_FADE_HEIGHT * collapsed_height / REPLY_PREVIEW_COLLAPSED_HEIGHT;
                 (
-                    ((REPLY_PREVIEW_COLLAPSED_HEIGHT - REPLY_PREVIEW_FADE_HEIGHT) / used.y) as f32,
-                    (REPLY_PREVIEW_COLLAPSED_HEIGHT / used.y) as f32,
+                    ((collapsed_height - fade_height) / used.y) as f32,
+                    (collapsed_height / used.y) as f32,
                     1.0,
                 )
             } else {
@@ -346,7 +389,7 @@ impl Widget for CollapsiblePreview {
             }
         }
         if collapsed {
-            cx.turtle_mut().set_used(used.x, REPLY_PREVIEW_COLLAPSED_HEIGHT);
+            cx.turtle_mut().set_used(used.x, collapsed_height);
         }
         let inner_rect = cx.end_turtle();
         // We only know the true height after it's first drawn, so use next frame
@@ -416,6 +459,13 @@ impl CollapsiblePreviewRef {
     pub fn set_expanded(&self, is_expanded: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.is_expanded = is_expanded;
+        }
+    }
+
+    /// Sets how much of this preview's parent's max height to leave for the views below it.
+    pub fn set_reserved_height_below(&self, height: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.reserved_height_below = height;
         }
     }
 
