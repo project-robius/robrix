@@ -5582,8 +5582,12 @@ async fn room_membership(room: &Room) -> RoomMembership {
         && matches!(event.membership(), MembershipState::Leave | MembershipState::Ban)
         && event.sender() != own_user_id
     {
-        let display_name = room.get_member_no_sync(event.sender()).await.ok().flatten()
-            .and_then(|sender| sender.display_name().map(ToOwned::to_owned));
+        let display_name = match room.get_member_no_sync(event.sender()).await.ok().flatten() {
+            Some(sender) => sender.display_name().map(ToOwned::to_owned),
+            // We often don't have their member info, e.g., if we were only invited or knocking.
+            None => room.client().account().fetch_user_profile_of(event.sender()).await.ok()
+                .and_then(|profile| profile.get_static::<DisplayName>().ok().flatten()),
+        };
         removed_by = Some(RemovedBy { user_id: event.sender().to_owned(), display_name });
         reason = event.reason().map(str::trim).filter(|r| !r.is_empty()).map(ToOwned::to_owned);
     }

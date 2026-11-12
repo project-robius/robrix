@@ -37,6 +37,16 @@ pub struct RemovedBy {
     pub display_name: Option<String>,
 }
 
+impl std::fmt::Display for RemovedBy {
+    /// Shows their name and user ID, or just their user ID if we don't know their name.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.display_name {
+            Some(name) => write!(f, "{name} ({})", self.user_id),
+            None => write!(f, "{}", self.user_id),
+        }
+    }
+}
+
 /// How the current user can join a room they aren't in, based on its join rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JoinMethod {

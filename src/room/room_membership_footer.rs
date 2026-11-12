@@ -63,10 +63,7 @@ enum JoinButtonFunction {
 /// Returns the status text to show for the given membership,
 /// and the text and function of the button, if the user can do anything about it.
 fn footer_content(membership: &RoomMembership) -> (String, Option<(&'static str, JoinButtonFunction)>) {
-    let by = membership.removed_by.as_ref().map(|by| match &by.display_name {
-        Some(name) => format!(" by {name} ({})", by.user_id),
-        None => format!(" by {}", by.user_id),
-    }).unwrap_or_default();
+    let by = membership.removed_by.as_ref().map(|by| format!(" by {by}")).unwrap_or_default();
     let reason = membership.reason.as_ref()
         .map(|reason| format!("\nReason: {reason}"))
         .unwrap_or_default();
