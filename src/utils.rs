@@ -400,6 +400,8 @@ pub enum VecDiff<T> {
     PopBack,
     /// Truncate the list to the given length.
     Truncate { length: usize },
+    /// Replace the whole list with the given elements.
+    Reset { values: Vec<T> },
 }
 
 

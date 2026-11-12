@@ -204,8 +204,6 @@ pub enum RoomsListUpdate {
     /// Add a new room to the list of rooms the user has been invited to.
     /// This will be maintained and displayed separately from joined rooms.
     AddInvitedRoom(InvitedRoomInfo),
-    /// Refresh an existing invitation while preserving its local UI state.
-    RefreshInvitedRoom(InvitedRoomInfo),
     /// Add a new room to the list of all rooms that the user has joined.
     AddJoinedRoom(JoinedRoomInfo),
     /// Clear all rooms in the list of all rooms.
@@ -213,7 +211,7 @@ pub enum RoomsListUpdate {
     /// Update the preview of the latest event for the given room.
     UpdateLatestEvent {
         room_id: OwnedRoomId,
-        latest: Option<LatestEventPreview>,
+        latest: LatestEventPreview,
     },
     /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
@@ -315,8 +313,6 @@ pub enum RoomsListUpdate {
     RestoreSpaceGraph(SavedSpaceGraph),
     /// Update the ordering of rooms based on the given diff.
     RoomOrderUpdate(VecDiff<OwnedRoomId>),
-    /// Replace the room order without clearing the loaded rooms.
-    RoomOrderReset(Vec<OwnedRoomId>),
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -804,24 +800,6 @@ impl RoomsList {
                     self.update_status();
                     SignalToUI::set_ui_signal(); // signal the InviteScreen to update itself
                 }
-                RoomsListUpdate::RefreshInvitedRoom(mut invited_room) => {
-                    let room_id = invited_room.room_name_id.room_id().clone();
-                    let mut invited_rooms = self.invited_rooms.borrow_mut();
-                    let Some(existing) = invited_rooms.get_mut(&room_id) else {
-                        warning!("Couldn't refresh unknown invitation {room_id}");
-                        continue;
-                    };
-                    invited_room.invite_state = existing.invite_state;
-                    invited_room.is_selected = existing.is_selected;
-                    std::mem::swap(&mut invited_room.room_avatar, &mut existing.room_avatar);
-                    let should_display = should_display_room!(self, &room_id, &invited_room);
-                    *existing = invited_room;
-                    drop(invited_rooms);
-                    add_or_remove_displayed_invited_room(&mut self.displayed_invited_rooms, &room_id, should_display);
-                    did_invited_rooms_change = true;
-                    self.update_status();
-                    cx.action(InviteScreenAction::MetadataUpdated { room_id });
-                }
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_name_id.room_id().clone();
                     self.all_joined_rooms.insert(room_id.clone(), joined_room);
@@ -897,7 +875,7 @@ impl RoomsList {
                 }
                 RoomsListUpdate::UpdateLatestEvent { room_id, latest } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        room.latest = latest;
+                        room.latest = Some(latest);
                     } else {
                         error!("Error: couldn't find room {room_id} to update latest event");
                     }
@@ -1164,11 +1142,6 @@ impl RoomsList {
                     self.refresh_selected_space(cx);
                     num_updates -= 1;  // refresh_selected_space() redraws if it needs to.
                 }
-                RoomsListUpdate::RoomOrderReset(room_ids) => {
-                    self.all_known_rooms_order = room_ids.into();
-                    needs_sort = true;
-                    did_bulk_load_rooms = true;
-                }
                 RoomsListUpdate::RoomOrderUpdate(diff) => {
                     match diff {
                         VecDiff::Append { values } => {
@@ -1220,6 +1193,11 @@ impl RoomsList {
                             self.all_known_rooms_order.truncate(length);
                             needs_sort = true;
                         }
+                        VecDiff::Reset { values } => {
+                            self.all_known_rooms_order = values.into();
+                            needs_sort = true;
+                            did_bulk_load_rooms = true;
+                        }
                     }
                 }
             }
@@ -1238,7 +1216,7 @@ impl RoomsList {
             enqueue_spaces_list_update(SpacesListUpdate::InvitedSpacesChanged);
             cx.action(RoomFilterBubblesAction::HasInvites(!self.invited_rooms.borrow().is_empty()));
         }
-        // Rooms loaded in bulk (which ends with an Append) don't have their power levels yet,
+        // Rooms loaded in bulk (which ends with an Append or a Reset) don't have their power levels yet,
         // so we fetch those now if the initial sync is done or the Mod/Admin bubble needs them.
         if did_bulk_load_rooms && (self.is_initial_sync_done || self.is_mod_admin_active()) {
             self.request_missing_power_levels(cx);

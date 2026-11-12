@@ -4627,27 +4627,49 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
     let mut subscribed_rooms: HashSet<OwnedRoomId, ConstHasher> = HashSet::default();
     let current_user_id = current_user_id();
 
+    // The previous session's rooms are still loaded if it ended without a full logout, e.g., an expired token.
+    ALL_JOINED_ROOMS.lock().unwrap().clear();
+    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
+    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::Clear));
+
     pin_mut!(room_diff_stream);
     while let Some(batch) = room_diff_stream.next().await {
         let mut peekable_diffs = batch.into_iter().peekable();
         while let Some(diff) = peekable_diffs.next() {
+            let is_reset = matches!(diff, VectorDiff::Reset { .. });
             match diff {
-                VectorDiff::Reset { values: new_rooms } => {
-                    reset_room_list(new_rooms, &mut all_known_rooms, &room_list_service, &current_user_id).await;
-                }
-                VectorDiff::Append { values: new_rooms } => {
-                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append, old length {}, adding {} new items", all_known_rooms.len(), new_rooms.len()); }
+                VectorDiff::Append { values: new_rooms }
+                | VectorDiff::Reset { values: new_rooms } => {
+                    // Append and Reset are identical, except that Reset replaces the list instead of adding to it.
+                    let _num_new_rooms = new_rooms.len();
+                    let mut old_rooms: HashMap<OwnedRoomId, RoomListServiceRoomInfo, ConstHasher> = HashMap::default();
+                    if is_reset {
+                        if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Reset, old length {}, new length {}", all_known_rooms.len(), new_rooms.len()); }
+                        // The SDK sends the whole list again whenever we fall behind on its updates,
+                        // so most of these rooms are ones we already have, and those stay loaded.
+                        old_rooms.extend(std::mem::take(&mut all_known_rooms).into_iter().map(|room| (room.room_id.clone(), room)));
+                    } else {
+                        if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append, old length {}, adding {} new items", all_known_rooms.len(), _num_new_rooms); }
+                    }
 
                     // Parallelize creating each room's RoomListServiceRoomInfo and adding that new room.
                     // We combine `from_room` and `add_new_room` into a single async task per room.
                     // We limit concurrency to ensure that the CPUs don't get flooded by a huge initial sync.
                     let new_room_infos: Vec<RoomListServiceRoomInfo> = stream::iter(
-                        new_rooms.into_iter().map(|room| async {
-                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id, false).await;
-                            if let Err(e) = add_new_room(&room_info, &room_list_service).await {
-                                error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
+                        new_rooms.into_iter().map(|room| {
+                            let old_room = old_rooms.remove(room.room_id());
+                            async {
+                                let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id, old_room.is_some()).await;
+                                let result = match old_room {
+                                    // We may have missed updates to a room we already have, so we check it for changes.
+                                    Some(old_room) => update_room(&old_room, &room_info, &room_list_service).await,
+                                    None => add_new_room(&room_info, &room_list_service).await,
+                                };
+                                if let Err(e) = result {
+                                    error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
+                                }
+                                room_info
                             }
-                            room_info
                         })
                     ).buffered(*MAX_CONCURRENCY).collect().await;
 
@@ -4655,12 +4677,21 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     let room_ids = new_room_infos.iter()
                         .map(|r| r.room_id.clone())
                         .collect::<Vec<_>>();
-                    if !room_ids.is_empty() {
+                    if is_reset {
+                        // Any old rooms left over aren't in the new list.
+                        for room in old_rooms.values() {
+                            remove_room(room);
+                        }
+                        // Replacing the order in one update means the rooms list never sees an empty one.
+                        enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
+                            VecDiff::Reset { values: room_ids }
+                        ));
+                    } else if !room_ids.is_empty() {
                         enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
                             VecDiff::Append { values: room_ids }
                         ));
-                        all_known_rooms.extend(new_room_infos);
                     }
+                    all_known_rooms.extend(new_room_infos);
                 }
                 VectorDiff::Clear => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Clear"); }
@@ -4795,77 +4826,6 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
     }
 
     bail!("room list service sync loop ended unexpectedly")
-}
-
-
-/// Updates the room list when the SDK sends a complete list of rooms.
-/// Keeps existing timelines for rooms that are still in the list, so open rooms keep working.
-async fn reset_room_list(
-    new_rooms: Vector<RoomListItem>,
-    all_known_rooms: &mut Vector<RoomListServiceRoomInfo>,
-    room_list_service: &RoomListService,
-    current_user_id: &Option<OwnedUserId>,
-) {
-    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Reset, old length {}, new length {}", all_known_rooms.len(), new_rooms.len()); }
-    let new_room_ids: HashSet<OwnedRoomId, ConstHasher> = new_rooms.iter()
-        .map(|room| room.room_id().to_owned()).collect();
-    let mut previous_rooms = HashMap::with_hasher(FxBuildHasher);
-    while let Some(room) = all_known_rooms.pop_back() {
-        if new_room_ids.contains(&room.room_id) {
-            previous_rooms.insert(room.room_id.clone(), room);
-        } else {
-            remove_room(&room);
-        }
-    }
-
-    // Keep existing timelines and their channels usable while fetching the replacement snapshot.
-    // As with initial loading, limit concurrency and preserve the SDK's order.
-    let new_room_infos: Vec<RoomListServiceRoomInfo> = stream::iter(
-        new_rooms.into_iter().map(|room| {
-            let previous = previous_rooms.remove(room.room_id());
-            async move {
-                let room_info = RoomListServiceRoomInfo::from_room(
-                    room.into_inner(), current_user_id, previous.is_some(),
-                ).await;
-                let result = if let Some(old_room) = &previous {
-                    // Retry a joined room if an earlier attempt to build its timeline failed.
-                    let needs_adding = room_info.state == RoomState::Joined
-                        && !ALL_JOINED_ROOMS.lock().unwrap().contains_key(&room_info.room_id);
-                    if old_room.state == RoomState::Joined && room_info.state == RoomState::Invited {
-                        remove_room(old_room);
-                    }
-                    if needs_adding {
-                        add_new_room(&room_info, room_list_service).await
-                    } else {
-                        let result = update_room(old_room, &room_info, room_list_service).await;
-                        if result.is_ok() && old_room.state == RoomState::Invited && room_info.state == RoomState::Invited {
-                            enqueue_rooms_list_update(RoomsListUpdate::RefreshInvitedRoom(invited_room_info(&room_info)));
-                        }
-                        // Decryption can change the preview without changing its timestamp.
-                        if result.is_ok() && old_room.state == RoomState::Joined
-                            && room_info.state == RoomState::Joined && old_room.has_create_event
-                            && old_room.latest_event_timestamp == room_info.room.latest_event_timestamp()
-                        {
-                            update_latest_event(&room_info.room).await;
-                        }
-                        result
-                    }
-                } else {
-                    add_new_room(&room_info, room_list_service).await
-                };
-                if let Err(e) = result {
-                    error!("Failed to reconcile room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
-                    // Keep the old snapshot so a later reset can retry any unfinished transition.
-                    return previous.unwrap_or(room_info);
-                }
-                room_info
-            }
-        })
-    ).buffered(*MAX_CONCURRENCY).collect().await;
-    let room_ids = new_room_infos.iter().map(|room| room.room_id.clone()).collect();
-    *all_known_rooms = new_room_infos.into_iter().collect();
-    // A single update avoids exposing an empty order between Clear and Append.
-    enqueue_rooms_list_update(RoomsListUpdate::RoomOrderReset(room_ids));
 }
 
 
@@ -5013,6 +4973,10 @@ async fn update_room(
                 }
                 RoomState::Invited => {
                     log!("update_room(): adding new Invited room: {:?} ({new_room_id})", new_room.display_name);
+                    // We can get re-invited without ever seeing that we left, so the joined room has to go first.
+                    if old_room.state == RoomState::Joined {
+                        remove_room(old_room);
+                    }
                     return add_new_room(new_room, room_list_service).await;
                 }
                 RoomState::Knocked => {
@@ -5268,43 +5232,6 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 }
 
 
-/// Builds the server metadata for an invitation, including current routing hints.
-fn invited_room_info(new_room: &RoomListServiceRoomInfo) -> InvitedRoomInfo {
-    let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
-    // The caller fetches an avatar image asynchronously after publishing this snapshot.
-    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
-    // Collect servers for this invitation, from most to least useful.
-    let mut via: Vec<OwnedServerName> = Vec::new();
-    let creators = new_room.room.creators().unwrap_or_default();
-    let candidates = new_room.inviter_info.iter()
-        .map(|i| i.user_id.server_name())
-        .chain(creators.iter().map(|c| c.server_name()))
-        .chain(new_room.room_id.server_name())
-        .chain(new_room.canonical_alias.iter().map(|a| a.server_name()))
-        .chain(new_room.alt_aliases.iter().map(|a| a.server_name()));
-    for server in candidates {
-        if !via.iter().any(|v| v == server) {
-            via.push(server.to_owned());
-        }
-    }
-    InvitedRoomInfo {
-        room_name_id,
-        inviter_info: new_room.inviter_info.clone(),
-        via,
-        room_avatar,
-        canonical_alias: new_room.canonical_alias.clone(),
-        alt_aliases: new_room.alt_aliases.clone(),
-        topic: new_room.topic.clone(),
-        join_rule: new_room.join_rule.clone(),
-        is_private: new_room.is_private,
-        invite_state: Default::default(),
-        is_selected: false,
-        is_direct: new_room.is_direct,
-        is_space: new_room.is_space,
-    }
-}
-
-
 /// Invoked when the room list service has received an update with a brand new room.
 async fn add_new_room(
     new_room: &RoomListServiceRoomInfo,
@@ -5330,9 +5257,38 @@ async fn add_new_room(
             return Ok(());
         }
         RoomState::Invited => {
-            let invite = invited_room_info(new_room);
-            let room_name_id = invite.room_name_id.clone();
-            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(invite));
+            let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
+            // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
+            let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
+            // get a list of "via" servers for this invited room, in order of usefulness
+            let mut via: Vec<OwnedServerName> = Vec::new();
+            let creators = new_room.room.creators().unwrap_or_default();
+            let candidates = new_room.inviter_info.iter()
+                .map(|i| i.user_id.server_name())
+                .chain(creators.iter().map(|c| c.server_name()))
+                .chain(new_room.room_id.server_name())
+                .chain(new_room.canonical_alias.iter().map(|a| a.server_name()))
+                .chain(new_room.alt_aliases.iter().map(|a| a.server_name()));
+            for server in candidates {
+                if !via.iter().any(|v| v == server) {
+                    via.push(server.to_owned());
+                }
+            }
+            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
+                room_name_id: room_name_id.clone(),
+                inviter_info: new_room.inviter_info.clone(),
+                via,
+                room_avatar,
+                canonical_alias: new_room.canonical_alias.clone(),
+                alt_aliases: new_room.alt_aliases.clone(),
+                topic: new_room.topic.clone(),
+                join_rule: new_room.join_rule.clone(),
+                is_private: new_room.is_private,
+                invite_state: Default::default(),
+                is_selected: false,
+                is_direct: new_room.is_direct,
+                is_space: new_room.is_space,
+            }));
             Cx::post_action(AppStateAction::RoomLoadedSuccessfully {
                 room_name_id,
                 is_invite: true,
@@ -6295,11 +6251,15 @@ async fn get_latest_event_details(
 /// This function sends a `RoomsListUpdate::UpdateLatestEvent`
 /// to update the latest event in the RoomsListEntry for the given room.
 async fn update_latest_event(room: &Room) {
-    let latest = get_latest_event_details(&room.latest_event().await, &room.client()).await;
-    enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
-        room_id: room.room_id().to_owned(),
-        latest,
-    });
+    if let Some(latest) = get_latest_event_details(
+        &room.latest_event().await,
+        &room.client(),
+    ).await {
+        enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
+            room_id: room.room_id().to_owned(),
+            latest,
+        });
+    }
 }
 
 
