@@ -24,6 +24,8 @@ robius-location    = { git = "https://github.com/project-robius/robius" }
 robius-open        = { git = "https://github.com/project-robius/robius" }
 robius-share       = { git = "https://github.com/project-robius/robius" }
 robius-speech      = { git = "https://github.com/project-robius/robius" }
+## a git dep until the new robius-theme crate is published.
+robius-theme       = { git = "https://github.com/project-robius/robius", branch = "system_theme" }
 robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work with Makepad.
 
 

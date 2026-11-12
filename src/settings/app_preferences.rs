@@ -4,9 +4,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+use robius_theme::Theme;
 use serde::{Deserialize, Serialize};
 
-use crate::{directory_search::RoomDirectories, home::quick_reaction::QuickReaction, persistence};
+use crate::{directory_search::RoomDirectories, home::quick_reaction::QuickReaction, persistence, settings::system_theme};
 
 /// App-wide user preferences controlled by the App Settings UI.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -583,25 +584,37 @@ pub enum AppPreferencesAction {
 #[derive(Default, Clone)]
 pub struct AppPreferencesGlobal(pub AppPreferences);
 
-/// The app's color scheme, which is saved per device rather than per account.
+/// The app's appearance preference, saved per device rather than per account.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Appearance {
-    #[default]
     Light,
     Dark,
+    #[default]
+    Auto,
 }
 
 impl Appearance {
     pub fn from_index(index: usize) -> Self {
         match index {
-            1 => Self::Dark,
-            _ => Self::Light,
+            1 => Self::Light,
+            2 => Self::Dark,
+            _ => Self::Auto,
         }
     }
     pub fn to_index(self) -> usize {
         match self {
-            Self::Light => 0,
-            Self::Dark => 1,
+            Self::Auto => 0,
+            Self::Light => 1,
+            Self::Dark => 2,
+        }
+    }
+
+    /// The theme to draw the app in. With no system preference, `Auto` is light.
+    pub fn resolve(self, system_theme: Option<Theme>) -> Theme {
+        match self {
+            Self::Light => Theme::Light,
+            Self::Dark => Theme::Dark,
+            Self::Auto => system_theme.unwrap_or(Theme::Light),
         }
     }
 }
@@ -612,9 +625,13 @@ pub struct AppearanceGlobal(pub Appearance);
 
 /// Switches the whole app to the given appearance and saves it for future launches.
 pub fn set_appearance(cx: &mut Cx, appearance: Appearance) {
-    cx.global::<AppearanceGlobal>().0 = appearance;
+    system_theme::apply(cx, |cx| {
+        cx.global::<AppearanceGlobal>().0 = appearance;
+        if appearance == Appearance::Auto {
+            system_theme::refresh(cx);
+        }
+    });
     if let Err(e) = persistence::save_appearance(appearance) {
         error!("Failed to save appearance. Error: {e}");
     }
-    cx.request_style_reload();
 }

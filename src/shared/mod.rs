@@ -1,5 +1,5 @@
 use makepad_widgets::ScriptVm;
-use crate::settings::app_preferences::Appearance;
+use robius_theme::Theme;
 
 pub mod attachment_download;
 pub mod avatar;
@@ -46,10 +46,10 @@ pub mod restore_status_view;
 pub mod image_viewer;
 
 
-pub fn script_mod(vm: &mut ScriptVm, appearance: Appearance) {
+pub fn script_mod(vm: &mut ScriptVm, theme: Theme) {
     // Order matters here, as some widget definitions depend on others.
     styles::script_mod(vm);
-    if appearance == Appearance::Dark {
+    if theme == Theme::Dark {
         styles_dark::script_mod(vm);
     }
     helpers::script_mod(vm);

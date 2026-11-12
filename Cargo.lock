@@ -5379,6 +5379,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "robius-theme"
+version = "0.3.1"
+source = "git+https://github.com/project-robius/robius?branch=system_theme#1b6e2629c8c4dd4d10c6c2c00e8cf594e41ed94e"
+dependencies = [
+ "dispatch2",
+ "jni",
+ "objc2",
+ "objc2-foundation",
+ "objc2-ui-kit",
+ "robius-android-env",
+ "zbus",
+]
+
+[[package]]
 name = "robius-use-makepad"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5444,6 +5458,7 @@ dependencies = [
  "robius-open",
  "robius-share",
  "robius-speech",
+ "robius-theme",
  "robius-use-makepad",
  "robius-web-auth-session",
  "ruma",
