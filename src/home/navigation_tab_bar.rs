@@ -622,7 +622,10 @@ pub enum SelectedTab {
     AddRoom,
     Settings,
     // AlertsInbox,
-    Space { space_name_id: RoomNameId },
+    Space {
+        #[serde(deserialize_with = "RoomNameId::deserialize_space")]
+        space_name_id: RoomNameId,
+    },
 }
 impl SelectedTab {
     /// Updates this tab's space name if it refers to the same space.

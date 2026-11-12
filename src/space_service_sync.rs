@@ -6,7 +6,7 @@ use eyeball_im::VectorDiff;
 use futures_util::{FutureExt, StreamExt};
 use imbl::Vector;
 use makepad_widgets::*;
-use matrix_sdk::{Client, RoomState, media::MediaRequestParameters, ruma::api::error::ErrorKind};
+use matrix_sdk::{Client, RoomDisplayName, RoomState, media::MediaRequestParameters, ruma::api::error::ErrorKind};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
 use ruma::{OwnedMxcUri, OwnedRoomId, RoomId, events::room::MediaSource, room::RoomType};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -244,7 +244,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
             let Some(request) = request_opt else { break };
             match request {
                 SpaceRequest::GetChildren { space_id, parent_chain } => {
-                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &RoomNameId::empty(space_id.clone()), &parent_chain).await;
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &RoomNameId::new(RoomDisplayName::Empty, space_id.clone(), true), &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::GetChildren).is_err() {
                         error!("BUG: failed to send GetRooms request to space room list loop for space {space_id}");
                     }
@@ -253,7 +253,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     let _sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_name_id, &parent_chain).await;
                 }
                 SpaceRequest::PaginateSpaceRoomList { space_id, parent_chain } => {
-                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &RoomNameId::empty(space_id.clone()), &parent_chain).await;
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &RoomNameId::new(RoomDisplayName::Empty, space_id.clone(), true), &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::Paginate).is_err() {
                         error!("BUG: failed to send paginate request to space room list loop for space {space_id}");
                     }
@@ -289,7 +289,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                             let ancestors = space_service.top_level_ancestors_of(room_id).await;
                             let names: Vec<_> = top_level_spaces.iter()
                                 .filter(|s| ancestors.contains(&s.room_id) && !own_ancestors.contains(&s.room_id))
-                                .map(|s| s.display_name.clone())
+                                .map(|s| RoomNameId::from_space_room(s).to_string())
                                 .collect();
                             if !names.is_empty() {
                                 other_spaces.insert(room_id.to_owned(), names);
@@ -370,10 +370,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                         // A space can sit under several top-level spaces, so we use the first one in the spaces bar.
                         let dock_space = top_level_spaces.iter()
                             .find(|s| ancestors.contains(&s.room_id))
-                            .map(|ancestor| RoomNameId::new(
-                                matrix_sdk::RoomDisplayName::Named(ancestor.display_name.clone()),
-                                ancestor.room_id.clone(),
-                            ));
+                            .map(RoomNameId::from_space_room);
                         Cx::post_action(SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space, was_invite });
                     });
                 }
@@ -531,13 +528,11 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
 
 
 fn add_new_space(space: &SpaceRoom, client: &Client) {
+    let space_name_id = RoomNameId::from_space_room(space);
     // Start with a text avatar and fetch the real one in the background, just like with rooms.
-    let space_avatar = utils::avatar_from_room_name(Some(&space.display_name));
+    let space_avatar = utils::avatar_from_room_name(space_name_id.name_for_avatar());
     let jsi = JoinedSpaceInfo {
-        space_name_id: RoomNameId::new(
-            matrix_sdk::RoomDisplayName::Named(space.display_name.clone()),
-            space.room_id.clone(),
-        ),
+        space_name_id,
         canonical_alias: space.canonical_alias.clone(),
         topic: space.topic.clone(),
         space_avatar,
@@ -687,11 +682,15 @@ async fn update_space(
             });
         }
 
-        if old_space.display_name != new_space.display_name {
+        // The SDK's name string is `foo` for both a space named `foo` and one with only the alias `#foo:server`,
+        // so we also compare the parts that our name comes from.
+        if old_space.display_name != new_space.display_name
+            || old_space.name != new_space.name
+            || old_space.canonical_alias != new_space.canonical_alias
+        {
             log!("Updating space {} name: {:?} --> {:?}", new_space_id, old_space.display_name, new_space.display_name);
             enqueue_spaces_list_update(SpacesListUpdate::UpdateSpaceName {
-                space_id: new_space_id.clone(),
-                new_space_name: new_space.display_name.clone(),
+                new_space_name: RoomNameId::from_space_room(new_space),
             });
         }
 
@@ -707,7 +706,7 @@ async fn update_space(
         if old_space.avatar_url != new_space.avatar_url {
             log!("Updating avatar for space {}", new_space_id);
             let space_id = new_space_id.clone();
-            let space_display_name = new_space.display_name.clone();
+            let space_name_id = RoomNameId::from_space_room(new_space);
             let url_opt = new_space.avatar_url.clone();
             let client2 = client.clone();
             // Spawn a new task to fetch the space's new avatar in the background.
@@ -715,11 +714,11 @@ async fn update_space(
                 let space_avatar_opt = if let Some(url) = url_opt {
                     fetch_space_avatar(url, &client2)
                         .await
-                        .inspect_err(|e| error!("Failed to fetch avatar for space {:?} ({}): {e}", space_display_name, space_id))
+                        .inspect_err(|e| error!("Failed to fetch avatar for space {space_name_id:?}: {e}"))
                         .ok()
                 } else { None };
                 let avatar = space_avatar_opt.unwrap_or_else(
-                    || utils::avatar_from_room_name(Some(&space_display_name))
+                    || utils::avatar_from_room_name(space_name_id.name_for_avatar())
                 );
                 enqueue_spaces_list_update(SpacesListUpdate::UpdateSpaceAvatar { space_id, avatar });
             });
@@ -1018,10 +1017,7 @@ fn handle_subspaces<'a>(
             npc
         };
         if request_sender.send(SpaceRequest::SubscribeToSpaceRoomList {
-            space_name_id: RoomNameId::new(
-                matrix_sdk::RoomDisplayName::Named(sr.display_name.clone()),
-                sr.room_id.clone(),
-            ),
+            space_name_id: RoomNameId::from_space_room(sr),
             parent_chain: new_parent_chain,
         }).is_err() {
             error!("BUG: failed to send subscribe request to nested/subspace {}.", sr.room_id);

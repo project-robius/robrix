@@ -222,12 +222,12 @@ impl TombstoneFooter {
                                 cx,
                                 None,
                                 None,
-                                room_preview.room_name_id.name_for_avatar().unwrap_or("?"),
+                                room_preview.room_name_id.first_letter().unwrap_or("?"),
                             );
                         }
                     }
                 }
-                successor_room_name.set_text(cx, room_preview.room_name_id.name_for_avatar().unwrap_or("Unnamed Room"));
+                successor_room_name.set_text(cx, &room_preview.room_name_id.display());
                 self.successor_info = Some(room_preview.clone().into());
             }
         }

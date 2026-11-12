@@ -592,7 +592,7 @@ impl MentionableTextInputRef {
             inner.room_name = cx.has_global::<RoomsListRef>()
                 .then(|| cx.get_global::<RoomsListRef>().get_room_name(&room_id))
                 .flatten()
-                .map(|n| n.to_string())
+                .and_then(|n| n.name_for_avatar().map(str::to_owned))
                 .unwrap_or_default();
         }
         inner.room_id = Some(room_id);

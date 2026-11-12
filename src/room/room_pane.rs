@@ -230,7 +230,7 @@ pub fn is_space(cx: &mut Cx, room_id: &OwnedRoomId) -> bool {
 pub fn get_return_destination(cx: &mut Cx, room_name_id: &RoomNameId, kind: &RoomPaneKind) -> (SelectedRoom, TimelineKind) {
     let timeline_kind = popped_out_from(room_name_id.room_id(), kind);
     let screen = if is_space(cx, room_name_id.room_id()) {
-        SelectedRoom::Space { space_name_id: room_name_id.clone() }
+        SelectedRoom::to_joined(room_name_id.clone(), true)
     } else {
         timeline_screen(room_name_id, &timeline_kind)
     };

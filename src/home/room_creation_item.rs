@@ -357,7 +357,6 @@ impl RoomCreationItem {
                 room_name_id.map(|room_name_id| room_name_id.display_name().clone()),
                 Some(create_event.sender()),
             ));
-        self.show_room(cx);
         self.view.label(cx, ids!(description)).set_text(cx, match self.predecessor_room {
             Some(_) => "This room is a continuation of an older room.",
             None => "This is the beginning of the room.",
@@ -400,15 +399,21 @@ impl RoomCreationItem {
                 room_version: create_content.map(|content| content.room_version.clone()),
             },
         );
+        self.show_room(cx);
     }
 
     fn show_room(&mut self, cx: &mut Cx) {
         let Some(room_name_id) = self.room_name_id.as_ref() else { return };
         let room_avatar = get_rooms_list_avatar(cx, room_name_id);
         self.view.avatar(cx, ids!(room_avatar)).show_room_avatar(cx, room_avatar.as_ref(), room_name_id);
+        let name = room_name_id.display();
         let room_name = self.view.label(cx, ids!(room_name));
-        room_name.set_text(cx, &room_name_id.display());
+        room_name.set_text(cx, &name);
         room_name.set_visible(cx, !room_name_id.is_empty());
+        // A room without a name already shows its alias as its name.
+        let room_alias = self.view.label(cx, ids!(room_alias));
+        let alias = room_alias.text();
+        room_alias.set_visible(cx, !alias.is_empty() && alias != name);
     }
 }
 

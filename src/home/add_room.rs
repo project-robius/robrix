@@ -557,6 +557,7 @@ impl AddRoomState {
         // Now we know for sure whether it's a space, which its preview may have gotten wrong.
         if is_space != (frp.room_type == Some(RoomType::Space)) {
             frp.room_type = is_space.then_some(RoomType::Space);
+            frp.room_name_id.set_is_space(is_space);
         }
         *self = Self::Joined { frp };
         // We never get a `RoomLoadedSuccessfully` for a space, so we can go to it as soon as we've joined it.
@@ -1134,7 +1135,7 @@ impl Widget for AddRoomScreen {
                                 cx,
                                 Some(TextAvatarBgColor::UnknownRoom),
                                 None,
-                                frp.room_name_id.name_for_avatar().unwrap_or("?"),
+                                frp.room_name_id.first_letter().unwrap_or("?"),
                             );
                         }
                     }
@@ -1144,20 +1145,19 @@ impl Widget for AddRoomScreen {
                     Some(RoomType::Space) => ("space", "Space"),
                     _ => ("room", "Room"),
                 };
-                let room_name = fetched_room_summary.label(cx, ids!(room_name));
-                match frp.room_name_id.name_for_avatar() {
-                    Some(n) => room_name.set_text(cx, n),
-                    _ => room_name.set_text(cx, &format!("Unnamed {room_or_space_uc}, ID: {}", frp.room_name_id.room_id())),
-                }
+                let room_name = frp.room_name_id.display();
+                fetched_room_summary.label(cx, ids!(room_name)).set_text(cx, &room_name);
 
+                let alias = frp.canonical_alias.as_ref().map(|a| a.as_str());
+                // A room without a name already shows its alias as its name.
+                let show_alias = alias != Some(&*room_name);
                 fetched_room_summary.label(cx, ids!(subsection_alias_id)).set_text(
                     cx,
-                    &format!("Main {room_or_space_uc} Alias and ID"),
+                    &if show_alias { format!("Main {room_or_space_uc} Alias and ID") } else { format!("{room_or_space_uc} ID") },
                 );
-                fetched_room_summary.label(cx, ids!(room_alias)).set_text(
-                    cx,
-                    &format!("Alias: {}", frp.canonical_alias.as_ref().map_or("not set", |a| a.as_str())),
-                );
+                let room_alias = fetched_room_summary.label(cx, ids!(room_alias));
+                room_alias.set_text(cx, &format!("Alias: {}", alias.unwrap_or("not set")));
+                room_alias.set_visible(cx, show_alias);
                 fetched_room_summary.label(cx, ids!(room_id)).set_text(
                     cx,
                     &format!("ID: {}", frp.room_name_id.room_id().as_str()),
@@ -1711,6 +1711,7 @@ impl AddRoomScreen {
             && frp.room_name_id.room_id() == room_id
         {
             frp.room_type = Some(RoomType::Space);
+            frp.room_name_id.set_is_space(true);
         }
         if let Some(results) = self.room_search.results.as_mut()
             && let Some(index) = results.rooms.items.iter().position(|room| room.room_id() == room_id)
@@ -1725,6 +1726,7 @@ impl AddRoomScreen {
             }
             let mut space = rooms.items.remove(index);
             space.preview.room_type = Some(RoomType::Space);
+            space.preview.room_name_id.set_is_space(true);
             self.result_rows.populated.remove(&space.row_key());
             results.spaces.add_results(&[space], &mut self.result_rows);
         }
@@ -2058,8 +2060,7 @@ impl SearchResultRow for RoomSearchResult {
 
     fn populate_row(&self, cx: &mut Cx, row: &WidgetRef) -> bool {
         let room_name = self.preview.room_name_id.name_for_avatar();
-        let name = room_name.or(self.alias()).unwrap_or(self.room_id().as_str());
-        row.label(cx, ids!(info.title)).set_text(cx, name);
+        row.label(cx, ids!(info.title)).set_text(cx, &self.preview.room_name_id.display());
         let members = match self.preview.num_joined_members {
             1 => "1 member".to_owned(),
             n => format!("{n} members"),
@@ -2073,7 +2074,7 @@ impl SearchResultRow for RoomSearchResult {
             subtitle.insert_str(0, "✅ Joined · ");
         }
         row.label(cx, ids!(info.subtitle)).set_text(cx, &subtitle);
-        row.avatar(cx, ids!(avatar)).show_room(cx, self.room_id(), self.preview.avatar_url.as_ref(), Some(name), TextAvatarBgColor::UnknownRoom)
+        row.avatar(cx, ids!(avatar)).show_room(cx, self.room_id(), self.preview.avatar_url.as_ref(), room_name, TextAvatarBgColor::UnknownRoom)
     }
 }
 

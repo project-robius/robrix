@@ -1669,7 +1669,7 @@ impl HomeScreen {
             }
             None => {}
         }
-        self.select_screen(cx, app_state, SelectedRoom::Space { space_name_id: space_name_id.clone() });
+        self.select_screen(cx, app_state, SelectedRoom::to_joined(space_name_id.clone(), true));
         if let Some(room_to_close) = room_to_close {
             self.close_room(cx, room_to_close);
         }

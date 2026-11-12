@@ -1345,6 +1345,7 @@ pub enum SelectedRoom {
         room_name_id: RoomNameId,
     },
     Space {
+        #[serde(deserialize_with = "RoomNameId::deserialize_space")]
         space_name_id: RoomNameId,
     },
     /// An in-room pane (like its member list) that was popped out of the room screen
@@ -1377,7 +1378,8 @@ impl SelectedRoom {
     }
 
     /// Returns the joined variant for the given space/room: `Space` if `is_space`, else `JoinedRoom`.
-    pub fn to_joined(room_name_id: RoomNameId, is_space: bool) -> Self {
+    pub fn to_joined(mut room_name_id: RoomNameId, is_space: bool) -> Self {
+        room_name_id.set_is_space(is_space);
         match is_space {
             true  => SelectedRoom::Space { space_name_id: room_name_id },
             false => SelectedRoom::JoinedRoom { room_name_id },
@@ -1406,7 +1408,7 @@ impl SelectedRoom {
             | SelectedRoom::Space { space_name_id: room_name_id }
             | SelectedRoom::RoomPane { room_name_id, .. }) = self;
         if room_name_id.room_id() != new_room_name.room_id()
-            || room_name_id.display_name() == new_room_name.display_name()
+            || room_name_id.display() == new_room_name.display()
         {
             return false;
         }

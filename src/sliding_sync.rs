@@ -45,7 +45,7 @@ use crate::{
         user_verification_cache::{UserVerificationState, UserVerificationUpdate, enqueue_user_verification_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, membership::{JoinMethod, RemovedBy, RoomMembership, RoomMembershipUpdate, enqueue_room_membership_update}, pinned_messages_list::PinnedMessagesAction, room_members_list::{LISTED_MEMBERSHIPS, RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{handle_recent_emojis_subscriber, spawn_recent_emoji_writer}
-    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber}
+    }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name, get_name_or_alias}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber}
 };
 
 #[derive(Parser, Default)]
@@ -1501,9 +1501,9 @@ async fn matrix_worker_task(
                     log!("Sending request to join room {room_id}...");
                     let known_room = client.get_room(&room_id);
                     let was_invite = known_room.as_ref().is_some_and(|r| r.state() == RoomState::Invited);
-                    let result = match (known_room.as_ref(), alias) {
+                    let result = match (known_room.as_ref(), alias.as_deref()) {
                         (Some(room), None) if via.is_empty() => room.join().await.map(|_| room.clone()),
-                        (_, Some(alias)) => client.join_room_by_id_or_alias((&*alias).into(), &via).await,
+                        (_, Some(alias)) => client.join_room_by_id_or_alias(alias.into(), &via).await,
                         (_, None) => client.join_room_by_id_or_alias((&*room_id).into(), &via).await,
                     };
                     let joined_room = result.as_ref().ok().cloned();
@@ -1531,7 +1531,7 @@ async fn matrix_worker_task(
                             error!("Error joining room {room_id}: {e:?}");
                             let room_name_id = match known_room.as_ref() {
                                 Some(room) => RoomNameId::from_room(room).await,
-                                None => RoomNameId::empty(room_id.clone()),
+                                None => RoomNameId::new(get_name_or_alias(None, alias.as_deref(), &[]), room_id.clone(), false),
                             };
                             enqueue_popup_notification(
                                 utils::stringify_join_leave_error(&e, &room_name_id, true, was_invite),
@@ -4126,7 +4126,7 @@ struct RoomListServiceRoomInfo {
     latest_event_timestamp: Option<MilliSecondsSinceUnixEpoch>,
     num_unread_messages: u64,
     num_unread_mentions: u64,
-    display_name: Option<RoomDisplayName>,
+    display_name: RoomDisplayName,
     room_avatar: Option<OwnedMxcUri>,
     canonical_alias: Option<OwnedRoomAliasId>,
     alt_aliases: Vec<OwnedRoomAliasId>,
@@ -4181,6 +4181,8 @@ impl RoomListServiceRoomInfo {
         let dm_user_id = is_direct.then(|| room.direct_targets())
             .filter(|targets| targets.len() == 1)
             .and_then(|targets| targets.into_iter().next()?.into_user_id());
+        let canonical_alias = room.canonical_alias();
+        let alt_aliases = room.alt_aliases();
         Self {
             room_id: room.room_id().to_owned(),
             state: room.state(),
@@ -4196,10 +4198,10 @@ impl RoomListServiceRoomInfo {
             latest_event_timestamp: room.latest_event_timestamp(),
             num_unread_messages: room.num_unread_messages(),
             num_unread_mentions: room.num_unread_mentions(),
-            display_name: display_name.ok(),
+            display_name: get_name_or_alias(display_name.ok(), canonical_alias.as_deref(), &alt_aliases),
             room_avatar: room.avatar_url(),
-            canonical_alias: room.canonical_alias(),
-            alt_aliases: room.alt_aliases(),
+            canonical_alias,
+            alt_aliases,
             inviter_info,
             topic: is_invited.then(|| room.topic()).flatten(),
             join_rule: is_invited.then(|| room.join_rule().map(JoinRuleSummary::from)).flatten(),
@@ -5034,7 +5036,9 @@ async fn update_room(
         // First, we check for changes to room data that is relevant to any room,
         // including joined, invited, and other rooms.
         // This includes the room name and room avatar.
-        let was_name_changed = old_room.display_name != new_room.display_name;
+        let was_name_changed = old_room.display_name != new_room.display_name
+            // An unnamed room is named differently once we learn that it's a space.
+            || old_room.is_space != new_room.is_space;
         // A room with no avatar image uses a text avatar based on the room name, so we update that too.
         if old_room.room_avatar != new_room.room_avatar
             || (was_name_changed && new_room.room_avatar.is_none())
@@ -5046,7 +5050,7 @@ async fn update_room(
             log!("Updating room {} name: {:?} --> {:?}", new_room_id, old_room.display_name, new_room.display_name);
 
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                new_room_name: (new_room.display_name.clone(), new_room_id.clone()).into(),
+                new_room_name: RoomNameId::new(new_room.display_name.clone(), new_room_id.clone(), new_room.is_space),
             });
         }
 
@@ -5317,7 +5321,7 @@ async fn add_new_room(
             return Ok(());
         }
         RoomState::Invited => {
-            let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
+            let room_name_id = RoomNameId::new(new_room.display_name.clone(), new_room.room_id.clone(), new_room.is_space);
             // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
             let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
             let via = via_servers(
@@ -6174,18 +6178,18 @@ async fn fetch_room_preview_with_avatar(
         match client.media().get_media_content(&media_request, true).await {
             Ok(avatar_content) => {
                 log!("Fetched avatar for room preview {:?} ({})", room_preview.name, room_preview.room_id);
-                FetchedRoomAvatar::Image((avatar_url, avatar_content).into())
+                Some(FetchedRoomAvatar::Image((avatar_url, avatar_content).into()))
             }
             Err(e) => {
                 log!("Failed to fetch avatar for room preview {:?} ({}), error: {e:?}",
                     room_preview.name, room_preview.room_id
                 );
-                avatar_from_room_name(room_preview.name.as_deref())
+                None
             }
         }
     } else {
         // The successor room did not have an avatar URL
-        avatar_from_room_name(room_preview.name.as_deref())
+        None
     };
     let alias = <&RoomId>::try_from(room).err().map(ToOwned::to_owned);
     Ok(FetchedRoomPreview::from(client, room_preview, room_avatar, via, alias))
@@ -6519,17 +6523,20 @@ async fn rank_matching_rooms(client: &Client, query: &str) -> Vec<MentionItem> {
             RoomState::Banned  => 4,
         };
 
-        let room_name_id = RoomNameId::new(
-            room.cached_display_name()
-                .or_else(|| room.name().map(RoomDisplayName::Named))
-                .unwrap_or(RoomDisplayName::Empty),
-            room.room_id().to_owned(),
-        );
         let canonical = room.canonical_alias();
         let alt_aliases = room.alt_aliases();
+        let room_name_id = RoomNameId::new(
+            get_name_or_alias(
+                room.cached_display_name().or_else(|| room.name().map(RoomDisplayName::Named)),
+                canonical.as_deref(),
+                &alt_aliases,
+            ),
+            room.room_id().to_owned(),
+            room.is_space(),
+        );
 
         // we give room name the highest order (0), then canonical alias (1), then other aliases (2)
-        let Some((matched_field, quality)) = room_name_id.name_for_avatar()
+        let Some((matched_field, quality)) = room_name_id.name_for_search()
             .map(|name| (0u8, MatchQuality::of(&name.to_lowercase(), &query)))
             .filter(|(_, q)| q.is_match())
             .or_else(|| canonical.as_ref()

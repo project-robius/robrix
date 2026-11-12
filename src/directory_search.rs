@@ -290,9 +290,8 @@ impl RoomSearchResult {
     /// Converts the preview of a room that we looked up by the given alias or ID,
     /// ranking it by how well it matches the given lowercase search term.
     fn from_preview(client: &Client, preview: RoomPreview, address: OwnedRoomOrAliasId, via: Vec<OwnedServerName>, term: Option<&str>) -> Self {
-        let room_avatar = utils::avatar_from_room_name(preview.name.as_deref());
         let alias = <&RoomId>::try_from(&*address).err().map(ToOwned::to_owned);
-        let preview = FetchedRoomPreview::from(client, preview, room_avatar, via, alias);
+        let preview = FetchedRoomPreview::from(client, preview, None, via, alias);
         let (name_match, is_alias_match) = get_name_and_alias_match(&preview, term);
         Self { preview, is_exact_match: true, name_match, is_alias_match }
     }
@@ -319,17 +318,23 @@ impl RoomSearchResult {
                 let state = room.state();
                 // Like a fetched preview, we only use our own copy of the name of a room that we're in or banned from.
                 let local_name = match state {
-                    RoomState::Joined | RoomState::Banned => room.display_name().await.ok(),
+                    RoomState::Joined | RoomState::Banned => Some(RoomNameId::from_room(room).await.into_inner().0),
                     _ => None,
                 };
                 (Some(state), room.is_direct().await.ok(), local_name)
             }
             None => (None, None, None),
         };
-        let display_name = local_name
-            .or_else(|| public_room.name.clone().map(RoomDisplayName::Named))
-            .unwrap_or(RoomDisplayName::Empty);
-        let room_name_id = RoomNameId::new(display_name, public_room.room_id);
+        let display_name = utils::get_name_or_alias(
+            local_name.or_else(|| public_room.name.clone().filter(|name| !name.is_empty()).map(RoomDisplayName::Named)),
+            public_room.canonical_alias.as_deref(),
+            &[],
+        );
+        // A room directory might not say which rooms are spaces, but our own copy of a room does.
+        let room_type = known_room.as_ref()
+            .and_then(|room| room.create_content())
+            .map_or(public_room.room_type, |create| create.room_type);
+        let room_name_id = RoomNameId::new(display_name, public_room.room_id, room_type == Some(RoomType::Space));
         let preview = FetchedRoomPreview {
             room_avatar: utils::avatar_from_room_name(room_name_id.name_for_avatar()),
             room_name_id,
@@ -342,10 +347,7 @@ impl RoomSearchResult {
             avatar_url: public_room.avatar_url.filter(|url| url.is_valid()),
             num_joined_members: public_room.num_joined_members.into(),
             num_active_members: None,
-            // A room directory might not say which rooms are spaces, but our own copy of a room does.
-            room_type: known_room.as_ref()
-                .and_then(|room| room.create_content())
-                .map_or(public_room.room_type, |create| create.room_type),
+            room_type,
             join_rule: Some(public_room.join_rule.into()),
             is_world_readable: Some(public_room.world_readable),
             state,
@@ -601,7 +603,7 @@ pub async fn search_user_directory(client: Client, query: String, limit: u32) {
 /// and whether its alias is exactly that term.
 fn get_name_and_alias_match(preview: &FetchedRoomPreview, term: Option<&str>) -> (MatchQuality, bool) {
     let Some(term) = term else { return (MatchQuality::None, false) };
-    let name_match = preview.room_name_id.name_for_avatar()
+    let name_match = preview.room_name_id.name_for_search()
         .map_or(MatchQuality::None, |name| MatchQuality::of(&name.to_lowercase(), term));
     let is_alias_match = preview.canonical_alias.iter().chain(&preview.alias)
         .any(|alias| alias.alias().to_lowercase() == term);

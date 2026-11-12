@@ -508,14 +508,15 @@ impl RoomInfoView {
 
     fn show_room_name(&mut self, cx: &mut Cx) {
         let Some(room_name_id) = self.room_name_id.as_ref() else { return };
-        let alias = self.details.as_ref().and_then(|details| details.alias.as_ref());
-        let name = match (room_name_id.is_empty(), alias) {
-            (false, _) => room_name_id.display(),
-            (true, Some(alias)) => alias.as_str().into(),
-            (true, None) => room_name_id.room_id().as_str().into(),
+        let alias = self.details.as_ref()
+            .and_then(|details| details.alias.as_ref())
+            .map(|alias| alias.as_str());
+        let name = match alias {
+            Some(alias) if room_name_id.is_empty() => alias.into(),
+            _ => room_name_id.display(),
         };
         self.view.label(cx, ids!(room_name)).set_text(cx, &name);
-        let alias = alias.map(|alias| alias.as_str()).filter(|alias| *alias != name);
+        let alias = alias.filter(|alias| *alias != name);
         let room_alias = self.view.label(cx, ids!(room_alias));
         room_alias.set_text(cx, alias.unwrap_or_default());
         room_alias.set_visible(cx, alias.is_some());

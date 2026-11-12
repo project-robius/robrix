@@ -341,6 +341,7 @@ impl Widget for WelcomeScreen {
                     room_name_id: RoomNameId::new(
                         RoomDisplayName::Named(String::from("Robrix")),
                         self.robrix_room_id.clone(),
+                        false,
                     ),
                     via: vec![
                         owned_server_name!("matrix.org"),

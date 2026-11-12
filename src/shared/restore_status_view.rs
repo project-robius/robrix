@@ -90,7 +90,7 @@ impl RestoreStatusViewRef {
     /// is still being loaded from the homeserver.
     ///
     /// The `room_name` parameter is used to fill in the room name in the error message.
-    /// Its `Display` implementation automatically handles Empty names by falling back to the room ID.
+    /// Its `Display` implementation shows an `Unnamed Room/Space (ID: ...)` label for Empty names.
     pub fn set_content(
         &self,
         cx: &mut Cx,
@@ -105,7 +105,7 @@ impl RestoreStatusViewRef {
             restore_status_label.set_text(
                 cx,
                 &format!(
-                    "Room {room_name} was not found in the homeserver's list \
+                    "Room \"{room_name}\" was not found in the homeserver's list \
                     of all rooms.\n\nYou may close this screen."
                 ),
             );
