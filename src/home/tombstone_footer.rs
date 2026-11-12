@@ -20,7 +20,8 @@ script_mod! {
 
 
     mod.widgets.TombstoneFooter = set_type_default() do #(TombstoneFooter::register_widget(vm)) {
-        ..mod.widgets.SolidView
+        // Its background comes from the RoomInputBar's `notices` view.
+        ..mod.widgets.View
 
         visible: false,
         width: Fill,
@@ -37,11 +38,6 @@ script_mod! {
         scroll_bars: mod.widgets.ScrollBars {
             show_scroll_x: false show_scroll_y: true
             scroll_bar_y.drag_scrolling: true
-        }
-
-        show_bg: true
-        draw_bg +: {
-            color: COLOR_SECONDARY
         }
 
         replacement_reason := Label {
