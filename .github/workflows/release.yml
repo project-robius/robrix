@@ -392,8 +392,9 @@ jobs:
             mv "$2.part" "$2"
             chmod 0764 "$2"
           }
-          fetch "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-$arch" \
-                "$tools/AppRun-$arch"
+          ## AppImageKit's AppRun puts our bundled libs on `LD_LIBRARY_PATH` for every program
+          ## Robrix launches (like `xdg-open`), so we ship our own instead.
+          install -m 0755 packaging/appimage/AppRun "$tools/AppRun-$arch"
           fetch "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-$arch.AppImage" \
                 "$tools/linuxdeploy-$arch.AppImage"
           fetch "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-$arch.AppImage" \
