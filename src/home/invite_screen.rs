@@ -525,6 +525,9 @@ impl Widget for InviteScreen {
             return self.view.draw_walk(cx, scope, walk);
         };
 
+        // An invite that had ended can come back, e.g., if we get invited again.
+        let is_ended = self.invite_state == InviteState::RoomLeft;
+
         // First, populate the inviter info, if we have it.
         let inviter_view = self.view.view(cx, ids!(inviter_view));
         let (is_visible, invite_text) = if let Some(inviter) = info.inviter.as_ref() {
@@ -561,9 +564,9 @@ impl Widget for InviteScreen {
                 inviter_name.set_text(cx, inviter.user_id.as_str());
                 inviter_user_id.set_visible(cx, false);
             }
-            (true, "has invited you to join:")
+            (true, if is_ended { "invited you to join:" } else { "has invited you to join:" })
         }
-        else if self.ended_by.is_some() {
+        else if is_ended {
             (false, "You were invited to join:")
         }
         else {
@@ -632,8 +635,6 @@ impl Widget for InviteScreen {
             cx,
             info.inviter.as_ref().is_some_and(|i| !is_user_blocked(&i.user_id)),
         );
-        // An invite that had ended can come back, e.g., if we get invited again.
-        let is_ended = self.invite_state == InviteState::RoomLeft;
         cancel_button.set_visible(cx, !is_ended);
         accept_button.set_visible(cx, !is_ended);
         if !is_ended {
@@ -869,13 +870,14 @@ pub fn is_invite_pending(cx: &mut Cx, room_id: &OwnedRoomId) -> bool {
 
 /// Returns the text to show for an invite that ended in some way other than us rejecting it here.
 fn invite_ended_text(membership: &RoomMembership, room_or_space: &str) -> String {
-    let by = membership.removed_by.as_ref()
-        .map(|by| format!(" by {}", by.display_name.as_deref().unwrap_or(by.user_id.as_str())))
-        .unwrap_or_default();
+    let by = membership.removed_by.as_ref().map(|by| format!(" by {by}")).unwrap_or_default();
     let what_happened = match membership.state {
         RoomState::Banned => format!("You were banned from this {room_or_space}{by}."),
         RoomState::Left if membership.removed_by.is_some() => format!("This invite was taken back{by}."),
         _ => String::from("This invite is no longer valid."),
     };
-    what_happened + " You may close this invite."
+    match &membership.reason {
+        Some(reason) => format!("{what_happened}\nReason: {reason}\nYou may close this invite."),
+        None => what_happened + " You may close this invite.",
+    }
 }

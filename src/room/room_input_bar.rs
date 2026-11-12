@@ -393,6 +393,11 @@ impl Widget for RoomInputBar {
             self.min_banners_and_previews_height = min_banners_and_previews_height;
             self.next_frame = cx.new_next_frame();
         }
+        // We only learn a notice's height once it's drawn, and a squeezed edit only regrows a bit per draw,
+        // so we redraw until the height we reserve for them stops changing.
+        if (self.get_min_input_height(cx) - min_input_height).abs() > 0.5 {
+            self.next_frame = cx.new_next_frame();
+        }
         step
     }
 

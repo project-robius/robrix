@@ -398,6 +398,9 @@ impl MatchEvent for App {
                 if self.app_state.logged_in {
                     log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
                     cancel_all_dictation();
+                    // The next session only reports membership changes that happen after it starts,
+                    // so our cached memberships could go stale (or belong to a different account).
+                    clear_room_membership_cache(cx);
                     self.app_state.logged_in = false;
                     self.app_state.recovery_state = RecoveryState::Unknown;
                     self.update_login_visibility(cx);
