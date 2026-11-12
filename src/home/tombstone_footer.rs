@@ -27,7 +27,9 @@ script_mod! {
         height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
         align: Align{x: 0.5}
-        padding: Inset{top: 20, left: 20, bottom: 20, right: 16},
+        // Uneven so the content looks centered: the RoomInputBar's -4 bottom margin hides 4 of the bottom padding,
+        // and the text at the top has more space above its letters than the avatar at the bottom has below it.
+        padding: Inset{top: 14, left: 20, bottom: 26, right: 16},
         margin: Inset{right: 4} // ensure the scroll bar stays on screen
         spacing: 8
 

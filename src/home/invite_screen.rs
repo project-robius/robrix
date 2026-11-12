@@ -336,6 +336,8 @@ pub struct InviteScreen {
     /// Our membership in this room if this invite ended without us rejecting it here,
     /// e.g., if it was rejected in another client or taken back by whoever sent it.
     #[rust] ended_by: Option<RoomMembership>,
+    /// Whether this invite ended because we rejected it here.
+    #[rust] was_rejected_here: bool,
 }
 
 impl Widget for InviteScreen {
@@ -465,6 +467,7 @@ impl Widget for InviteScreen {
                         self.invite_state = InviteState::RoomLeft;
                         // We rejected this invite here, so that's what we say happened to it.
                         self.ended_by = None;
+                        self.was_rejected_here = true;
                         continue;
                     }
                     Some(LeaveRoomResultAction::Failed { room_id, .. }) if room_id == info.room_id() => {
@@ -672,7 +675,8 @@ impl Widget for InviteScreen {
                 reject_and_block_button.set_visible(cx, false);
                 let completion_text = match self.ended_by.as_ref() {
                     Some(membership) => invite_ended_text(membership, room_or_space),
-                    None => String::from("Invite successfully rejected. You may close this invite."),
+                    None if self.was_rejected_here => String::from("Invite successfully rejected. You may close this invite."),
+                    None => String::from("This invite is no longer valid. You may close this invite."),
                 };
                 self.view.label(cx, ids!(completion_label)).set_text(cx, &completion_text);
             }
@@ -705,6 +709,8 @@ impl InviteScreen {
                 join_rule: invite.join_rule.clone(),
             });
             self.invite_state = invite.invite_state;
+            // The rooms list only marks an invite as left once we've rejected it here.
+            self.was_rejected_here = invite.invite_state == InviteState::RoomLeft;
             self.is_space = invite.is_space;
             self.is_loaded = true;
             self.all_rooms_loaded = true;
@@ -766,6 +772,7 @@ impl InviteScreen {
         self.invite_state = InviteState::default();
         self.is_space = false;
         self.ended_by = None;
+        self.was_rejected_here = false;
         self.is_loaded = false;
         self.all_rooms_loaded = false;
         self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
@@ -795,7 +802,7 @@ impl InviteScreen {
             RoomState::Left | RoomState::Banned | RoomState::Knocked => {
                 // We're rejecting or have rejected this invite ourselves, which we already show.
                 if self.invite_state == InviteState::WaitingForLeaveResult
-                    || (self.invite_state == InviteState::RoomLeft && self.ended_by.is_none())
+                    || (self.invite_state == InviteState::RoomLeft && self.was_rejected_here)
                 {
                     return;
                 }
@@ -811,6 +818,7 @@ impl InviteScreen {
                 });
                 self.is_space = membership.is_space;
                 self.ended_by = Some(membership);
+                self.was_rejected_here = false;
                 self.invite_state = InviteState::RoomLeft;
                 self.is_loaded = true;
                 self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);

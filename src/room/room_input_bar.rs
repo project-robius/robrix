@@ -84,11 +84,44 @@ script_mod! {
             }
         }
 
-        // Below that, display one of multiple possible views:
-        // * the message input bar (buttons and message TextInput).
-        // * a notice that the user can't send messages to this room.
-        // * if this room was tombstoned, a "footer" view showing the successor room info.
-        // * the EditingPane, which slides up as an overlay in front of the other views below.
+        // Below that, if the user can't post here, display one of these notices instead of the message input bar.
+        // They sit outside the overlay below so that an in-progress edit can't cover them.
+        notices := View {
+            width: Fill, height: Fit
+            flow: Down
+
+            // A notice that the user can't send messages to this room.
+            can_not_send_message_notice := SolidView {
+                visible: false
+                // Uneven so the text looks centered: the RoomInputBar's -4 bottom margin hides 4 of the bottom padding.
+                padding: Inset{top: 18, bottom: 22, left: 20, right: 20}
+                align: Align{x: 0.5, y: 0.5}
+                width: Fill, height: Fit
+
+                show_bg: true
+                draw_bg.color: (COLOR_SECONDARY)
+
+                text := Label {
+                    width: Fill,
+                    flow: Flow.Right{wrap: true},
+                    align: Align{x: 0.5, y: 0.5}
+                    draw_text +: {
+                        color: (COLOR_TEXT)
+                        text_style: theme.font_italic {font_size: 12.2}
+                    }
+                    text: "You don't have permission to post to this room.",
+                }
+            }
+
+            // If this room was tombstoned, a "footer" view showing the successor room info.
+            tombstone_footer := TombstoneFooter { }
+
+            // If the user isn't in this room anymore, a footer saying why, with any way to re-join.
+            membership_footer := RoomMembershipFooter { }
+        }
+
+        // Below that, display the message input bar (buttons and message TextInput),
+        // or the EditingPane, which slides up as an overlay in front of it.
         overlay_wrapper := View {
             width: Fill,
             // The banners and previews above take up some of the input bar's max height,
@@ -143,31 +176,6 @@ script_mod! {
                     icon_walk: Walk{width: 23, height: 23},
                 }
             }
-
-            can_not_send_message_notice := SolidView {
-                visible: false
-                padding: 20
-                align: Align{x: 0.5, y: 0.5}
-                width: Fill, height: Fit
-
-                show_bg: true
-                draw_bg.color: (COLOR_SECONDARY)
-
-                text := Label {
-                    width: Fill,
-                    flow: Flow.Right{wrap: true},
-                    align: Align{x: 0.5, y: 0.5}
-                    draw_text +: {
-                        color: (COLOR_TEXT)
-                        text_style: theme.font_italic {font_size: 12.2}
-                    }
-                    text: "You don't have permission to post to this room.",
-                }
-            }
-
-            tombstone_footer := TombstoneFooter { }
-
-            membership_footer := RoomMembershipFooter { }
 
             editing_pane := EditingPane { }
         }
@@ -235,7 +243,7 @@ struct ChildRefs {
     replying_preview: ViewRef,
     reply_preview_content: WidgetRef,
     reply_preview_bottom_line: WidgetRef,
-    overlay_wrapper: ViewRef,
+    notices: ViewRef,
     input_bar: ViewRef,
     mentionable_text_input: MentionableTextInputRef,
     attachment_buttons: AttachmentButtonsRef,
@@ -637,7 +645,7 @@ impl RoomInputBar {
             replying_preview: self.view.view(cx, ids!(replying_preview)),
             reply_preview_content: self.view.widget(cx, ids!(replying_preview.reply_preview_content)),
             reply_preview_bottom_line: self.view.widget(cx, ids!(replying_preview.bottom_line)),
-            overlay_wrapper: self.view.view(cx, ids!(overlay_wrapper)),
+            notices: self.view.view(cx, ids!(notices)),
             input_bar: self.view.view(cx, ids!(input_bar)),
             mentionable_text_input: self.view.mentionable_text_input(cx, ids!(mentionable_text_input)),
             attachment_buttons: self.view.attachment_buttons(cx, ids!(attachment_buttons)),
@@ -651,17 +659,19 @@ impl RoomInputBar {
     /// Returns the height that the views below the banners and previews need.
     ///
     /// That's enough for the text input there to show one full line,
-    /// or for a notice shown there instead to be shown in full.
+    /// or for a notice shown there instead to be shown in full, plus any in-progress edit below it.
     fn get_min_input_height(&mut self, cx: &mut Cx) -> f64 {
         let ChildRefs {
-            overlay_wrapper,
+            notices,
             input_bar,
             mentionable_text_input,
             editing_pane,
             ..
         } = self.child_refs(cx).clone();
+        // At most one notice is shown, and an in-progress edit can stay shown below it.
+        let notices_height = notices.area().rect(cx).size.y;
         if editing_pane.is_currently_shown(cx) {
-            return editing_pane.get_min_height(cx);
+            return notices_height + editing_pane.get_min_height(cx);
         }
         if input_bar.visible() {
             let speech_text_input = mentionable_text_input.speech_text_input_ref();
@@ -674,13 +684,7 @@ impl RoomInputBar {
                 - speech_text_input.get_min_text_input_height(cx);
             return min_height.max(self.input_bar_natural_height - extra_text_height.max(0.0));
         }
-        let mut notice_height: f64 = 0.0;
-        overlay_wrapper.children(&mut |_id, child| {
-            if child.visible() {
-                notice_height = notice_height.max(child.area().rect(cx).size.y + child.walk(cx).margin.height());
-            }
-        });
-        notice_height
+        notices_height
     }
 
     /// Runs the given slash command action within this room.
