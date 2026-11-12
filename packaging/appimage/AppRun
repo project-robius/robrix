@@ -1,0 +1,6 @@
+#!/bin/sh
+# We leave the environment alone (no `LD_LIBRARY_PATH`), since every program Robrix launches
+# inherits it. Robrix finds its bundled libs via RUNPATH and its resources relative to `usr/`.
+here="$(dirname "$(readlink -f "$0")")"
+cd "$here/usr" || exit 1
+exec "$here/usr/bin/robrix" "$@"
