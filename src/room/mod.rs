@@ -9,6 +9,7 @@ use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
 pub mod attachment_buttons;
+pub mod membership;
 pub mod message_list;
 pub mod pane_dock;
 pub mod pinned_messages_list;
@@ -16,6 +17,7 @@ pub mod reply_preview;
 pub mod room_action_bar;
 pub mod room_info;
 pub mod room_members_list;
+pub mod room_membership_footer;
 pub mod room_pane;
 pub mod room_tab_hover_card;
 pub mod room_tabs;
@@ -30,6 +32,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     room_tabs::script_mod(vm);
     reply_preview::script_mod(vm);
     attachment_buttons::script_mod(vm);
+    room_membership_footer::script_mod(vm);
     room_input_bar::script_mod(vm);
     typing_notice::script_mod(vm);
     room_members_list::script_mod(vm);

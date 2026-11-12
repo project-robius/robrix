@@ -14,6 +14,7 @@
 //! * A button to send the message.
 //! * The editing pane, which is shown when the user is editing a previous message.
 //! * A tombstone footer, which is shown if the room has been tombstoned (replaced).
+//! * A membership footer, which is shown if the user is no longer in the room.
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
 //!
 
@@ -26,6 +27,7 @@ use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
 use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneRef, EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, display_name_or_user_id, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, moderation::MemberModeration, moderation_modal::{ModerationModalAction, ModerationRequest}, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::{BasicRoomDetails, attachment_buttons::{AttachmentButtonsRef, AttachmentButtonsWidgetExt}}, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputRef, MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::{apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::room::{membership::RoomMembership, room_membership_footer::RoomMembershipFooterWidgetExt};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -147,6 +149,8 @@ script_mod! {
 
             tombstone_footer := TombstoneFooter { }
 
+            membership_footer := RoomMembershipFooter { }
+
             editing_pane := EditingPane { }
         }
     }
@@ -163,11 +167,17 @@ enum RoomInputBarMode<'a> {
         room_id: &'a OwnedRoomId,
         successor: &'a SuccessorRoomDetails,
     },
+    /// The user isn't in this room anymore, so show the membership footer.
+    NotJoined {
+        room_id: &'a OwnedRoomId,
+        membership: &'a RoomMembership,
+    },
 }
 
 /// The input bar at the bottom of a RoomScreen that allows the user to send messages, upload files, etc.
 ///
 /// It also shows the tombstone footer for rooms that have been tombstoned,
+/// the membership footer for rooms that the user is no longer in,
 /// or a notice that the user cannot send messages to this room.
 #[derive(Script, Widget)]
 pub struct RoomInputBar {
@@ -781,9 +791,37 @@ impl RoomInputBar {
             ShowEditingPaneBehavior::RestoreExisting { editing_pane_state } => {
                 editing_pane.restore_state(cx, editing_pane_state, timeline_kind);
             }
+            ShowEditingPaneBehavior::RestoreFailed { event_tl_item, edited_text } => {
+                editing_pane.show_failed_edit(cx, event_tl_item, timeline_kind, &edited_text);
+            }
         };
 
         self.redraw(cx);
+    }
+
+    /// Puts an edit that failed to send back into the editing pane, so the user doesn't lose what they typed.
+    ///
+    /// The `event_tl_item` is the message that was being edited, if this timeline still has it.
+    fn restore_failed_edit(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: Option<EventTimelineItem>,
+        timeline_kind: TimelineKind,
+        edited_text: String,
+    ) {
+        let editing_pane = self.view.editing_pane(cx, ids!(editing_pane));
+        // We must not replace another edit that the user has started since then.
+        if let Some(event_tl_item) = event_tl_item.filter(|_| !editing_pane.is_editing()) {
+            let behavior = ShowEditingPaneBehavior::RestoreFailed { event_tl_item, edited_text: edited_text.clone() };
+            self.show_editing_pane(cx, behavior, timeline_kind);
+            if editing_pane.is_editing() { return; }
+        }
+        cx.copy_to_clipboard(&edited_text);
+        enqueue_popup_notification(
+            "Your edit couldn't be put back in the editor, so it was copied to the clipboard.",
+            PopupKind::Warning,
+            None,
+        );
     }
 
     /// This should be invoked after the EditingPane has been fully hidden.
@@ -799,18 +837,22 @@ impl RoomInputBar {
     } 
 
     /// Updates the room state to set which mode and views are shown in the RoomInputBar.
+    ///
+    /// The `not_joined` membership should only be `Some` if the user isn't in this room (anymore).
     fn update_room_state(
         &mut self,
         cx: &mut Cx,
         room_id: &OwnedRoomId,
         tombstone_info: Option<&SuccessorRoomDetails>,
         user_power_levels: UserPowerLevels,
+        not_joined: Option<&RoomMembership>,
     ) {
         // If the room is tombstoned, that takes precedence over anything else.
-        let mode = match tombstone_info {
-            Some(successor) => RoomInputBarMode::Tombstoned { room_id, successor },
-            None if user_power_levels.can_send_message() => RoomInputBarMode::Input,
-            None => RoomInputBarMode::CannotSend,
+        let mode = match (tombstone_info, not_joined) {
+            (Some(successor), _) => RoomInputBarMode::Tombstoned { room_id, successor },
+            (None, Some(membership)) => RoomInputBarMode::NotJoined { room_id, membership },
+            (None, None) if user_power_levels.can_send_message() => RoomInputBarMode::Input,
+            (None, None) => RoomInputBarMode::CannotSend,
         };
         self.view.view(cx, ids!(input_bar))
             .set_visible(cx, matches!(mode, RoomInputBarMode::Input));
@@ -824,10 +866,19 @@ impl RoomInputBar {
             tombstone_footer.hide(cx);
         }
 
-        // The user can't post here anymore, so cancel any in-progress edit, reply, input, etc.
-        if !matches!(mode, RoomInputBarMode::Input) {
+        let membership_footer = self.room_membership_footer(cx, ids!(membership_footer));
+        if let RoomInputBarMode::NotJoined { room_id, membership } = mode {
+            membership_footer.show(cx, room_id, membership);
+        } else {
+            membership_footer.hide(cx);
+        }
+
+        // An edit that the user is in the middle of stays shown so they don't lose it, but it can't be sent.
+        let is_input_mode = matches!(mode, RoomInputBarMode::Input);
+        self.editing_pane(cx, ids!(editing_pane)).set_submit_blocked(!is_input_mode);
+        // The user can't post here anymore, so cancel any in-progress reply, dictation, etc.
+        if !is_input_mode {
             self.cancel_dictation(cx);
-            self.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
             self.was_replying_preview_visible = false;
             self.clear_replying_to(cx);
             self.view.location_preview(cx, ids!(location_preview)).clear();
@@ -1029,9 +1080,10 @@ impl RoomInputBarRef {
         room_id: &OwnedRoomId,
         tombstone_info: Option<&SuccessorRoomDetails>,
         user_power_levels: UserPowerLevels,
+        not_joined: Option<&RoomMembership>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_room_state(cx, room_id, tombstone_info, user_power_levels);
+        inner.update_room_state(cx, room_id, tombstone_info, user_power_levels, not_joined);
     }
 
     /// Updates the message input's placeholder based on this room's encryption status.
@@ -1066,6 +1118,18 @@ impl RoomInputBarRef {
         inner.show_current_location_preview(cx);
     }
 
+    /// See [`RoomInputBar::restore_failed_edit()`].
+    pub fn restore_failed_edit(
+        &self,
+        cx: &mut Cx,
+        event_tl_item: Option<EventTimelineItem>,
+        timeline_kind: TimelineKind,
+        edited_text: String,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_failed_edit(cx, event_tl_item, timeline_kind, edited_text);
+    }
+
     /// Forwards the result of an edit request to the `EditingPane` widget
     /// within this `RoomInputBar`.
     pub fn handle_edit_result(
@@ -1091,6 +1155,8 @@ impl RoomInputBarRef {
         let room_id = timeline_kind.room_id().to_owned();
         if inner.timeline_kind.as_ref() != Some(&timeline_kind) {
             inner.cancel_dictation(cx);
+            // The previous timeline's edit was saved with its state, and must not be shown for this one.
+            inner.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
         }
         inner.room_screen_widget_uid = Some(room_screen_widget_uid);
         inner.timeline_kind = Some(timeline_kind);
@@ -1130,6 +1196,7 @@ impl RoomInputBarRef {
         saved_state: RoomInputBarState,
         user_power_levels: UserPowerLevels,
         tombstone_info: Option<&SuccessorRoomDetails>,
+        not_joined: Option<&RoomMembership>,
         is_encrypted: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
@@ -1177,8 +1244,8 @@ impl RoomInputBarRef {
             .as_upload_progress_view()
             .restore_state(cx, upload);
 
-        // 5. Apply this room's tombstone state and the user's power levels.
-        inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels);
+        // 5. Apply this room's tombstone state, the user's power levels, and their membership.
+        inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels, not_joined);
     }
 
     /// See [`UploadProgressView::on_timeline_reconnected()`].
@@ -1302,5 +1369,10 @@ enum ShowEditingPaneBehavior {
     /// reopening a room that had an `EditingPane` open when it was closed.
     RestoreExisting {
         editing_pane_state: EditingPaneState,
+    },
+    /// Show an edit that failed to send, so the user gets back what they had typed.
+    RestoreFailed {
+        event_tl_item: EventTimelineItem,
+        edited_text: String,
     },
 }

@@ -13,7 +13,7 @@ use matrix_sdk::{
         api::{client::{alias::get_alias, authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             room::{
-                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, tombstone::RoomTombstoneEventContent, MediaSource
+                encrypted::Relation as EncryptedRelation, member::MembershipState, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, tombstone::RoomTombstoneEventContent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw
     }, notification_settings::RoomNotificationMode, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
@@ -43,7 +43,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
         user_verification_cache::{UserVerificationState, UserVerificationUpdate, enqueue_user_verification_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{LISTED_MEMBERSHIPS, RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, membership::{JoinMethod, RemovedBy, RoomMembership, RoomMembershipUpdate, enqueue_room_membership_update}, pinned_messages_list::PinnedMessagesAction, room_members_list::{LISTED_MEMBERSHIPS, RoomMembersChanged, RoomMembersFetchAction}}, room_info_sync::{room_info_subscriber_handler, set_room_notification_mode}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}, recent_emojis::{handle_recent_emojis_subscriber, spawn_recent_emoji_writer}
     }, space_service_sync::space_service_loop, threads_list_sync::{get_bundled_thread_summary, threads_list_subscriber_handler}, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::{add_verification_event_handlers_and_sync_client, handle_user_identities_subscriber}
 };
@@ -631,6 +631,12 @@ pub enum MatrixRequest {
     LoadOutdatedRoom {
         room_id: OwnedRoomId,
     },
+    /// Request to get the current user's membership in the given room, which can be any room at all.
+    ///
+    /// The result is sent to the [room membership cache](crate::room::membership).
+    GetRoomMembership {
+        room_id: OwnedRoomId,
+    },
     /// Request to fetch the full details (the room preview) of a tombstoned room.
     GetSuccessorRoomDetails {
         tombstoned_room_id: OwnedRoomId,
@@ -1209,6 +1215,8 @@ async fn matrix_worker_task(
             MatrixRequest::EditMessage { timeline_kind, timeline_event_item_id, edited_content } => {
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found for edit request");
+                    // The editing pane still has the user's text, so they just need to know it wasn't sent.
+                    enqueue_popup_notification("Couldn't send your edit: this room isn't available right now.", PopupKind::Error, None);
                     continue;
                 };
 
@@ -1690,6 +1698,21 @@ async fn matrix_worker_task(
                     };
                     if !will_be_loaded {
                         Cx::post_action(OutdatedRoomNotLoaded { room_id });
+                    }
+                });
+            }
+
+            MatrixRequest::GetRoomMembership { room_id } => {
+                let Some(client) = get_client() else { continue };
+                let _get_membership_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        enqueue_room_membership_update(RoomMembershipUpdate { room_id, membership: None });
+                        return;
+                    };
+                    let membership = room_membership(&room).await;
+                    // If our membership changed while we were looking it up, the subscriber sends the newer one.
+                    if room.state() == membership.state {
+                        enqueue_room_membership_update(RoomMembershipUpdate { room_id, membership: Some(membership) });
                     }
                 });
             }
@@ -4377,6 +4400,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             // Listen for updates to the blocked user list.
             handle_blocked_user_list_subscriber(client.clone()),
             handle_recent_emojis_subscriber(client.clone()),
+            // Listen for changes to our membership in any room, e.g., when we get kicked or banned.
+            handle_room_membership_subscriber(client.clone()),
             // Listen for session changes, e.g., when the access token becomes invalid.
             handle_session_changes(client.clone()),
         ];
@@ -5259,34 +5284,47 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
     enqueue_rooms_list_update(
         RoomsListUpdate::RemoveRoom {
             room_id: room.room_id.clone(),
-            new_state: room.state,
-            // Re-obtain whether this room is a space,
-            // since it may have changed since the last sync.
+            // Re-obtain the room's state and whether it's a space,
+            // since `room` is often our last snapshot from before it changed.
+            new_state: room.room.state(),
             is_space: room.room.is_space(),
         }
     );
 }
 
 
-/// Builds the server metadata for an invitation, including current routing hints.
-fn invited_room_info(new_room: &RoomListServiceRoomInfo) -> InvitedRoomInfo {
-    let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
-    // The caller fetches an avatar image asynchronously after publishing this snapshot.
-    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
-    // Collect servers for this invitation, from most to least useful.
+/// Returns the servers that are likely in the given room, from most to least useful.
+///
+/// These are needed to join a room that our own homeserver isn't in.
+fn via_servers<'a>(
+    room: &Room,
+    known_member: Option<&UserId>,
+    aliases: impl Iterator<Item = &'a OwnedRoomAliasId>,
+) -> Vec<OwnedServerName> {
     let mut via: Vec<OwnedServerName> = Vec::new();
-    let creators = new_room.room.creators().unwrap_or_default();
-    let candidates = new_room.inviter_info.iter()
-        .map(|i| i.user_id.server_name())
+    let creators = room.creators().unwrap_or_default();
+    let candidates = known_member.into_iter().map(|user_id| user_id.server_name())
         .chain(creators.iter().map(|c| c.server_name()))
-        .chain(new_room.room_id.server_name())
-        .chain(new_room.canonical_alias.iter().map(|a| a.server_name()))
-        .chain(new_room.alt_aliases.iter().map(|a| a.server_name()));
+        .chain(room.room_id().server_name())
+        .chain(aliases.map(|a| a.server_name()));
     for server in candidates {
         if !via.iter().any(|v| v == server) {
             via.push(server.to_owned());
         }
     }
+    via
+}
+
+/// Builds the server metadata for an invitation, including current routing hints.
+fn invited_room_info(new_room: &RoomListServiceRoomInfo) -> InvitedRoomInfo {
+    let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
+    // The caller fetches an avatar image asynchronously after publishing this snapshot.
+    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
+    let via = via_servers(
+        &new_room.room,
+        new_room.inviter_info.as_ref().map(|i| i.user_id.as_ref()),
+        new_room.canonical_alias.iter().chain(&new_room.alt_aliases),
+    );
     InvitedRoomInfo {
         room_name_id,
         inviter_info: new_room.inviter_info.clone(),
@@ -5538,6 +5576,74 @@ fn handle_blocked_user_list_subscriber(client: Client) -> JoinHandle<()> {
     })
 }
 
+/// Tells the UI whenever the current user's membership in any room changes,
+/// e.g., when we leave a room or someone kicks, bans, or invites us.
+///
+/// This function spawns a task that captures a strong `Client` ref,
+/// so the caller should abort+await it upon logout to ensure the Client gets dropped.
+fn handle_room_membership_subscriber(client: Client) -> JoinHandle<()> {
+    let mut updates = client.room_info_notable_update_receiver();
+    let mut known_states: HashMap<OwnedRoomId, RoomState, ConstHasher> = client.rooms().iter()
+        .map(|room| (room.room_id().to_owned(), room.state()))
+        .collect();
+    Handle::current().spawn(async move {
+        loop {
+            let rooms = match updates.recv().await {
+                Ok(update) => client.get_room(&update.room_id).into_iter().collect(),
+                // We missed some updates, so any room could have changed.
+                Err(broadcast::error::RecvError::Lagged(_)) => client.rooms(),
+                Err(broadcast::error::RecvError::Closed) => break,
+            };
+            for room in rooms {
+                let state = room.state();
+                let old_state = known_states.insert(room.room_id().to_owned(), state);
+                // The rooms list tells the UI about a new room that we're in or invited to.
+                let is_new_in_rooms_list = old_state.is_none() && matches!(state, RoomState::Joined | RoomState::Invited);
+                if old_state != Some(state) && !is_new_in_rooms_list {
+                    enqueue_room_membership_update(RoomMembershipUpdate {
+                        room_id: room.room_id().to_owned(),
+                        membership: Some(room_membership(&room).await),
+                    });
+                }
+            }
+        }
+    })
+}
+
+/// Returns the current user's membership in the given room,
+/// including who kicked or banned them (if anyone did) and how they could get back in.
+async fn room_membership(room: &Room) -> RoomMembership {
+    let state = room.state();
+    let own_user_id = room.own_user_id();
+    let mut removed_by = None;
+    let mut reason = None;
+    // When we leave a room ourselves, its state changes before our own leave event arrives,
+    // so our latest member event may still be an older one that didn't remove us.
+    if matches!(state, RoomState::Left | RoomState::Banned)
+        && let Ok(Some(own_member)) = room.get_member_no_sync(own_user_id).await
+        && let event = own_member.event()
+        && matches!(event.membership(), MembershipState::Leave | MembershipState::Ban)
+        && event.sender() != own_user_id
+    {
+        let display_name = room.get_member_no_sync(event.sender()).await.ok().flatten()
+            .and_then(|sender| sender.display_name().map(ToOwned::to_owned));
+        removed_by = Some(RemovedBy { user_id: event.sender().to_owned(), display_name });
+        reason = event.reason().map(str::trim).filter(|r| !r.is_empty()).map(ToOwned::to_owned);
+    }
+    let join_method = match room.join_rule().map(JoinRuleSummary::from) {
+        _ if !is_room_private(room) => JoinMethod::Join,
+        Some(JoinRuleSummary::Knock | JoinRuleSummary::KnockRestricted(_)) => JoinMethod::Knock,
+        Some(JoinRuleSummary::Restricted(_)) => JoinMethod::InviteOrOtherRoom,
+        _ => JoinMethod::Invite,
+    };
+    let via = via_servers(
+        room,
+        removed_by.as_ref().map(|by| by.user_id.as_ref()),
+        room.canonical_alias().iter().chain(&room.alt_aliases()),
+    );
+    RoomMembership { state, is_space: room.is_space(), removed_by, reason, join_method, via }
+}
+
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
 /// When a saved state file is found, this emits a `RestoreAppStateFromPersistentState` action
@@ -5770,9 +5876,26 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
 
                             error!("Unrecoverable send error in room {room_id}: {error:?}");
                             let room = client.get_room(&room_id);
+                            // What we tell the user became of the text they typed, if this was an edit.
+                            let mut edit_outcome = String::from("Your edit was discarded.");
+                            let mut popup_duration = Some(8.0);
                             if let Some(room) = &room {
                                 match room.send_queue().subscribe().await {
-                                    Ok((echoes, _)) => cancel_hidden_failed_sends(echoes).await,
+                                    Ok((echoes, _)) => {
+                                        // A failed edit gets cancelled, so we give its text back to the user first.
+                                        let failed_edit = echoes.iter()
+                                            .find(|echo| echo.transaction_id == transaction_id)
+                                            .and_then(edit_in_local_echo);
+                                        if let Some((event_id, edited_text)) = failed_edit {
+                                            if return_failed_edit(&room_id, &event_id, &edited_text).await {
+                                                edit_outcome = "What you typed was kept, so you can try again.".into();
+                                            } else {
+                                                edit_outcome = format!("Your edit couldn't be put back in the editor, so here it is:\n\n{edited_text}");
+                                                popup_duration = None;
+                                            }
+                                        }
+                                        cancel_hidden_failed_sends(echoes).await
+                                    }
                                     Err(e) => warning!("Couldn't check for failed send requests in room {room_id}: {e}"),
                                 }
                             }
@@ -5785,12 +5908,12 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                                 Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen the message's menu to edit, retry, or cancel it. Future messages won't send until you do."),
                                 Some(LocalSendKind::ThreadMessage) => format!("Couldn't send a thread reply in {room_name}: {desc}\n\nOpen that thread to retry or cancel it. Future messages won't send until you do."),
                                 Some(LocalSendKind::Attachment) => format!("Couldn't send an attachment in {room_name}: {desc}\n\nOpen the message's menu to retry or cancel it. Future messages won't send until you do."),
-                                Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}\n\nYour edit was discarded."),
+                                Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}\n\n{edit_outcome}"),
                                 Some(LocalSendKind::Reaction { key }) => format!("Couldn't send your {key} reaction in {room_name}: {desc}"),
                                 Some(LocalSendKind::Redaction) => format!("Couldn't delete a message in {room_name}: {desc}"),
                                 None => format!("Couldn't send to {room_name}: {desc}"),
                             };
-                            enqueue_popup_notification(msg, PopupKind::Error, Some(8.0));
+                            enqueue_popup_notification(msg, PopupKind::Error, popup_duration);
                         }
                         _ => {}
                     },
@@ -5826,6 +5949,38 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
             }
         }
     })
+}
+
+/// Returns the ID of the message that the given send request edits and the text of that edit, if it is an edit.
+fn edit_in_local_echo(echo: &LocalEcho) -> Option<(OwnedEventId, String)> {
+    let LocalEchoContent::Event { serialized_event, .. } = &echo.content else { return None };
+    let Ok(AnyMessageLikeEventContent::RoomMessage(msg)) = serialized_event.deserialize() else { return None };
+    let Some(Relation::Replacement(replacement)) = msg.relates_to else { return None };
+    Some((replacement.event_id, replacement.new_content.msgtype.body().to_owned()))
+}
+
+/// Sends the text of an edit that failed to send to the first of the room's timelines that has
+/// the edited message, so the user gets it back in the editor. Returns whether any timeline has it.
+async fn return_failed_edit(room_id: &RoomId, event_id: &OwnedEventId, edited_text: &str) -> bool {
+    // The main timeline comes first, so the text never shows up in two editors.
+    let timelines: Vec<_> = ALL_JOINED_ROOMS.lock().unwrap().get(room_id)
+        .map(|room| room.all_timelines()
+            .map(|details| (details.timeline.clone(), details.timeline_update_sender.clone()))
+            .collect()
+        )
+        .unwrap_or_default();
+    for (timeline, sender) in timelines {
+        if timeline.item_by_event_id(event_id).await.is_some()
+            && sender.send(TimelineUpdate::EditSendFailed {
+                event_id: event_id.clone(),
+                edited_text: edited_text.to_owned(),
+            }).is_ok()
+        {
+            SignalToUI::set_ui_signal();
+            return true;
+        }
+    }
+    false
 }
 
 /// Cancels failed requests that user can't retry or cancel (edits, reactions, deletions),
