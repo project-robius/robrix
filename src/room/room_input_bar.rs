@@ -90,13 +90,13 @@ script_mod! {
             width: Fill, height: Fit
             flow: Down
 
-            // Rounded at the top with the same outline as the RoomInputBar and EditingPane.
+            // Rounded at the top like the RoomInputBar and EditingPane. The sides are inset by the RoomInputBar's
+            // -4 margins, so that the rounded corners aren't clipped off.
             show_bg: true
             draw_bg +: {
                 color: (COLOR_SECONDARY)
-                border_radius: vec2(5.0, 0.0)
-                border_size: 2.0
-                border_color: (COLOR_SECONDARY)
+                border_radius: vec2(4.0, 0.0)
+                border_inset: vec4(4.0, 0.0, 4.0, 0.0)
             }
 
             // A notice that the user can't send messages to this room.
@@ -333,13 +333,18 @@ impl Widget for RoomInputBar {
             let safe_area_top = cx.display_context.screen_size.y - insets.bottom;
             (parent.pos.y + parent.size.y - safe_area_top).max(0.0).min(insets.bottom)
         };
-        let is_notice_at_bottom = !input_bar.visible() && !editing_pane.is_currently_shown(cx);
+        let is_notice_shown = !input_bar.visible();
+        let is_notice_at_bottom = is_notice_shown && !editing_pane.is_currently_shown(cx);
         if let Some(mut inner) = notices.borrow_mut() {
             inner.layout.padding.bottom = if is_notice_at_bottom { safe_area_overlap } else { 0.0 };
         }
         if let Some(mut inner) = overlay_wrapper.borrow_mut() {
             inner.layout.padding.bottom = if is_notice_at_bottom { 0.0 } else { safe_area_overlap };
+            // An edit below a notice overlaps it a bit, so the notice fills in behind the edit's rounded corners.
+            inner.walk.margin.top = if is_notice_shown && !is_notice_at_bottom { -5.0 } else { 0.0 };
         }
+        // A notice at our very top has its own rounded corners, so we don't draw our background behind it.
+        self.view.show_bg = !(is_notice_shown && banners_and_previews.area().rect(cx).size.y < 0.5);
 
         // Shrink the input_bar's height as the editing pane slides in,
         // and grow it back as the editing pane slides out.
