@@ -5,8 +5,9 @@
 
 use std::{net::{Ipv4Addr, Ipv6Addr}, ops::Not};
 use makepad_widgets::*;
+use robius_theme::Theme;
 use crate::{
-    settings::app_preferences::{Appearance, AppearanceGlobal, set_appearance},
+    settings::{app_preferences::{Appearance, set_appearance}, system_theme},
     shared::password_input::PasswordTextInputWidgetExt,
     sliding_sync::{homeserver_of_user_id, submit_async_request, username_to_full_user_id, BrowserLoginKind, LoginByPassword, LoginMethods, LoginRequest, MatrixRequest},
     utils,
@@ -436,9 +437,9 @@ impl MatchEvent for LoginScreen {
         }
 
         if self.view.button(cx, ids!(appearance_button)).clicked(actions) {
-            let new_appearance = match cx.global::<AppearanceGlobal>().0 {
-                Appearance::Light => Appearance::Dark,
-                Appearance::Dark => Appearance::Light,
+            let new_appearance = match system_theme::effective_theme(cx) {
+                Theme::Light => Appearance::Dark,
+                Theme::Dark => Appearance::Light,
             };
             set_appearance(cx, new_appearance);
         }

@@ -359,12 +359,12 @@ script_mod! {
             }
 
             appearance_dropdown := mod.widgets.RobrixSettingsDropDown {
-                labels: ["Light Theme", "Dark Theme"]
+                labels: ["Auto (follow system)", "Light Theme", "Dark Theme"]
                 selected_item: 0
             }
         }
         mod.widgets.SettingsSectionDescription {
-            body: "<ul><li>Automatic switching is coming soon!</li></ul>"
+            body: "<ul><li>Auto follows your system's light or dark appearance. If the system has no preference, Robrix uses the light theme.</li></ul>"
         }
 
 
